@@ -21,6 +21,3 @@ const TableSchema: Schema = new Schema(
 
 // Exporta el modelo
 export default mongoose.model<ITable>("Table", TableSchema);
-/*
-
-*/

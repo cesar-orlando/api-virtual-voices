@@ -41,6 +41,8 @@ build/Release
 # Dependency directories
 node_modules/
 jspm_packages/
+.wwebjs_auth/
+.wwebjs_cache/
 
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
@@ -128,3 +130,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+#commit guide
+COMMIT_GUIDE.md

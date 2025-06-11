@@ -42,7 +42,7 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
     try {
       // Espera a que la sesión esté lista antes de guardar en la base de datos
       await startWhatsappBot(sessionName , c_name);
-      const newSession = new WhatsappSession({ name: sessionName, c_name });
+      const newSession = new WhatsappSession({ name: sessionName });
       await newSession.save();
       res.status(201).json({ message: `Session '${sessionName}' started` });
     } catch (error) {

@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Connection, Model, Document } from "mongoose";
 import whatsappMessage from "./schema/whatsappMessage.schema"; // Importa el subesquema
 
 // Define la interfaz para un registro
@@ -32,4 +32,6 @@ const WhatsappChatSchema: Schema = new Schema(
   }
 );
 
-export default mongoose.model<IWhatsappChat>("Chat", WhatsappChatSchema);
+export function getWhatsappChatModel(conn: Connection): Model<IWhatsappChat> {
+  return conn.model<IWhatsappChat>("Chat", WhatsappChatSchema);
+}

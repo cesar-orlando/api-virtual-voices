@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import tableRoutes from "./routes/table.routes";
 import dynamicRecordRoutes from "./routes/record.routes";
+import whatsappChatRoutes from './routes/whatsappChat.routes';
+import companyRoutes from "./routes/company.routes";
+import iaConfigRoutes from "./routes/iaConfig.routes";
 
 const app = express();
 
@@ -13,6 +16,15 @@ app.use("/api/tables", tableRoutes);
 
 // Rutas para registros dinámicos
 app.use("/api/records", dynamicRecordRoutes);
+
+// Rutas para chat de WhatsApp
+app.use('/api/whatsapp', whatsappChatRoutes);
+
+// Rutas para empresas
+app.use("/api/companies", companyRoutes);
+
+// Rutas para configuraciones de IA
+app.use("/api/ia-configs", iaConfigRoutes);
 
 app.get("/", (req, res) => {
     res.json({

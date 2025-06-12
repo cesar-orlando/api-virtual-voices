@@ -26,7 +26,7 @@ export async function getAllSessionsFromAllDatabases() {
 
   for (const dbInfo of dbs.databases) {
     const dbName = dbInfo.name;
-    // Opcional: filtra solo las bases de datos de empresas si tienes un prefijo
+    // Filtra solo las bases de datos de empresas (para no incluir admin o local)
     if (dbName === "admin" || dbName === "local") continue;
 
     const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");

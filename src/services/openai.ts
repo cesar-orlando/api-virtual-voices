@@ -13,3 +13,20 @@ export async function preparePrompt(
   const prompt = `Al iniciar una conversacion siempre te presentas como: ${config?.name} e incluyes el saludo: ${config?.welcomeMessage}, tu objetivo es el de ${config?.objective}, informacion previa y contexto para despues del saludo inicial: ${config?.customPrompt}`;
   return prompt;
 }
+
+export async function generateResponse(
+  prompt: string|undefined,
+  config: IIaConfig|null,
+  chatHistory: any
+): Promise<string|null> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4",
+    messages: [
+      { role: "system", content: prompt || "Eres un asistente virtual." },
+        ...chatHistory
+    ],
+    temperature: 0.3,
+  });
+
+  return response.choices[0].message.content;
+}

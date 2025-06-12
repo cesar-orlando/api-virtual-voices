@@ -35,7 +35,7 @@ export const startWhatsappBot = (sessionName: string, company: string) => {
   });
 
   whatsappClient.on('message_create', async (message) => {
-    console.log(`${company} - ${sessionName} - Mensaje creado:`, message.body);
+    console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
     await handleIncomingMessage(message, whatsappClient, company);
   });
 

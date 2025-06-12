@@ -5,11 +5,14 @@ import dynamicRecordRoutes from "./routes/record.routes";
 import whatsappChatRoutes from './routes/whatsappChat.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
+import userRoutes from "./routes/user.routes";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/users', userRoutes);
 
 // Rutas para tablas
 app.use("/api/tables", tableRoutes);

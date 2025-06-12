@@ -1,5 +1,5 @@
 import { Message, Client } from 'whatsapp-web.js';
-import { openai, preparePrompt } from '../openai';
+import { generateResponse, openai, preparePrompt } from '../openai';
 import Table from '../../models/table.model';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
@@ -119,15 +119,11 @@ async function sendAndRecordBotResponse(
   history.push({ role: "user", content: message.body });
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: IAPrompt || "Eres un asistente virtual." },
-        ...history
-      ]
-    });
-    aiResponse = completion.choices[0]?.message?.content || defaultResponse;
+    const response = await generateResponse(
+      IAPrompt,
+      config,
+      history)
+    aiResponse = response || defaultResponse;
   } catch (error) {
     console.error("Error al obtener respuesta de OpenAI:", error);
   }

@@ -21,7 +21,7 @@ const IAIntentSchema = new Schema({
 const IaConfigSchema: Schema = new Schema(
   {
     name: { type: String, default: "Asistente" },
-    objective: { type: String, enum: ["agendar", "responder", "recomendar", "ventas", "soporte"], default: "agendar" },
+    objective: { type: String, enum: ["agendar", "responder", "recomendar", "ventas", "soporte"], default: "ventas" },
     tone: { type: String, enum: ["formal", "amigable", "persuasivo"], default: "amigable" },
     welcomeMessage: { type: String, default: "¡Hola! ¿En qué puedo ayudarte hoy?" },
     intents: { type: [IAIntentSchema], default: [] },

@@ -1,14 +1,14 @@
-import mongoose, { Schema, Document } from "mongoose";
+import { Schema, Document, Connection, Model } from "mongoose";
 
 // Define the interface for a Client document
-export interface IClient extends Document {
+export interface IUser extends Document {
   name: string;
   email: string;
   createdAt: Date;
 }
 
-// Define the schema for the Client model
-const ClientSchema: Schema = new Schema(
+// Define the schema for the User model
+const UserSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -23,5 +23,7 @@ const ClientSchema: Schema = new Schema(
   }
 );
 
-// Create and export the Client model
-export default mongoose.model<IClient>("Client", ClientSchema);
+// Create and export the User model
+export default function getUserModel(connection: Connection): Model<IUser> {
+  return connection.model<IUser>("User", UserSchema);
+}

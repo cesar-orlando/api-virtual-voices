@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import getIaConfigModel from "../models/iaConfig.model";
 import { getDbConnection } from "../config/connectionManager";
-import { openai, preparePrompt } from "../services/openai";
+import { generateResponse, openai, preparePrompt } from "../services/openai";
 
 // 🔥 Crear configuración inicial si no existe
 export const createIAConfig = async (req: Request, res: Response): Promise<void> => {
@@ -120,15 +120,11 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     }).filter(Boolean);
     
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        temperature: 0.3,
-        messages: [
-          { role: "system", content: IAPrompt || "Eres un asistente virtual." },
-          ...history
-        ]
-      });
-      aiResponse = completion.choices[0]?.message?.content || defaultResponse;
+      const response = await generateResponse(
+            IAPrompt,
+            config,
+            history)
+          aiResponse = response || defaultResponse;
     } catch (error) {
       console.error("Error al obtener respuesta de OpenAI:", error);
     }

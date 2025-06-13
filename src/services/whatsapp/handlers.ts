@@ -1,13 +1,14 @@
 import { Message, Client } from 'whatsapp-web.js';
 import { generateResponse, openai, preparePrompt } from '../openai';
-import Table from '../../models/table.model';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import getIaConfigModel from '../../models/iaConfig.model';
+import { getSessionModel } from '../../models/whatsappSession.model';
 import { io } from '../../server';
 import { Connection, Model, Types } from 'mongoose';
+import getTableModel from '../../models/table.model';
 
-export async function handleIncomingMessage(message: Message, client: Client, company: string) {
+export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
   if (message.isStatus) return;
 
@@ -18,6 +19,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
   try {
 
     const conn = await getDbConnection(company);
+
+    const Table = getTableModel(conn);
 
     // Verifica si la tabla existe
     const table = await Table.findOne({ slug: "clientes" });
@@ -43,7 +46,7 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     if (!existingRecord || !existingRecord.botActive) return;
 
-    await sendAndRecordBotResponse(company, client, message, existingRecord, conn);
+    await sendAndRecordBotResponse(company, sessionName, client, message, existingRecord, conn);
 
   } catch (error) {
     console.error('Error al manejar el mensaje entrante:', error);
@@ -89,6 +92,7 @@ async function updateChatRecord(
 
 async function sendAndRecordBotResponse(
   company: string,
+  sessionName: string,
   client: Client,
   message: Message,
   existingRecord: any,
@@ -98,7 +102,9 @@ async function sendAndRecordBotResponse(
   const defaultResponse = "Una disculpa, podrias repetir tu mensaje, no pude entenderlo.";
   let aiResponse = defaultResponse;
   const IaConfig = getIaConfigModel(conn);
-  const config = await IaConfig.findOne();
+  const sessionModel = getSessionModel(conn);
+  const session = await sessionModel.findOne({ name: sessionName });
+  const config = await IaConfig.findOne({ _id: session?.IA?.id });
 
   let IAPrompt;
 

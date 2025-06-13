@@ -16,9 +16,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       welcomeMessage,
     } = req.body;
 
-    const dbName = `${c_name}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(c_name);
 
     const IaConfig = getIaConfigModel(conn);
 
@@ -45,36 +43,64 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const getIAConfig = async (req: Request, res: Response): Promise<void> => {
+export const getGeneralIAConfig = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { c_name, AI_id } = req.params;
+    const { c_name } = req.params;
 
-    const dbName = `${c_name}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(c_name);
 
     const IaConfig = getIaConfigModel(conn);
-    const config = await IaConfig.findOne({_id: AI_id });
+    const firstConfig = await IaConfig.findOne({}, {}, { sort: { createdAt: 1 } });
 
-    if (!config) {
+    if (!firstConfig) {
       res.status(404).json({ message: "Configuración no encontrada." });
       return;
     }
 
-    res.json(config);
+    res.json(firstConfig);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener la configuración." });
   }
 };
+
+export const getAllIAConfigs = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { c_name, user_id } = req.params;
+
+    const conn = await getDbConnection(c_name);
+
+    const UserConfig = getUserModel(conn);
+
+    const user = await UserConfig.findById(user_id);
+
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado." });
+      return;
+    }
+
+    const IaConfig = getIaConfigModel(conn);
+
+    let configs;
+
+    if (user.role !== "Admin") {
+      configs = await IaConfig.find({ "user.id": user_id });
+    } else {
+      configs = await IaConfig.find({});
+    }
+
+    res.json(configs);
+  } catch (error) {
+    console.error("Error al obtener configuraciones IA:", error);
+    res.status(500).json({ message: "Error al obtener configuraciones IA" });
+  }
+}
 
 export const updateIAConfig = async (req: Request, res: Response): Promise<void> => {
   try {
     const { c_name, user_id } = req.params;
     const updates = req.body;
 
-    const dbName = `${c_name}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(c_name);
 
     const IaConfig = getIaConfigModel(conn);
     const UserConfig = getUserModel(conn);

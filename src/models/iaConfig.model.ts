@@ -1,4 +1,4 @@
-import { Schema, Document, Connection, Model } from "mongoose";
+import { Schema, Document, Connection, Model, Types } from "mongoose";
 
 export interface IIaConfig extends Document {
   name: string;
@@ -10,6 +10,10 @@ export interface IIaConfig extends Document {
   customPrompt: string;
   createdAt?: Date;
   updatedAt?: Date;
+  user: {
+    id: Types.ObjectId; // Referencia al usuario
+    name: string; // Nombre del usuario asociado
+  };
 }
 
 const IAIntentSchema = new Schema({
@@ -27,6 +31,10 @@ const IaConfigSchema: Schema = new Schema(
     intents: { type: [IAIntentSchema], default: [] },
     dataTemplate: { type: String, default: "{{label}}: {{value}}" },
     customPrompt: { type: String, default: "" },
+    user: {
+      id: { type: Types.ObjectId, ref: "User", required: true }, // Referencia al usuario
+      name: { type: String, required: true }, // Nombre del usuario asociado
+    }
   },
   { timestamps: true }
 );

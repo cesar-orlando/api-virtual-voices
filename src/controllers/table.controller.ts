@@ -1,21 +1,25 @@
 import { Request, Response } from "express";
-import Table from "../models/table.model";
+import getTableModel from "../models/table.model";
+import { getDbConnection } from "../config/connectionManager";
 
 // Crear una nueva tabla
 export const createTable = async (req: Request, res: Response): Promise<void> => {
-  const { name, slug, icon } = req.body;
+  const { name, slug, icon, c_name } = req.body;
 
   if (!name || !slug) {
     res.status(400).json({ message: "Name and slug are required" });
-    return 
+    return;
   }
+
+  const conn = await getDbConnection(c_name);
+  const Table = getTableModel(conn);
 
   try {
     // Verifica si ya existe una tabla con el mismo slug
     const existingTable = await Table.findOne({ slug });
     if (existingTable) {
         res.status(400).json({ message: "A table with this slug already exists" });
-        return 
+        return;
     }
 
     // Crea y guarda la tabla
@@ -31,6 +35,9 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 // Obtener todas las tablas
 export const getTables = async (req: Request, res: Response) => {
   try {
+    const { c_name } = req.params;
+    const conn = await getDbConnection(c_name);
+    const Table = getTableModel(conn);
     const tables = await Table.find();
     res.json(tables);
   } catch (error) {
@@ -41,9 +48,11 @@ export const getTables = async (req: Request, res: Response) => {
 // Actualizar una tabla manteniendo los valores existentes
 export const updateTable = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params; // ID de la tabla a actualizar
-  const { name, slug, icon } = req.body; // Nuevos datos para actualizar
+  const { name, slug, icon, c_name } = req.body; // Nuevos datos para actualizar
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Table = getTableModel(conn);
     // Busca y actualiza la tabla
     const updatedTable = await Table.findByIdAndUpdate(
       id,
@@ -64,10 +73,12 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
 
 // Eliminar una tabla
 export const deleteTable = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params; // ID de la tabla a eliminar
+  const { id, c_name } = req.params; // ID de la tabla a eliminar
 
   try {
     // Busca y elimina la tabla
+    const conn = await getDbConnection(c_name);
+    const Table = getTableModel(conn);
     const deletedTable = await Table.findByIdAndDelete(id);
 
     if (!deletedTable) {

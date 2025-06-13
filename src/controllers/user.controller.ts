@@ -5,9 +5,8 @@ import { getDbConnection } from "../config/connectionManager";
 // Get all users
 export const getAllUsers = async (req: Request, res: Response) => {
   const { c_name } = req.body;
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
   const users = await User.find();
@@ -17,9 +16,8 @@ export const getAllUsers = async (req: Request, res: Response) => {
 // Get a single user by ID
 export const getUserById = async (req: Request, res: Response): Promise<void> => {
   const { c_name } = req.params;
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
 
@@ -39,9 +37,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     return
   }
 
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
 
@@ -53,9 +49,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 // Update a user by ID
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   const { name, email, c_name } = req.body;
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
 
@@ -76,9 +71,8 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 // Delete a user by ID
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
   const { c_name } = req.body;
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+  
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
 

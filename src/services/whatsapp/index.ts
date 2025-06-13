@@ -38,8 +38,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       const nonGroups = chats.filter(chat => !chat.isGroup);
       console.log(`Number of chats: ${chats.length}`);
       nonGroups.forEach(chat => {
-        console.log(`Chat ID: ${chat.id._serialized}`);
-        console.log('Se envio el siguiente mensaje: ', messageToAll);
+        //console.log(`Chat ID: ${chat.id._serialized}`);
+        //console.log('Se envio el siguiente mensaje: ', messageToAll);
         //clients.sendMessage(chat.id._serialized, messageToAll);
       });
       console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
@@ -50,7 +50,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   whatsappClient.on('message_create', async (message) => {
     console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
-    await handleIncomingMessage(message, whatsappClient, company);
+    await handleIncomingMessage(message, whatsappClient, company, sessionName);
   });
 
   whatsappClient.initialize();

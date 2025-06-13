@@ -9,9 +9,7 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
     if (!name) res.status(400).json({ message: "Name is required" });
 
     // Crea la base de datos específica para la empresa
-    const dbName = `${name}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(name);
 
     // Crea el registro de la empresa en la base principal
     const Company = getCompanyModel(conn);
@@ -38,7 +36,7 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
 
     await createIAConfig(fakeReq, fakeRes);
 
-    res.status(201).json({ message: "Empresa y base de datos creadas", dbName });
+    res.status(201).json({ message: "Empresa y base de datos creadas", name });
     return;
   } catch (error) {
     res.status(500).json({ message: "Error creating company/database", error });
@@ -49,10 +47,8 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
 export const getCompany = async (req: Request, res: Response) => {
   try {
     const { name } = req.params;
-
-    const dbName = `${name}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    
+    const conn = await getDbConnection(name);
 
     const Company = getCompanyModel(conn);
     const company = await Company.find({ name });

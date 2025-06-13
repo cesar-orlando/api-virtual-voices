@@ -1,10 +1,11 @@
 import { Request, Response } from "express";
-import Record from "../models/record.model";
-import Table from "../models/table.model";
+import { getDbConnection } from "../config/connectionManager";
+import getTableModel from "../models/table.model";
+import getRecordModel from "../models/record.model";
 
 // Crear un nuevo registro dinámico
 export const createDynamicRecord = async (req: Request, res: Response) => {
-  const { tableSlug, fields } = req.body;
+  const { tableSlug, fields, c_name } = req.body;
 
   if (!tableSlug || !Array.isArray(fields)) {
     res.status(400).json({ message: "tableSlug and fields are required" });
@@ -12,12 +13,17 @@ export const createDynamicRecord = async (req: Request, res: Response) => {
   }
 
   try {
+
+    const conn = await getDbConnection(c_name);
+    const Table = getTableModel(conn);
     // Verifica si la tabla existe
     const table = await Table.findOne({ slug: tableSlug });
     if (!table) {
         res.status(404).json({ message: "Table not found" });
         return 
     }
+
+    const Record = getRecordModel(conn);
 
     // Crea y guarda el registro dinámico
     const newRecord = new Record({ tableSlug, fields });
@@ -31,9 +37,12 @@ export const createDynamicRecord = async (req: Request, res: Response) => {
 
 // Obtener todos los registros de una tabla
 export const getDynamicRecords = async (req: Request, res: Response) => {
-  const { tableSlug } = req.params;
+  const { tableSlug, c_name } = req.params;
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Record = getRecordModel(conn);
+
     const records = await Record.find({ tableSlug });
     res.json(records);
   } catch (error) {
@@ -43,9 +52,11 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
 // Buscar un registro dinámico por su ID
 export const getDynamicRecordById = async (req: Request, res: Response) => {
-  const { id } = req.params; // ID del registro a buscar
+  const { id, c_name } = req.params; // ID del registro a buscar
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Record = getRecordModel(conn);
     // Busca el registro por su ID
     const record = await Record.findById(id);
 
@@ -63,7 +74,7 @@ export const getDynamicRecordById = async (req: Request, res: Response) => {
 // Actualizar un registro dinámico sin reemplazar toda la información
 export const updateDynamicRecord = async (req: Request, res: Response) => {
   const { id } = req.params; // ID del registro a actualizar
-  const { fields } = req.body; // Nuevos campos para actualizar o agregar
+  const { fields, c_name } = req.body; // Nuevos campos para actualizar o agregar
 
   if (!fields || !Array.isArray(fields)) {
     res.status(400).json({ message: "Fields are required and must be an array" });
@@ -71,6 +82,8 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
   }
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Record = getRecordModel(conn);
     // Busca el registro existente
     const existingRecord = await Record.findById(id);
     if (!existingRecord) {
@@ -107,9 +120,12 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
 
 // Eliminar un registro dinámico
 export const deleteDynamicRecord = async (req: Request, res: Response) => {
-  const { id } = req.params; // ID del registro a eliminar
+  const { id, c_name } = req.params; // ID del registro a eliminar
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Record = getRecordModel(conn);
+
     // Busca y elimina el registro dinámico
     const deletedRecord = await Record.findByIdAndDelete(id);
 
@@ -127,7 +143,7 @@ export const deleteDynamicRecord = async (req: Request, res: Response) => {
 // Eliminar ciertos campos de un registro dinámico
 export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
   const { id } = req.params; // ID del registro a modificar
-  const { keysToDelete } = req.body; // Lista de claves (keys) de los campos a eliminar
+  const { keysToDelete, c_name } = req.body; // Lista de claves (keys) de los campos a eliminar
 
   if (!keysToDelete || !Array.isArray(keysToDelete)) {
     res.status(400).json({ message: "keysToDelete is required and must be an array" });
@@ -135,6 +151,8 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
   }
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Record = getRecordModel(conn);
     // Busca el registro existente
     const existingRecord = await Record.findById(id);
     if (!existingRecord) {
@@ -171,7 +189,7 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
 
 // Agregar un campo vacío a todos los registros de una tabla
 export const addNewFieldToAllRecords = async (req: Request, res: Response) => {
-  const { tableSlug, newField } = req.body;
+  const { tableSlug, newField, c_name } = req.body;
 
   if (!tableSlug || !newField || !newField.key) {
     res.status(400).json({ message: "tableSlug and newField with a key are required" });
@@ -179,12 +197,16 @@ export const addNewFieldToAllRecords = async (req: Request, res: Response) => {
   }
 
   try {
+    const conn = await getDbConnection(c_name);
+    const Table = getTableModel(conn);
     // Verifica si la tabla existe
     const table = await Table.findOne({ slug: tableSlug });
     if (!table) {
       res.status(404).json({ message: "Table not found" });
       return;
     }
+    
+    const Record = getRecordModel(conn);
 
     // Agrega el nuevo campo a todos los registros que no lo tengan y que pertenezcan al mismo tableSlug
     const result = await Record.updateMany(
@@ -214,7 +236,7 @@ export const addNewFieldToAllRecords = async (req: Request, res: Response) => {
 
 // Eliminar ciertos campos de todos los registros de una tabla
 export const deleteFieldsFromAllRecords = async (req: Request, res: Response) => {
-  const { tableSlug, keysToDelete } = req.body;
+  const { tableSlug, keysToDelete, c_name } = req.body;
 
   if (!tableSlug || !keysToDelete || !Array.isArray(keysToDelete)) {
     res.status(400).json({ message: "tableSlug and keysToDelete are required and must be an array" });
@@ -227,13 +249,16 @@ export const deleteFieldsFromAllRecords = async (req: Request, res: Response) =>
   }
 
   try {
+    const conn = await getDbConnection(c_name);
     // Verifica si la tabla existe
+    const Table = getTableModel(conn);
     const table = await Table.findOne({ slug: tableSlug });
     if (!table) {
       res.status(404).json({ message: "Table not found" });
       return;
     }
-
+    
+    const Record = getRecordModel(conn);
     // Elimina los campos especificados de todos los registros que pertenezcan al mismo tableSlug
     const result = await Record.updateMany(
       { tableSlug }, // Asegura que los registros pertenezcan al mismo tableSlug

@@ -7,8 +7,8 @@ router.post("/:c_name", createIAConfig);
 
 router.post("/testIA/:c_name", testIA);
 
-router.get("/:c_name", getIAConfig);
+router.get("/:c_name/:AI_id", getIAConfig);
 
-router.put("/:c_name", updateIAConfig);
+router.put("/:c_name/:user_id", updateIAConfig);
 
 export default router;

@@ -3,14 +3,14 @@ import { startWhatsappBot } from "../services/whatsapp/index";
 import { getSessionModel } from "../models/whatsappSession.model";
 import { getDbConnection } from "../config/connectionManager";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
+import { getIAConfig } from "./iaConfig.controller";
+import getIaConfigModel from "../models/iaConfig.model";
 
 // Obtiene todos los mensajes de todos los chats
 export const getAllWhatsappMessages = async (req: Request, res: Response) => {
   try {
     const { c_name } = req.params;
-    const dbName = `${c_name}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(c_name);
     const WhatsappChat = getWhatsappChatModel(conn);
 
     const chats = await WhatsappChat.find({});
@@ -21,18 +21,18 @@ export const getAllWhatsappMessages = async (req: Request, res: Response) => {
 };
 
 export const createWhatsappSession = async (req: Request, res: Response) => {
-  const { sessionName, c_name } = req.body;
+  const { sessionName, c_name, user_id, user_name } = req.body;
   if (!sessionName) {
     res.status(400).json({ message: "sessionName is required" });
     return;
   }
 
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+  const conn = await getDbConnection(c_name);
 
   const WhatsappSession = getSessionModel(conn);
+  const IAConfig = getIaConfigModel(conn);
 
+  const defaultIAConfig = await IAConfig.findOne().sort({ _id: 1}); // Obtiene la primera configuración de IA por defecto
   const existingSession = await WhatsappSession.findOne({ name: sessionName });
 
   if (existingSession) {
@@ -41,8 +41,12 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
   } else {
     try {
       // Espera a que la sesión esté lista antes de guardar en la base de datos
-      await startWhatsappBot(sessionName , c_name);
-      const newSession = new WhatsappSession({ name: sessionName });
+      await startWhatsappBot(sessionName , c_name, user_id);
+      const newSession = new WhatsappSession({ 
+        name: sessionName,  
+        user: { id: user_id, name: user_name }, 
+        IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name }
+      });
       await newSession.save();
       res.status(201).json({ message: `Session '${sessionName}' started` });
     } catch (error) {
@@ -55,9 +59,7 @@ export const getAllWhatsappSessions = async (req: Request, res: Response) => {
     try {
         const { c_name } = req.params;
 
-        const dbName = `${c_name}`;
-        const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-        const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+        const conn = await getDbConnection(c_name);
 
         const WhatsappSession = getSessionModel(conn);
         const sessions = await WhatsappSession.find({});

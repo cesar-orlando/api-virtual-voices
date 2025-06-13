@@ -4,6 +4,8 @@ import { Schema, Document, Connection, Model } from "mongoose";
 export interface IUser extends Document {
   name: string;
   email: string;
+  role: string; // Indicates if the user is an admin
+  status: 1 | 2 | 3; // 1: Active, 2: Inactive, 3: Suspended
   createdAt: Date;
 }
 
@@ -12,6 +14,7 @@ const UserSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
+    role: { type: String, enum: ["Usuario", "Admin"], default: "Usuario" }, // Indicates if the user is an admin
     status: { 
       type: String, 
       enum: [1, 2, 3], // 1: Active, 2: Inactive, 3: Suspended

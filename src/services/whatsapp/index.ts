@@ -2,11 +2,12 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { handleIncomingMessage } from './handlers';
 import { io } from '../../server'; // Ajusta la ruta según tu estructura
+import { Types } from 'mongoose';
 
 // Objeto global para almacenar clientes por sesión
 export const clients: Record<string, Client> = {};
 
-export const startWhatsappBot = (sessionName: string, company: string) => {
+export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId) => {
   // Si ya existe el cliente para esta sesión, no lo crees de nuevo
   if (clients[sessionName]) {
     console.log(`Cliente WhatsApp para la sesión '${sessionName}' ya existe.`);
@@ -26,7 +27,7 @@ export const startWhatsappBot = (sessionName: string, company: string) => {
     console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
     qrcode.generate(qr, { small: true });
     if (io) {
-      io.emit(`whatsapp-qr-${company}`, qr);
+      io.emit(`whatsapp-qr-${company}-${user_id}`, qr);
     }
   });
 

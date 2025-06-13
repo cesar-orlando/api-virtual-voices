@@ -16,10 +16,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
   if (userPhone !== '5216441500358') return;
 
   try {
-    const dbName = `${company}`;
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
 
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(company);
 
     // Verifica si la tabla existe
     const table = await Table.findOne({ slug: "clientes" });

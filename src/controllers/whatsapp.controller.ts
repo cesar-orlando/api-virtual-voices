@@ -136,10 +136,10 @@ export const deleteWhatsappSession = async (req: Request, res: Response) => {
     }
 
     // Cierra el cliente si existe
-    if (clients[session.name]) {
+    if (clients[`${c_name}:${session.name}`]) {
         try {
-            await clients[session.name].destroy();
-            delete clients[session.name];
+            await clients[`${c_name}:${session.name}`].destroy();
+            delete clients[`${c_name}:${session.name}`];
         } catch (err) {
             console.error("Error closing WhatsApp client:", err);
         }

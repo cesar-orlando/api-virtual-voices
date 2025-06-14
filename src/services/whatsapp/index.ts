@@ -9,9 +9,10 @@ export const clients: Record<string, Client> = {};
 
 export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId) => {
   // Si ya existe el cliente para esta sesión, no lo crees de nuevo
-  if (clients[sessionName]) {
+  const clientKey = `${company}:${sessionName}`;
+  if (clients[clientKey]) {
     console.log(`Cliente WhatsApp para la sesión '${sessionName}' ya existe.`);
-    return clients[sessionName];
+    return clients[clientKey];
   }
 
   console.log(`Iniciando sesión WhatsApp: ${company} - ${sessionName}`);
@@ -52,8 +53,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
     await handleIncomingMessage(message, whatsappClient, company, sessionName);
   });
-
   whatsappClient.initialize();
-  clients[sessionName] = whatsappClient; // Guarda el cliente para evitar duplicados
+  clients[clientKey] = whatsappClient; // Guarda el cliente para evitar duplicados
   return whatsappClient;
 };

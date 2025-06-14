@@ -1,6 +1,12 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import getUserModel from "../models/user.model";
 import { getDbConnection } from "../config/connectionManager";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken"; // Add this at the top if not already imported
+
+const saltRound = 10; // Number of rounds for bcrypt hashing
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"; // Add this at the top
 
 // Get all users
 export const getAllUsers = async (req: Request, res: Response) => {
@@ -33,26 +39,54 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 
 // Create a new user
 export const createUser = async (req: Request, res: Response): Promise<void> => {
-  const { name, email, c_name } = req.body;
+  const { name, email, password, role, c_name } = req.body;
   if (!name || !email) {
     res.status(400).json({ message: "Name and email are required" });
-    return
+    return;
+  }
+  if (!password) {
+    res.status(400).json({ message: "Password is required" });
+    return;
+  }
+  if (password.length < 10) {
+    res.status(400).json({ message: "Password must be at least 10 characters long" });
+    return;
+  }
+
+  // Check if the company database exists
+  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
+  const adminConn = await getDbConnection("admin", uriBase || "mongodb://localhost:27017");
+  if (!adminConn.db) {
+    res.status(500).json({ message: "Database connection not established" });
+    return;
+  }
+  const admin = adminConn.db.admin();
+  const dbs = await admin.listDatabases();
+  const dbExists = dbs.databases.some((db: any) => db.name === c_name);
+
+  if (!dbExists) {
+    res.status(400).json({ message: "Company database does not exist" });
+    return;
   }
 
   const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
   const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
-
   const User = getUserModel(conn);
 
-  const newuser = new User({ name, email });
+  const hashedPassword = await bcrypt.hash(password, saltRound);
+  const newuser = new User({
+    name,
+    email,
+    password: hashedPassword,
+    role,
+  });
   await newuser.save();
   res.status(201).json(newuser);
 };
 
 // Update a user by ID
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
-  const { name, email, c_name } = req.body;
+  const { name, email, password, c_name } = req.body;
   const dbName = `${c_name}`;
   const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
   const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
@@ -61,7 +95,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
   const updatedUser = await User.findByIdAndUpdate(
     req.params.id,
-    { name, email },
+    { name, email, password },
     { new: true, runValidators: true }
   );
 
@@ -88,4 +122,59 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     return
   }
   res.status(204).send();
+};
+
+export const compareLogin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, password } = req.body;
+    if (!mongoose.connection.db) {
+      res.status(500).json({ message: "Database connection not established" });
+      return;
+    }
+    const admin = mongoose.connection.db.admin();
+    const dbs = await admin.listDatabases();
+    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
+
+    for (const dbInfo of dbs.databases) {
+      const dbName = dbInfo.name;
+      if (dbName === "admin" || dbName === "local") continue;
+
+      const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+      const User = getUserModel(conn);
+      const existingUser = await User.findOne({ email });
+
+      if (existingUser) {
+        if (!existingUser.email) {
+          res.status(400).json({ error: "Credenciales inválidas" });
+          return;
+        }
+        const passwordMatch = await bcrypt.compare(
+          password,
+          existingUser.password
+        );
+        if (!passwordMatch) {
+          res.status(400).json({ error: "Credenciales inválidas" });
+          return;
+        }
+        // Generate JWT token
+        const token = jwt.sign(
+          { sub: existingUser._id, email: existingUser.email, name: existingUser.name, role: existingUser.role },
+          JWT_SECRET,
+          { expiresIn: "1h" }
+        );
+        res.json({
+          name: existingUser.name,
+          email: existingUser.email,
+          token,
+        });
+        console.log("Inicio de sesión exitoso para el usuario:", existingUser.name);
+        return;
+      }
+    }
+    // If no user found
+    res.status(400).json({ error: "Credenciales inválidas" });
+  } catch (error) {
+    res.status(400).json({ message: "Error comparing login" });
+    return;
+  }
 };

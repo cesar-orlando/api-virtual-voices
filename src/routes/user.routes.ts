@@ -5,6 +5,7 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  compareLogin,
 } from "../controllers/user.controller";
 
 const router = Router();
@@ -12,8 +13,9 @@ const router = Router();
 // Define routes and map them to controller functions
 router.get("/", getAllUsers);
 router.get("/:c_name/:id", getUserById);
-router.post("/", createUser);
+router.post("/register", createUser);
 router.put("/:id", updateUser);
 router.delete("/:id", deleteUser);
+router.post("/login", compareLogin);
 
 export default router;

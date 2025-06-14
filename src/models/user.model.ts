@@ -4,19 +4,18 @@ import { Schema, Document, Connection, Model } from "mongoose";
 export interface IUser extends Document {
   name: string;
   email: string;
+  password: string;
+  role: string;
   createdAt: Date;
 }
 
 // Define the schema for the User model
 const UserSchema: Schema = new Schema(
   {
-    name: { type: String, required: true },
+    name: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
-    status: { 
-      type: String, 
-      enum: [1, 2, 3], // 1: Active, 2: Inactive, 3: Suspended
-      default: 1 
-    },
+    password: { type: String, required: true },
+    role: { type: String, enum: ["Usuario", "Admin"], default: "Usuario" }
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

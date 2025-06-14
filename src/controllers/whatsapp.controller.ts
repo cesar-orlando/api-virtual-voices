@@ -1,10 +1,12 @@
 import { Request, Response } from "express";
-import { startWhatsappBot } from "../services/whatsapp/index";
+import { startWhatsappBot, clients } from "../services/whatsapp/index";
 import { getSessionModel } from "../models/whatsappSession.model";
 import { getDbConnection } from "../config/connectionManager";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 import getIaConfigModel from "../models/iaConfig.model";
 import getUserModel from "../models/user.model";
+import fs from "fs";
+import path from "path";
 
 // Obtiene todos los mensajes de todos los chats
 export const getAllWhatsappMessages = async (req: Request, res: Response) => {
@@ -118,4 +120,44 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
     }
 
     res.status(200).json({ message: "Session updated", session });
+};
+
+export const deleteWhatsappSession = async (req: Request, res: Response) => {
+    const { c_name, sessionId } = req.params;
+
+    const conn = await getDbConnection(c_name);
+
+    const WhatsappSession = getSessionModel(conn);
+    const session = await WhatsappSession.findByIdAndDelete(sessionId);
+
+    if (!session) {
+        res.status(404).json({ message: "Session not found" });
+        return;
+    }
+
+    // Cierra el cliente si existe
+    if (clients[session.name]) {
+        try {
+            await clients[session.name].destroy();
+            delete clients[session.name];
+        } catch (err) {
+            console.error("Error closing WhatsApp client:", err);
+        }
+    }
+
+    // Ahora intenta borrar la carpeta
+    try {
+        const sessionFolder = path.join(
+            process.cwd(),
+            ".wwebjs_auth",
+            `session-${session.name}`
+        );
+        if (fs.existsSync(sessionFolder)) {
+            fs.rmSync(sessionFolder, { recursive: true, force: true });
+        }
+    } catch (err) {
+        console.error("Error deleting session folder:", err);
+    }
+
+    res.status(200).json({ message: "Session deleted" });
 };

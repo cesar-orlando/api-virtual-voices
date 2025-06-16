@@ -161,3 +161,31 @@ export const deleteWhatsappSession = async (req: Request, res: Response) => {
 
     res.status(200).json({ message: "Session deleted" });
 };
+
+export const MessageToAll = async (req: Request, res: Response): Promise<void> => {
+  const { messageAll } = req.body;
+  const { c_name, sessionId } = req.params;
+
+    const conn = await getDbConnection(c_name);
+
+    const WhatsappSession = getSessionModel(conn);
+    const session = await WhatsappSession.findById(sessionId);
+    if (!session) {
+      res.status(404).json({ message: "Session not found" });
+      return;
+    }
+    const whatsappClient = clients[`${c_name}:${session.name}`];
+
+  try {
+      const chats = await whatsappClient.getChats();
+      const nonGroups = chats.filter(chat => !chat.isGroup);
+      console.log(`Number of chats: ${chats.length}`);
+      nonGroups.forEach(chat => {
+        console.log(`Chat ID: ${chat.id._serialized}`);
+        console.log('Se envio el siguiente mensaje: ', messageAll);
+        whatsappClient.sendMessage(chat.id._serialized, messageAll);
+      });
+    } catch(error) {
+      console.error("Error getting chats:", error)
+    }
+}

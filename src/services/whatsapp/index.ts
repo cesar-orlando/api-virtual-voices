@@ -33,20 +33,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   });
 
   whatsappClient.on('ready', async () => {
-    try {
-      const messageToAll = `Hola, soy el bot de ${company}. Estoy aquí para ayudarte.`;
-      const chats = await whatsappClient.getChats();
-      const nonGroups = chats.filter(chat => !chat.isGroup);
-      console.log(`Number of chats: ${chats.length}`);
-      nonGroups.forEach(chat => {
-        //console.log(`Chat ID: ${chat.id._serialized}`);
-        //console.log('Se envio el siguiente mensaje: ', messageToAll);
-        //clients.sendMessage(chat.id._serialized, messageToAll);
-      });
-      console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
-    } catch(error) {
-      console.error("Error getting chats:", error)
-    }
+  console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
   });
 
   whatsappClient.on('message_create', async (message) => {

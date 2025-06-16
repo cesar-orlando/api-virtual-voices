@@ -149,13 +149,14 @@ export const compareLogin = async (req: Request, res: Response): Promise<void> =
         }
         // Generate JWT token
         const token = jwt.sign(
-          { sub: existingUser._id, email: existingUser.email, name: existingUser.name, role: existingUser.role },
+          { sub: existingUser._id, email: existingUser.email, name: existingUser.name, role: existingUser.role, c_name: dbName },
           JWT_SECRET,
           { expiresIn: "1h" }
         );
         res.json({
           name: existingUser.name,
           email: existingUser.email,
+          c_name: dbName,
           token,
         });
         console.log("Inicio de sesión exitoso para el usuario:", existingUser.name);

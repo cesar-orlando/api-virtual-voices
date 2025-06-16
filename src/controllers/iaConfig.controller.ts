@@ -3,6 +3,7 @@ import getIaConfigModel from "../models/iaConfig.model";
 import { getDbConnection } from "../config/connectionManager";
 import { generateResponse, openai, preparePrompt } from "../services/openai";
 import getUserModel from "../models/user.model";
+import getRecordModel from "../models/record.model";
 
 // 🔥 Crear configuración inicial si no existe
 export const createIAConfig = async (req: Request, res: Response): Promise<void> => {
@@ -157,6 +158,8 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
       IAPrompt = await preparePrompt(aiConfig);
     }
 
+    console.log(IAPrompt)
+
     const defaultResponse = "Una disculpa, podrias repetir tu mensaje, no pude entenderlo.";
     let aiResponse = defaultResponse;
 
@@ -166,12 +169,18 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
       if (msg.from === "ai") return { role: "assistant", content: msg.text };
       return null;
     }).filter(Boolean);
+
+    const conn = await getDbConnection(c_name);
+
+    const Record = getRecordModel(conn);
+    const records = await Record.find();
     
     try {
       const response = await generateResponse(
             IAPrompt,
             aiConfig,
-            history)
+            history,
+            records)
           aiResponse = response || defaultResponse;
     } catch (error) {
       console.error("Error al obtener respuesta de OpenAI:", error);

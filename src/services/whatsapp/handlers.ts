@@ -7,6 +7,7 @@ import { getSessionModel } from '../../models/whatsappSession.model';
 import { io } from '../../server';
 import { Connection, Model, Types } from 'mongoose';
 import getTableModel from '../../models/table.model';
+import getRecordModel from '../../models/record.model';
 
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
@@ -103,6 +104,8 @@ async function sendAndRecordBotResponse(
   let aiResponse = defaultResponse;
   const IaConfig = getIaConfigModel(conn);
   const sessionModel = getSessionModel(conn);
+  const Record = getRecordModel(conn);
+  const records = await Record.find();
   const session = await sessionModel.findOne({ name: sessionName });
   const config = await IaConfig.findOne({ _id: session?.IA?.id });
 
@@ -126,7 +129,8 @@ async function sendAndRecordBotResponse(
     const response = await generateResponse(
       IAPrompt,
       config,
-      history)
+      history,
+      records)
     aiResponse = response || defaultResponse;
   } catch (error) {
     console.error("Error al obtener respuesta de OpenAI:", error);

@@ -86,7 +86,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
 // Update a user by ID
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
-  const { name, email, c_name } = req.body;
+  const { name, email, password, c_name } = req.body;
   const dbName = `${c_name}`;
   const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
   const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");

@@ -32,8 +32,8 @@ const IaConfigSchema: Schema = new Schema(
     dataTemplate: { type: String, default: "{{label}}: {{value}}" },
     customPrompt: { type: String, default: "" },
     user: {
-      id: { type: Types.ObjectId, ref: "User", required: true }, // Referencia al usuario
-      name: { type: String, required: true }, // Nombre del usuario asociado
+      id: { type: Types.ObjectId, ref: "User" }, // Referencia al usuario
+      name: { type: String }, // Nombre del usuario asociado
     }
   },
   { timestamps: true }

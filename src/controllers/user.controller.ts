@@ -9,18 +9,57 @@ const saltRound = 10; // Number of rounds for bcrypt hashing
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"; // Add this at the top
 
 // Get all users
-export const getAllUsers = async (req: Request, res: Response) => {
-  const { c_name } = req.body;
+export const getAllCompanyUsers = async (req: Request, res: Response) => {
+  const { c_name } = req.params;
 
   const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
   const users = await User.find();
+
+  if (users.length === 0) {
+    res.status(404).json({ message: "No hay usuarios registrados" });
+    return;
+  }
+
   res.json(users);
 };
 
+export const getAllUsers = async (req: Request, res: Response) => {
+  if (!mongoose.connection.db) {
+      res.status(500).json({ message: "Database connection not established" });
+      return;
+    }
+  
+  const admin = mongoose.connection.db.admin();
+  const dbs = await admin.listDatabases();
+
+  const allUsers: any[] = [];
+
+  for (const dbInfo of dbs.databases) {
+    const dbName = dbInfo.name;
+    if (dbName === "admin" || dbName === "local") continue;
+
+    try {
+      const conn = await getDbConnection(dbName);
+      const User = getUserModel(conn);
+      const users = await User.find();
+      // Optionally, add dbName to each user for context
+      users.forEach((user: any) => {
+        allUsers.push({ ...user.toObject(), dbName });
+      });
+    } catch (err) {
+      // Optionally log or handle errors per database
+      console.error(`Error fetching users from ${dbName}:`, err);
+    }
+  }
+};
+
 // Get a single user by ID
-export const getUserById = async (req: Request, res: Response): Promise<void> => {
+export const getUserById = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { c_name } = req.params;
 
   const conn = await getDbConnection(c_name);
@@ -36,7 +75,10 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 };
 
 // Create a new user
-export const createUser = async (req: Request, res: Response): Promise<void> => {
+export const createUser = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { name, email, password, role, c_name } = req.body;
   if (!name || !email) {
     res.status(400).json({ message: "Name and email are required" });
@@ -47,7 +89,9 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     return;
   }
   if (password.length < 10) {
-    res.status(400).json({ message: "Password must be at least 10 characters long" });
+    res
+      .status(400)
+      .json({ message: "Password must be at least 10 characters long" });
     return;
   }
   if (!mongoose.connection.db) {
@@ -79,7 +123,10 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 };
 
 // Update a user by ID
-export const updateUser = async (req: Request, res: Response): Promise<void> => {
+export const updateUser = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { name, email, password, c_name } = req.body;
 
   const conn = await getDbConnection(c_name);
@@ -101,9 +148,12 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 };
 
 // Delete a user by ID
-export const deleteUser = async (req: Request, res: Response): Promise<void> => {
+export const deleteUser = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   const { c_name } = req.body;
-  
+
   const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
@@ -111,12 +161,15 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
   const deletedUser = await User.findByIdAndDelete(req.params.id);
   if (!deletedUser) {
     res.status(404).json({ message: "user not found" });
-    return
+    return;
   }
   res.status(204).send();
 };
 
-export const compareLogin = async (req: Request, res: Response): Promise<void> => {
+export const compareLogin = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { email, password } = req.body;
     if (!mongoose.connection.db) {
@@ -136,7 +189,7 @@ export const compareLogin = async (req: Request, res: Response): Promise<void> =
 
       if (existingUser) {
         if (!existingUser.email) {
-          res.status(400).json({ error: "Credenciales inválidas" });
+          res.status(401).json({ error: "Credenciales inválidas" });
           return;
         }
         const passwordMatch = await bcrypt.compare(
@@ -144,12 +197,19 @@ export const compareLogin = async (req: Request, res: Response): Promise<void> =
           existingUser.password
         );
         if (!passwordMatch) {
-          res.status(400).json({ error: "Credenciales inválidas" });
+          res.status(401).json({ error: "Credenciales inválidas" });
           return;
         }
         // Generate JWT token
         const token = jwt.sign(
-          { sub: existingUser._id, email: existingUser.email, name: existingUser.name, role: existingUser.role, c_name: dbName, id: existingUser._id },
+          {
+            sub: existingUser._id,
+            email: existingUser.email,
+            name: existingUser.name,
+            role: existingUser.role,
+            c_name: dbName,
+            id: existingUser._id,
+          },
           JWT_SECRET,
           { expiresIn: "1h" }
         );
@@ -160,14 +220,19 @@ export const compareLogin = async (req: Request, res: Response): Promise<void> =
           c_name: dbName,
           token,
         });
-        console.log("Inicio de sesión exitoso para el usuario:", existingUser.name);
+        console.log(
+          "Inicio de sesión exitoso para el usuario:",
+          existingUser.name
+        );
         return;
       }
     }
     // If no user found
-    res.status(400).json({ error: "Credenciales inválidas" });
-  } catch (error) {
-    res.status(400).json({ message: "Error comparing login" });
+    res.status(401).json({ error: "Credenciales inválidas" });
+  } catch (error: any) {
+    res
+      .status(400)
+      .json({ message: "Error comparing login", error: error.message });
     return;
   }
 };

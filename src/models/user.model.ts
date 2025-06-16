@@ -4,7 +4,8 @@ import { Schema, Document, Connection, Model } from "mongoose";
 export interface IUser extends Document {
   name: string;
   email: string;
-  password: string
+  password: string;
+  role: string;
   createdAt: Date;
 }
 
@@ -14,6 +15,7 @@ const UserSchema: Schema = new Schema(
     name: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    role: { type: String, enum:['Admin','Usuario'], default: 'Usuario'},
     status: { 
       type: String, 
       enum: [1, 2, 3], // 1: Active, 2: Inactive, 3: Suspended

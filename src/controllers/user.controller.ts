@@ -50,15 +50,12 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     res.status(400).json({ message: "Password must be at least 10 characters long" });
     return;
   }
-
-  // Check if the company database exists
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const adminConn = await getDbConnection("admin", uriBase || "mongodb://localhost:27017");
-  if (!adminConn.db) {
+  if (!mongoose.connection.db) {
     res.status(500).json({ message: "Database connection not established" });
     return;
   }
-  const admin = adminConn.db.admin();
+
+  const admin = mongoose.connection.db.admin();
   const dbs = await admin.listDatabases();
   const dbExists = dbs.databases.some((db: any) => db.name === c_name);
 
@@ -66,10 +63,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     res.status(400).json({ message: "Company database does not exist" });
     return;
   }
-
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
 
@@ -87,9 +81,8 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 // Update a user by ID
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   const { name, email, password, c_name } = req.body;
-  const dbName = `${c_name}`;
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
-  const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+
+  const conn = await getDbConnection(c_name);
 
   const User = getUserModel(conn);
 
@@ -132,13 +125,12 @@ export const compareLogin = async (req: Request, res: Response): Promise<void> =
     }
     const admin = mongoose.connection.db.admin();
     const dbs = await admin.listDatabases();
-    const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
 
     for (const dbInfo of dbs.databases) {
       const dbName = dbInfo.name;
       if (dbName === "admin" || dbName === "local") continue;
 
-      const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+      const conn = await getDbConnection(dbName);
       const User = getUserModel(conn);
       const existingUser = await User.findOne({ email });
 

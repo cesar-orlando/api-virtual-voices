@@ -21,7 +21,7 @@ export async function generateResponse(
   chatHistory: any,
   records: IRecord[]
 ): Promise<string|null> {
-  console.log(records);
+  console.log(prompt);
   const response = await openai.chat.completions.create({
     model: "gpt-4",
     messages: [

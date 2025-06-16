@@ -2,6 +2,7 @@ import { Schema, Document, Connection, Model, Types } from "mongoose";
 
 export interface IIaConfig extends Document {
   name: string;
+  type: string;
   objective: string;
   tone: string;
   welcomeMessage: string;
@@ -25,6 +26,7 @@ const IAIntentSchema = new Schema({
 const IaConfigSchema: Schema = new Schema(
   {
     name: { type: String, default: "Asistente" },
+    type: { type: String, enum: ["general","personal"], default: "personal"},
     objective: { type: String, enum: ["agendar", "responder", "recomendar", "ventas", "soporte"], default: "ventas" },
     tone: { type: String, enum: ["formal", "amigable", "persuasivo"], default: "amigable" },
     welcomeMessage: { type: String, default: "¡Hola! ¿En qué puedo ayudarte hoy?" },

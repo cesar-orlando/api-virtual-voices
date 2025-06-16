@@ -27,7 +27,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   console.log(`Iniciando sesión WhatsApp: ${company} - ${sessionName}`);
   const whatsappClient = new Client({
     authStrategy: new LocalAuth({ 
-      clientId: sessionName,
+      clientId: `${company}-${sessionName}`,
       dataPath: getAuthDir()
     }),
     puppeteer: {
@@ -53,7 +53,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   });
 
   whatsappClient.on('ready', async () => {
-  console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
+    console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
   });
 
   whatsappClient.on('message_create', async (message) => {

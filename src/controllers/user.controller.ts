@@ -10,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"; // Add this at t
 
 // Get all users
 export const getAllUsers = async (req: Request, res: Response) => {
-  const { c_name } = req.body;
+  const { c_name } = req.params;
 
   const conn = await getDbConnection(c_name);
 

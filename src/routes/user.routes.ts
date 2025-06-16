@@ -11,7 +11,7 @@ import {
 const router = Router();
 
 // Define routes and map them to controller functions
-router.get("/", getAllUsers);
+router.get("/:c_name", getAllUsers);
 router.get("/:c_name/:id", getUserById);
 router.post("/register", createUser);
 router.put("/:id", updateUser);

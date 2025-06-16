@@ -4,16 +4,35 @@ import http, { get } from 'http';
 import { Server } from 'socket.io';
 import { connectDB, getAllSessionsFromAllDatabases } from "./config/database";
 import { startWhatsappBot } from "./services/whatsapp";
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
-const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/clientesdb";
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI || '';
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } }); // Permite CORS para pruebas
+export const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
-export { io };
+// Crear directorio .wwebjs_auth si no existe
+const getAuthDir = () => {
+  if (process.env.RENDER) {
+    return '/opt/render/project/src/.wwebjs_auth';
+  }
+  return path.join(process.cwd(), '.wwebjs_auth');
+};
+
+const authDir = getAuthDir();
+if (!fs.existsSync(authDir)) {
+  fs.mkdirSync(authDir, { recursive: true });
+  console.log(`✅ Directorio de autenticación creado en: ${authDir}`);
+}
 
 async function main() {
   await connectDB(MONGO_URI);

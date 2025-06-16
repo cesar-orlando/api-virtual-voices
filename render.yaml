@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: api-virtual-voices
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: RENDER
+        value: true
+    disk:
+      name: whatsapp-sessions
+      mountPath: /opt/render/project/src/.wwebjs_auth
+      sizeGB: 1 

@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from "mongoose";
+import { Schema, Document, Connection, Model } from "mongoose";
 
 // Define la interfaz para la tabla
 export interface ITable extends Document {
@@ -20,4 +20,6 @@ const TableSchema: Schema = new Schema(
 );
 
 // Exporta el modelo
-export default mongoose.model<ITable>("Table", TableSchema);
+export default function getTableModel(conn: Connection): Model<ITable>{
+  return conn.model<ITable>("Table", TableSchema);
+}

@@ -20,7 +20,6 @@ export async function getAllSessionsFromAllDatabases() {
   }
   const admin = mongoose.connection.db.admin();
   const dbs = await admin.listDatabases();
-  const uriBase = process.env.MONGO_URI?.split("/")[0] + "//" + process.env.MONGO_URI?.split("/")[2];
 
   const allSessions = [];
 
@@ -29,12 +28,13 @@ export async function getAllSessionsFromAllDatabases() {
     // Filtra solo las bases de datos de empresas (para no incluir admin o local)
     if (dbName === "admin" || dbName === "local") continue;
 
-    const conn = await getDbConnection(dbName, uriBase || "mongodb://localhost:27017");
+    const conn = await getDbConnection(dbName);
     const Session = getSessionModel(conn);
     const sessions = await Session.find();
     allSessions.push(...sessions.map(session => ({
       name: session.name,
       company: dbName,
+      user_id: session.user.id,
     })));
   }
 

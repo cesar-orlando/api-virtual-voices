@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import tableRoutes from "./routes/table.routes";
 import dynamicRecordRoutes from "./routes/record.routes";
-import whatsappChatRoutes from './routes/whatsappChat.routes';
+import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import userRoutes from "./routes/user.routes";
@@ -21,7 +21,7 @@ app.use("/api/tables", tableRoutes);
 app.use("/api/records", dynamicRecordRoutes);
 
 // Rutas para chat de WhatsApp
-app.use('/api/whatsapp', whatsappChatRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 
 // Rutas para empresas
 app.use("/api/companies", companyRoutes);

@@ -12,10 +12,10 @@ const router = Router();
 router.post("/", createTable);
 
 // Ruta para obtener todas las tablas
-router.get("/", getTables);
+router.get("/:c_name", getTables);
 
 // Ruta para eliminar una tabla
-router.delete("/:id", deleteTable);
+router.delete("/:c_name/:id", deleteTable);
 
 // Ruta para actualizar una tabla
 router.put("/:id", updateTable);

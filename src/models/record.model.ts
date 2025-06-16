@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from "mongoose";
+import { Schema, Document, Connection, Model } from "mongoose";
 import CustomFieldSchema from "./schema/customField.schema"; // Importa el subesquema
 
 // Define la interfaz para un registro
@@ -23,4 +23,6 @@ const RecordSchema: Schema = new Schema(
 );
 
 // Exporta el modelo
-export default mongoose.model<IRecord>("Record", RecordSchema);
+export default function getRecordModel(conn: Connection): Model<IRecord> {
+  return conn.model<IRecord>("Record", RecordSchema);
+}

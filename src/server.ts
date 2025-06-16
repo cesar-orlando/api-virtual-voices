@@ -22,7 +22,7 @@ async function main() {
   });
   const sessions = await getAllSessionsFromAllDatabases();
   for (const session of sessions) {
-    await startWhatsappBot(session.name, session.company);
+    await startWhatsappBot(session.name, session.company, session.user_id);
     await new Promise(res => setTimeout(res, 2000)); // Espera 2 segundos entre sesiones
   }
 }

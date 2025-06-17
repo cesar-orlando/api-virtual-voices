@@ -3,7 +3,8 @@ import qrcode from 'qrcode-terminal';
 import { handleIncomingMessage } from './handlers';
 import { io } from '../../server'; // Ajusta la ruta según tu estructura
 import { Types } from 'mongoose';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
 // Objeto global para almacenar clientes por sesión
 export const clients: Record<string, Client> = {};
@@ -44,23 +45,69 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     },
   });
 
-  whatsappClient.on('qr', async (qr) => {
-    console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
-    qrcode.generate(qr, { small: true });
-    if (io) {
-      io.emit(`whatsapp-qr-${company}-${user_id}`, qr);
+  clients[clientKey] = whatsappClient;
+
+  async function cleanUpResources(reason: string) {
+    console.log(`🧹 Limpiando recursos para ${clientKey} por: ${reason}`);
+    if (clients[clientKey]) {
+      clients[clientKey].destroy();
+      setTimeout(() => {
+        try {
+          delete clients[clientKey];
+          const sessionFolder = path.join(
+            process.cwd(),
+            ".wwebjs_auth",
+            `session-${company}-${sessionName}`
+          );
+          if (fs.existsSync(sessionFolder)) {
+              fs.rmSync(sessionFolder, { recursive: true, force: true });
+          }
+        } catch (err:any) {
+          if (err.code === 'EPERM' || err.code === 'EBUSY') {
+            console.warn("No se pudo eliminar la carpeta/archivo de sesión porque está en uso. Se ignorará este error.");
+          } else {
+            console.error("Error al destruir el cliente:", err);
+          }
+        }
+      }, 5000);
     }
-  });
+    // Opcional: notifica al frontend 
+    if (io) {
+      io.emit(`whatsapp-session-ended-${company}-${user_id}`, { sessionName, reason });
+    }
+  }
 
-  whatsappClient.on('ready', async () => {
-    console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
-  });
+  return new Promise<Client>((resolve, reject) => {
+    whatsappClient.on('qr', async (qr) => {
+      console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
+      qrcode.generate(qr, { small: true });
+      if (io) {
+        io.emit(`whatsapp-qr-${company}-${user_id}`, qr);
+      }
+    });
 
-  whatsappClient.on('message_create', async (message) => {
-    console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
-    await handleIncomingMessage(message, whatsappClient, company, sessionName);
+    whatsappClient.on('ready', async () => {
+      console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
+      resolve(whatsappClient);
+    });
+
+    whatsappClient.on('auth_failure', (msg) => {
+      console.error(`❌ Fallo de autenticación en la sesión ${company}:${sessionName} :`, msg);
+      cleanUpResources('auth_failure');
+      reject(new Error('Auth failure'));
+    });
+
+    whatsappClient.on('disconnected', (reason) => {
+      console.error(`❌ Sesión ${company}:${sessionName} desconectada :`, reason);
+      cleanUpResources('disconnected');
+      reject(new Error('Disconnected'));
+    });
+
+    whatsappClient.on('message_create', async (message) => {
+      console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
+      await handleIncomingMessage(message, whatsappClient, company, sessionName);
+    });
+
+    whatsappClient.initialize();
   });
-  whatsappClient.initialize();
-  clients[clientKey] = whatsappClient; // Guarda el cliente para evitar duplicados
-  return whatsappClient;
 };

@@ -56,8 +56,8 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
   await newSessionAiConfig.save();
 
   if (existingSession) {
-    res.status(400).json({ message: "A session with this name already exists" });
-    return;
+    await startWhatsappBot(sessionName , c_name, user_id);
+    res.status(200).json({ message: "A session with this name already exists, only sending new QR" });
   } else {
     try {
       // Espera a que la sesión esté lista antes de guardar en la base de datos
@@ -150,7 +150,7 @@ export const deleteWhatsappSession = async (req: Request, res: Response) => {
         const sessionFolder = path.join(
             process.cwd(),
             ".wwebjs_auth",
-            `session-${session.name}`
+            `session-${c_name}-${session.name}`
         );
         if (fs.existsSync(sessionFolder)) {
             fs.rmSync(sessionFolder, { recursive: true, force: true });

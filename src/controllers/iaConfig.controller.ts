@@ -51,14 +51,14 @@ export const getGeneralIAConfig = async (req: Request, res: Response): Promise<v
     const conn = await getDbConnection(c_name);
 
     const IaConfig = getIaConfigModel(conn);
-    const firstConfig = await IaConfig.findOne({}, {}, { sort: { createdAt: 1 } });
+    const config = await IaConfig.findOne({type: 'general'}, {}, {});
 
-    if (!firstConfig) {
+    if (!config) {
       res.status(404).json({ message: "Configuración no encontrada." });
       return;
     }
 
-    res.json(firstConfig);
+    res.json(config);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener la configuración." });
   }
@@ -113,22 +113,15 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Encuentra el primer documento creado
-    const firstConfig = await IaConfig.findOne({}, {}, { sort: { createdAt: 1 } });
-    if (!firstConfig) {
-      res.status(404).json({ message: "Configuración no encontrada." });
-      return;
-    }
-
-    // Si el documento a modificar es el primero creado, cancela la modificación
+    // Si el documento a modificar es de tipo general y usuario no es admin entonces ignorar
     const docToUpdate = await IaConfig.findOne({ _id: updates._id }, {}, { sort: { createdAt: 1 } });
-    if (docToUpdate && String(docToUpdate._id) === String(firstConfig._id) && user.role !== "Admin") {
-      console.log("Intento de modificación del primer documento creado por un usuario no admin.",user);
-      res.status(403).json({ message: "No se puede modificar el primer documento creado." });
+    if (docToUpdate?.type === "general" && user.role !== "Admin") {
+      console.log("Intento de modificación de IaConfig general por un usuario no admin.",user);
+      res.status(403).json({ message: "No se puede modificar el IaConfig general." });
       return;
     }
 
-    // Si no es el primero o el usuario es admin, realiza la actualización normalmente
+    // Si no es general o el usuario es admin, realiza la actualización normalmente
     const updatedConfig = await IaConfig.findOneAndUpdate(
       { _id: updates._id }, 
       updates, 
@@ -157,8 +150,6 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     if (aiConfig) {
       IAPrompt = await preparePrompt(aiConfig);
     }
-
-    console.log(IAPrompt)
 
     const defaultResponse = "Una disculpa, podrias repetir tu mensaje, no pude entenderlo.";
     let aiResponse = defaultResponse;

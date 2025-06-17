@@ -34,7 +34,7 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
   const WhatsappSession = getSessionModel(conn);
   const IAConfig = getIaConfigModel(conn);
 
-  const defaultIAConfig = await IAConfig.findOne().sort({ _id: 1 }); // Obtiene la primera configuración de IA por defecto
+  const defaultIAConfig = await IAConfig.findOne({type: 'general'}); // Obtiene el prompt general por defecto
   const existingSession = await WhatsappSession.findOne({ name: sessionName });
 
   // Copia los campos relevantes del defaultIAConfig, excluyendo _id y timestamps

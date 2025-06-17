@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import getCompanyModel from "../models/company.model";
 import { getDbConnection } from "../config/connectionManager";
 import { createIAConfig } from "./iaConfig.controller";
+import getIaConfigModel from "../models/iaConfig.model";
 
 export const createCompanyAndDatabase = async (req: Request, res: Response) => {
   try {
@@ -15,31 +16,27 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
     const Company = getCompanyModel(conn);
     const company = new Company({ name, address, phone });
     await company.save();
-
     
     // Llama a createIAConfig para crear la configuración IA inicial
     // Simula un Request y Response mínimos para reutilizar el controlador
-    const fakeReq = {
-      params: { c_name: name },
-      body: {
-        name: "Asistente",
-        tone: "amigable",
-        objective: "agendar",
-        welcomeMessage: "¡Hola! ¿En qué puedo ayudarte?",
-      }
-    } as unknown as Request;
-    const fakeRes = {
-      status: (code: number) => ({
-        json: (obj: any) => obj
-      })
-    } as unknown as Response;
+    const IaConfig = getIaConfigModel(conn);
 
-    await createIAConfig(fakeReq, fakeRes);
+    const firstConfig = new IaConfig({
+      name: "Asistente",
+      type: "general",
+      tone: "persuasivo",
+      objective: "ventas",
+      welcomeMessage: "¡Hola! ¿Buscas una nueva oferta hoy?",
+      intents: [],
+      customPrompt: "",
+    });
 
-    res.status(201).json({ message: "Empresa y base de datos creadas", name });
+    await firstConfig.save();
+
+    res.status(201).json({ message: "Empresa, base de datos e IAConfig creadas", name });
     return;
   } catch (error) {
-    res.status(500).json({ message: "Error creating company/database", error });
+    res.status(500).json({ message: "Error creando empresa/base de datos/IAConfig", error });
     return;
   }
 };

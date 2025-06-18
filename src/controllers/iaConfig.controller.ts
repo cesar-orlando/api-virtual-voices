@@ -87,16 +87,15 @@ export const getAllIAConfigs = async (req: Request, res: Response): Promise<void
 
     const IaConfig = getIaConfigModel(conn);
 
-    let configs: IIaConfig[] = await IaConfig.find({type: 'general'});
-    let userConfigs: IIaConfig[];
+    let configs: IIaConfig[];
 
     if (user.role !== "Admin") {
-      userConfigs = await IaConfig.find({ "user.id": user_id });
+      let general_configs = await IaConfig.find({type: 'general'});
+      let user_configs = await IaConfig.find({ "user.id": user_id });
+      configs = general_configs.concat(user_configs);
     } else {
-      userConfigs = await IaConfig.find({});
+      configs = await IaConfig.find({});
     }
-
-    configs = configs.concat(userConfigs);
 
     res.json(configs);
   } catch (error) {

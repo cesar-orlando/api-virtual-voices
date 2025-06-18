@@ -133,9 +133,11 @@ export const updateUser = async (
 
   const User = getUserModel(conn);
 
+  const hashedPassword = await bcrypt.hash(password, saltRound);
+
   const updatedUser = await User.findByIdAndUpdate(
     req.params.id,
-    { name, email, password },
+    { name, email, password: hashedPassword, },
     { new: true, runValidators: true }
   );
 
@@ -217,6 +219,7 @@ export const compareLogin = async (
           id: existingUser._id,
           name: existingUser.name,
           email: existingUser.email,
+          role: existingUser.role,
           c_name: dbName,
           token,
         });

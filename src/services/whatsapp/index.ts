@@ -9,6 +9,9 @@ import path from "path";
 // Objeto global para almacenar clientes por sesión
 export const clients: Record<string, Client> = {};
 
+// Objeto global para limitar la generacion de QR
+const qrSent: Record<string, boolean> = {};
+
 // Determinar el directorio de autenticación basado en el entorno
 const getAuthDir = () => {
   if (process.env.RENDER) {
@@ -79,6 +82,15 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   return new Promise<Client>((resolve, reject) => {
     whatsappClient.on('qr', async (qr) => {
+      // Usa una clave única por sesión
+      if (qrSent[clientKey]) {
+        delete qrSent[clientKey];
+        cleanUpResources('User didnt scan QR');
+        reject(new Error('User didnt scan QR'));
+        return;
+      } // Ya se envió el QR, no lo envíes de nuevo
+
+      qrSent[clientKey] = true;
       console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
       qrcode.generate(qr, { small: true });
       if (io) {
@@ -88,17 +100,20 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     whatsappClient.on('ready', async () => {
       console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
+      delete qrSent[clientKey];
       resolve(whatsappClient);
     });
 
     whatsappClient.on('auth_failure', (msg) => {
       console.error(`❌ Fallo de autenticación en la sesión ${company}:${sessionName} :`, msg);
+      delete qrSent[clientKey];
       cleanUpResources('auth_failure');
       reject(new Error('Auth failure'));
     });
 
     whatsappClient.on('disconnected', (reason) => {
       console.error(`❌ Sesión ${company}:${sessionName} desconectada :`, reason);
+      delete qrSent[clientKey];
       cleanUpResources('disconnected');
       reject(new Error('Disconnected'));
     });

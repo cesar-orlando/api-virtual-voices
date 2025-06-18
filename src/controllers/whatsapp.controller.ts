@@ -34,39 +34,25 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
   const WhatsappSession = getSessionModel(conn);
   const IAConfig = getIaConfigModel(conn);
 
-  const defaultIAConfig = await IAConfig.findOne({type: 'general'}); // Obtiene el prompt general por defecto
   const existingSession = await WhatsappSession.findOne({ name: sessionName });
-
-  // Copia los campos relevantes del defaultIAConfig, excluyendo _id y timestamps
-  const aiConfigData = defaultIAConfig ? {
-    name: defaultIAConfig.name,
-    tone: defaultIAConfig.tone,
-    objective: defaultIAConfig.objective,
-    welcomeMessage: defaultIAConfig.welcomeMessage,
-    intents: defaultIAConfig.intents,
-    dataTemplate: defaultIAConfig.dataTemplate,
-    customPrompt: defaultIAConfig.customPrompt,
-    user: {
-      id: user_id,
-      name: user_name
-    }
-  } : {};
-
-  const newSessionAiConfig = new IAConfig(aiConfigData);
-  await newSessionAiConfig.save();
 
   if (existingSession) {
     await startWhatsappBot(sessionName , c_name, user_id);
     res.status(200).json({ message: "A session with this name already exists, only sending new QR" });
   } else {
     try {
+
       // Espera a que la sesión esté lista antes de guardar en la base de datos
       await startWhatsappBot(sessionName , c_name, user_id);
-      const newSession = new WhatsappSession({ 
-        name: sessionName,  
+
+      const defaultIAConfig = await IAConfig.findOne({type: 'general'}); // Obtiene el prompt general por defecto
+
+      const newSession = new WhatsappSession({
+        name: sessionName,
         user: { id: user_id, name: user_name }, 
-        IA: { id: newSessionAiConfig?._id, name: newSessionAiConfig?.name }
+        IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name }
       });
+      
       await newSession.save();
       res.status(201).json({ message: `Session '${sessionName}' started` });
     } catch (error) {

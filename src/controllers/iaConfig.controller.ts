@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import getIaConfigModel from "../models/iaConfig.model";
+import getIaConfigModel, { IIaConfig } from "../models/iaConfig.model";
 import { getDbConnection } from "../config/connectionManager";
 import { generateResponse, openai, preparePrompt } from "../services/openai";
 import getUserModel from "../models/user.model";
@@ -15,6 +15,8 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       tone,
       objective,
       welcomeMessage,
+      user_id,
+      user_name,
     } = req.body;
 
     const conn = await getDbConnection(c_name);
@@ -34,6 +36,10 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       welcomeMessage,
       intents: [],
       customPrompt: "",
+      user: {
+        id: user_id,
+        name: user_name
+      }
     });
 
     await newConfig.save();
@@ -51,7 +57,7 @@ export const getGeneralIAConfig = async (req: Request, res: Response): Promise<v
     const conn = await getDbConnection(c_name);
 
     const IaConfig = getIaConfigModel(conn);
-    const config = await IaConfig.findOne({type: 'general'}, {}, {});
+    const config = await IaConfig.findOne({type: 'general'});
 
     if (!config) {
       res.status(404).json({ message: "Configuración no encontrada." });
@@ -81,13 +87,16 @@ export const getAllIAConfigs = async (req: Request, res: Response): Promise<void
 
     const IaConfig = getIaConfigModel(conn);
 
-    let configs;
+    let configs: IIaConfig[] = await IaConfig.find({type: 'general'});
+    let userConfigs: IIaConfig[];
 
     if (user.role !== "Admin") {
-      configs = await IaConfig.find({ "user.id": user_id });
+      userConfigs = await IaConfig.find({ "user.id": user_id });
     } else {
-      configs = await IaConfig.find({});
+      userConfigs = await IaConfig.find({});
     }
+
+    configs = configs.concat(userConfigs);
 
     res.json(configs);
   } catch (error) {

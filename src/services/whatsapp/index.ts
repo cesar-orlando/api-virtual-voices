@@ -76,7 +76,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     }
     // Opcional: notifica al frontend 
     if (io) {
-      io.emit(`whatsapp-session-ended-${company}-${user_id}`, { sessionName, reason });
+      io.emit(`whatsapp-status-${company}-${user_id}`, { status: reason, message: reason, session: sessionName});
     }
   }
 
@@ -102,6 +102,9 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     whatsappClient.on('ready', async () => {
       console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { status: "ready", session: sessionName });
+      }
       delete qrSent[clientKey];
       resolve(whatsappClient);
     });

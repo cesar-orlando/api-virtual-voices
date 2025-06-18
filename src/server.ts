@@ -43,7 +43,7 @@ async function main() {
   for (const session of sessions) {
     Promise.resolve(startWhatsappBot(session.name, session.company, session.user_id))
     .catch(err => {
-      console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`);
+      console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}`);
     });
   }
 }

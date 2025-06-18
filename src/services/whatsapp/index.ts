@@ -82,14 +82,16 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   return new Promise<Client>((resolve, reject) => {
     whatsappClient.on('qr', async (qr) => {
-      // Usa una clave única por sesión
+      
+      // Ya se envió el QR, no lo envíes de nuevo y borra los datos de la sesion
       if (qrSent[clientKey]) {
         delete qrSent[clientKey];
         cleanUpResources('User didnt scan QR');
         reject(new Error('User didnt scan QR'));
         return;
-      } // Ya se envió el QR, no lo envíes de nuevo
+      }
 
+      // Usa una clave única por sesión
       qrSent[clientKey] = true;
       console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
       qrcode.generate(qr, { small: true });

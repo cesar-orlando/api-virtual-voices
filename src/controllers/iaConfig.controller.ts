@@ -14,6 +14,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       name,
       tone,
       objective,
+      customPrompt,
       welcomeMessage,
       user_id,
       user_name,
@@ -33,9 +34,8 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       name,
       tone,
       objective,
+      customPrompt,
       welcomeMessage,
-      intents: [],
-      customPrompt: "",
       user: {
         id: user_id,
         name: user_name

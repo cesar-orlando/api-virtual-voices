@@ -1,7 +1,7 @@
 import { Message, Client } from 'whatsapp-web.js';
 import { generateResponse, openai, preparePrompt } from '../openai';
 import { getDbConnection } from "../../config/connectionManager";
-import { getWhatsappChatModel } from '../../models/whatsappChat.model';
+import { getWhatsappChatModel, IWhatsappChat } from '../../models/whatsappChat.model';
 import getIaConfigModel from '../../models/iaConfig.model';
 import { getSessionModel, IWhatsappSession } from '../../models/whatsappSession.model';
 import { io } from '../../server';
@@ -68,6 +68,11 @@ async function createNewChatRecord(
       id: session?.id,
       name: session?.name
     },
+    //Se le asigna por default al usuario dueño de la sesion
+    advisor: {
+      id: session?.user.id,
+      name: session?.user.name
+    },
     messages: [
       {
         direction: message.fromMe ? "outbound" : "inbound",
@@ -101,7 +106,7 @@ async function sendAndRecordBotResponse(
   sessionName: string,
   client: Client,
   message: Message,
-  existingRecord: any,
+  existingRecord: IWhatsappChat,
   conn: Connection,
   activeBot: boolean = true,
 ) {

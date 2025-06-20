@@ -14,29 +14,37 @@ export async function connectDB(uri: string) {
 }
 
 export async function getAllSessionsFromAllDatabases() {
-  // Usa el driver nativo para listar las bases de datos
   if (!mongoose.connection.db) {
     throw new Error("MongoDB connection is not established.");
   }
   const admin = mongoose.connection.db.admin();
   const dbs = await admin.listDatabases();
 
-  const allSessions = [];
+  // Filtra solo las bases de datos de empresas (para no incluir admin o local)
+  const companyDbs = dbs.databases.filter(
+    dbInfo => dbInfo.name !== "admin" && dbInfo.name !== "local"
+  );
 
-  for (const dbInfo of dbs.databases) {
-    const dbName = dbInfo.name;
-    // Filtra solo las bases de datos de empresas (para no incluir admin o local)
-    if (dbName === "admin" || dbName === "local") continue;
+  // Ejecuta las consultas en paralelo
+  const allSessionsArrays = await Promise.all(
+    companyDbs.map(async (dbInfo) => {
+      const dbName = dbInfo.name;
+      try {
+        const conn = await getDbConnection(dbName);
+        const Session = getSessionModel(conn);
+        const sessions = await Session.find();
+        return sessions.map(session => ({
+          name: session.name,
+          company: dbName,
+          user_id: session.user.id,
+        }));
+      } catch (err) {
+        console.error(`Error fetching sessions from ${dbName}:`, err);
+        return [];
+      }
+    })
+  );
 
-    const conn = await getDbConnection(dbName);
-    const Session = getSessionModel(conn);
-    const sessions = await Session.find();
-    allSessions.push(...sessions.map(session => ({
-      name: session.name,
-      company: dbName,
-      user_id: session.user.id,
-    })));
-  }
-
-  return allSessions;
+  // Aplana el array de arrays
+  return allSessionsArrays.flat();
 }

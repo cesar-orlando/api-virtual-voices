@@ -3,7 +3,7 @@ import { generateResponse, openai, preparePrompt } from '../openai';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import getIaConfigModel from '../../models/iaConfig.model';
-import { getSessionModel } from '../../models/whatsappSession.model';
+import { getSessionModel, IWhatsappSession } from '../../models/whatsappSession.model';
 import { io } from '../../server';
 import { Connection, Model, Types } from 'mongoose';
 import getTableModel from '../../models/table.model';
@@ -13,9 +13,9 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
   if (message.isStatus) return;
 
-  const userPhone = message.fromMe ? message.to.split('@')[0] : message.from.split('@')[0];
+  const userPhone = message.fromMe ? message.to : message.from;
 
-  if (userPhone !== '5216441500358') return;
+  if (userPhone !== '5216441500358@c.us') return;
 
   try {
 
@@ -38,11 +38,11 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
-      existingRecord = await createNewChatRecord(WhatsappChat, "clientes", userPhone, message);
+      const Session = getSessionModel(conn);
+      const session = await Session.findOne({ name: sessionName });
+      existingRecord = await createNewChatRecord(WhatsappChat, "clientes", userPhone, message, session);
     } else {
-      // Si el mensaje es del bot no lo guarda
-      if (message.fromMe && existingRecord.botActive) return;
-      await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message.body, "human")
+      await updateChatRecord(company, existingRecord, "inbound", message.body, "human")
     }
 
     if (!existingRecord || !existingRecord.botActive) return;
@@ -58,11 +58,16 @@ async function createNewChatRecord(
   WhatsappChat: Model<any>,
   tableSlug: string,
   phone: string,
-  message: Message
+  message: Message,
+  session: IWhatsappSession | null
 ) {
   const newChat = new WhatsappChat({
     tableSlug: tableSlug,
     phone: phone,
+    session: {
+      id: session?.id,
+      name: session?.name
+    },
     messages: [
       {
         direction: message.fromMe ? "outbound" : "inbound",

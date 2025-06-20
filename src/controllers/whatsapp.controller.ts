@@ -175,3 +175,42 @@ export const MessageToAll = async (req: Request, res: Response): Promise<void> =
       console.error("Error getting chats:", error)
     }
 }
+
+export const sendWhatsappMessage = async (req: Request, res: Response) => {
+  try {
+    const { c_name, sessionId } = req.params;
+    const { phone, message } = req.body
+
+    const conn = await getDbConnection(c_name);
+
+    const WhatsappSession = getSessionModel(conn);
+    const WhatsappChat = getWhatsappChatModel(conn);
+
+    const session = await WhatsappSession.findById(sessionId);
+    const chatRecord = await WhatsappChat.findOne({ phone });
+
+    if (!session) {
+        res.status(404).json({ message: "Session not found" });
+        return;
+    }
+
+    if(!chatRecord) {
+        res.status(404).json({ message: "Chats not found" });
+        return;
+    }
+
+    clients[`${c_name}:${session.name}`].sendMessage(phone, message);
+
+    chatRecord.messages.push({
+      direction: "outbound",
+      body: message,
+      respondedBy: "human",
+    });
+
+    await chatRecord.save();
+
+    res.status(200).json({ message: "Message sent" });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching messages", error });
+  }
+};

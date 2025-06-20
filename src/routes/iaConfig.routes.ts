@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createIAConfig , getAllIAConfigs, getGeneralIAConfig, testIA, updateIAConfig} from "../controllers/iaConfig.controller";
+import { createIAConfig , deleteIAConfig, getAllIAConfigs, getGeneralIAConfig, testIA, updateIAConfig} from "../controllers/iaConfig.controller";
 
 const router = Router();
 
@@ -12,5 +12,7 @@ router.get("/:c_name/:user_id", getAllIAConfigs);
 router.get("/:c_name", getGeneralIAConfig);
 
 router.put("/:c_name/:user_id", updateIAConfig);
+
+router.delete("/:c_name/:user_id/:config_id", deleteIAConfig)
 
 export default router;

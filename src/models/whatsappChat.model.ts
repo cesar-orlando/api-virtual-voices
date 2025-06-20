@@ -8,6 +8,10 @@ export interface IWhatsappChat extends Document {
   name?: string;
   botActive: boolean;
   messages: {}[];
+  session?: {
+    id: mongoose.Types.ObjectId;
+    name?: string;
+  };
   advisor?: {
     id: mongoose.Types.ObjectId;
     name?: string;
@@ -22,6 +26,10 @@ const WhatsappChatSchema: Schema = new Schema(
     name: { type: String, required: false },
     botActive: { type: Boolean, default: true },
     messages: { type: [whatsappMessage], required: true },
+    session: {
+      id: { type: Schema.Types.ObjectId, required: false },
+      name: { type: String, required: false }
+    },
     advisor: {
       id: { type: Schema.Types.ObjectId, required: false },
       name: { type: String, required: false }

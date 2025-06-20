@@ -123,7 +123,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       reject(new Error('Disconnected'));
     });
 
-    whatsappClient.on('message_create', async (message) => {
+    whatsappClient.on('message', async (message) => {
       console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
       await handleIncomingMessage(message, whatsappClient, company, sessionName);
     });

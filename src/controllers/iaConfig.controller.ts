@@ -16,8 +16,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       objective,
       customPrompt,
       welcomeMessage,
-      user_id,
-      user_name,
+      user
     } = req.body;
 
     const conn = await getDbConnection(c_name);
@@ -37,8 +36,8 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       customPrompt,
       welcomeMessage,
       user: {
-        id: user_id,
-        name: user_name
+        id: user.id,
+        name: user.name
       }
     });
 
@@ -145,6 +144,45 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error("Error al actualizar configuración IA:", error);
     res.status(500).json({ message: "Error al actualizar configuración IA" });
+  }
+};
+
+export const deleteIAConfig = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { c_name, user_id, config_id } = req.params;
+
+    const conn = await getDbConnection(c_name);
+
+    const IaConfig = getIaConfigModel(conn);
+    const UserConfig = getUserModel(conn);
+
+    const user = await UserConfig.findById(user_id);
+
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado." });
+      return;
+    }
+
+    // Si el documento a modificar es de tipo general y usuario no es admin entonces ignorar
+    const docToUpdate = await IaConfig.findOne({ _id: config_id }, {}, { sort: { createdAt: 1 } });
+    if (docToUpdate?.type === "general" && user.role !== "Admin") {
+      console.log("Intento de modificación de IaConfig general por un usuario no admin.",user);
+      res.status(403).json({ message: "No se puede modificar el IaConfig general." });
+      return;
+    }
+
+    // Si no es general o el usuario es admin, realiza la actualización normalmente
+    const updatedConfig = await IaConfig.findByIdAndDelete({ _id: config_id });
+
+    if (!updatedConfig) {
+      res.status(404).json({ message: "Configuración no encontrada." });
+      return;
+    }
+
+    res.json({ message: "Configuración eliminada", config: updatedConfig });
+  } catch (error) {
+    console.error("Error al eliminar configuración IA:", error);
+    res.status(500).json({ message: "Error al eliminar configuración IA" });
   }
 };
 

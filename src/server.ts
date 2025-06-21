@@ -41,6 +41,7 @@ async function main() {
   });
   const sessions = await getAllSessionsFromAllDatabases();
   for (const session of sessions) {
+    console.log(`Iniciando sesion WhatsApp para ${session.company} - ${session.name}`)
     Promise.resolve(startWhatsappBot(session.name, session.company, session.user_id))
     .catch(err => {
       console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}`);

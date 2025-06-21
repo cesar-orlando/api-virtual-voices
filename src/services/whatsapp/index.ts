@@ -5,6 +5,8 @@ import { io } from '../../server'; // Ajusta la ruta según tu estructura
 import { Types } from 'mongoose';
 import fs from "fs";
 import path from "path";
+import { getDbConnection } from '../../config/connectionManager';
+import { getSessionModel } from '../../models/whatsappSession.model';
 
 // Objeto global para almacenar clientes por sesión
 export const clients: Record<string, Client> = {};
@@ -21,14 +23,12 @@ const getAuthDir = () => {
 };
 
 export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId) => {
-  // Si ya existe el cliente para esta sesión, no lo crees de nuevo
   const clientKey = `${company}:${sessionName}`;
   if (clients[clientKey]) {
     console.log(`Cliente WhatsApp para la sesión '${sessionName}' ya existe.`);
     return clients[clientKey];
   }
 
-  console.log(`Iniciando sesión WhatsApp: ${company} - ${sessionName}`);
   const whatsappClient = new Client({
     authStrategy: new LocalAuth({ 
       clientId: `${company}-${sessionName}`,
@@ -74,24 +74,28 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         }
       }, 5000);
     }
-    // Opcional: notifica al frontend 
-    if (io) {
-      io.emit(`whatsapp-status-${company}-${user_id}`, { status: reason, message: reason, session: sessionName});
+  }
+
+  async function updateSessionStatus(status: string, reason?: string) {
+    const conn = await getDbConnection(company);
+    const WhatsappSession = getSessionModel(conn);
+    const existingSession = await WhatsappSession.findOne({ name: sessionName });
+    if (existingSession) {
+      existingSession.status = status;
+      existingSession.save();
+      io.emit(`whatsapp-status-${company}-${user_id}`, { status, session: sessionName, message: reason });
     }
   }
 
   return new Promise<Client>((resolve, reject) => {
     whatsappClient.on('qr', async (qr) => {
-      
-      // Ya se envió el QR, no lo envíes de nuevo y borra los datos de la sesion
       if (qrSent[clientKey]) {
         delete qrSent[clientKey];
-        cleanUpResources('User didnt scan QR');
+        await cleanUpResources('User didnt scan QR');
+        await updateSessionStatus('disconnected', 'User didnt scan QR');
         reject(new Error('User didnt scan QR'));
         return;
       }
-
-      // Usa una clave única por sesión
       qrSent[clientKey] = true;
       console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
       qrcode.generate(qr, { small: true });
@@ -102,24 +106,30 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     whatsappClient.on('ready', async () => {
       console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
-      if (io) {
-        io.emit(`whatsapp-status-${company}-${user_id}`, { status: "ready", session: sessionName });
-      }
-      delete qrSent[clientKey];
       resolve(whatsappClient);
+      setTimeout(async () => {
+        await updateSessionStatus('connected');
+      }, 2000);
+      delete qrSent[clientKey];
     });
 
-    whatsappClient.on('auth_failure', (msg) => {
-      console.error(`❌ Fallo de autenticación en la sesión ${company}:${sessionName} :`, msg);
+    whatsappClient.on('auth_failure', async (msg) => {
+      console.log(`❌ Fallo de autenticación en la sesión ${company}:${sessionName} :`, msg);
       delete qrSent[clientKey];
-      cleanUpResources('auth_failure');
+      await cleanUpResources('auth_failure');
+      setTimeout(async () => {
+        await updateSessionStatus('error', 'Auth Failure');
+      }, 2000);
       reject(new Error('Auth failure'));
     });
 
-    whatsappClient.on('disconnected', (reason) => {
-      console.error(`❌ Sesión ${company}:${sessionName} desconectada :`, reason);
+    whatsappClient.on('disconnected', async (reason) => {
+      console.log(`❌ Sesión ${company}:${sessionName} desconectada :`, reason);
       delete qrSent[clientKey];
-      cleanUpResources('disconnected');
+      await cleanUpResources('disconnected');
+      setTimeout(async () => {
+        await updateSessionStatus('disconnected', reason);
+      }, 2000);
       reject(new Error('Disconnected'));
     });
 

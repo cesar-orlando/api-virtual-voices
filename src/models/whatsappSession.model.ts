@@ -4,6 +4,7 @@ import { Schema, Document, Connection, Model, Types } from "mongoose";
 export interface IWhatsappSession extends Document {
   name: string; // Nombre de la tabla
   icon: string; // Ícono asociado a la tabla
+  status: string;
   IA: {
     id: Types.ObjectId; // Referencia al IA asociado
     name: string; // Nombre del IA asociado
@@ -19,6 +20,7 @@ const SessionSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     icon: { type: String, default: "" }, // Campo opcional para el ícono
+    status: { type: String, enum:['connected','disconnected','pending','error']},
     IA: {
       id: { type: Types.ObjectId, ref: "IaConfig", required: true }, // Referencia a IaConfig
       name: { type: String, required: true }, // Nombre del IA asociado

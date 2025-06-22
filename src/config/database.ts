@@ -1,11 +1,23 @@
 import mongoose from "mongoose";
-import { getDbConnection } from "../config/connectionManager";
-import {getSessionModel} from "../models/whatsappSession.model";
+import { getDbConnection, getBaseMongoUri } from "../config/connectionManager";
+import { getSessionModel } from "../models/whatsappSession.model";
+import { getEnvironmentConfig, logEnvironmentInfo, validateEnvironmentConfig } from "./environments";
 
-export async function connectDB(uri: string) {
+export async function connectDB() {
   try {
-    await mongoose.connect(uri);
+    const config = getEnvironmentConfig();
+    
+    // Mostrar información del entorno
+    logEnvironmentInfo(config);
+    
+    // Validar configuración
+    validateEnvironmentConfig(config);
+    
+    // Conectar a la base de datos principal
+    await mongoose.connect(config.mongoUri);
     console.log("✅ Connected to MongoDB");
+    console.log(`🗄️  Database: ${config.mongoUri}`);
+    console.log(`🌍 Environment: ${config.name.toUpperCase()}`);
     
   } catch (error) {
     console.error("❌ Error connecting to MongoDB:", error);
@@ -47,4 +59,15 @@ export async function getAllSessionsFromAllDatabases() {
 
   // Aplana el array de arrays
   return allSessionsArrays.flat();
+}
+
+// Función para obtener información de la base de datos actual
+export function getDatabaseInfo() {
+  const config = getEnvironmentConfig();
+  return {
+    environment: config.name,
+    mongoUri: config.mongoUri.replace(/\/\/.*@/, '//***:***@'),
+    nodeEnv: config.nodeEnv,
+    port: config.port
+  };
 }

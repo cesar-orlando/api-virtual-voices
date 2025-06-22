@@ -6,6 +6,8 @@ import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import userRoutes from "./routes/user.routes";
+import { getEnvironmentConfig } from "./config/environments";
+import { getDatabaseInfo } from "./config/database";
 
 const app = express();
 
@@ -55,12 +57,21 @@ app.use("/api/companies", companyRoutes);
 app.use("/api/ia-configs", iaConfigRoutes);
 
 app.get("/", (req, res) => {
+    const config = getEnvironmentConfig();
+    const dbInfo = getDatabaseInfo();
+    
     res.json({
       status: "ok",
       code: 200,
       message: "Sistema operativo: Virtual Voices Node Engine v2.4",
       uptime: `${Math.floor(process.uptime())}s`,
       trace: "XJ-85::Verified",
+      environment: config.name,
+      nodeEnv: config.nodeEnv,
+      port: config.port,
+      database: dbInfo.mongoUri,
+      corsOrigin: config.corsOrigin,
+      timestamp: new Date().toISOString()
     });
   });
 

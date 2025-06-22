@@ -5,3 +5,9 @@ export interface Request extends Express.Request {
 export interface Response extends Express.Response {
     // Add any custom properties to the response object here
 }
+
+// Exportar interfaces de tabla
+export { TableField, ITable } from '../models/table.model';
+
+// Exportar interfaces de registro
+export { IRecord } from '../models/record.model';

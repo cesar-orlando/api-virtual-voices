@@ -1,39 +1,53 @@
 import { Router } from "express";
 import {
   getDynamicRecordById,
+  getRecordWithTable,
+  getRecordWithStructure,
   createDynamicRecord,
   getDynamicRecords,
   updateDynamicRecord,
   deleteDynamicRecord,
-  deleteFieldsFromRecord,
+  searchRecords,
+  getRecordStats,
+  validateRecord,
+  bulkUpdateRecords,
+  bulkDeleteRecords,
+  importRecords,
+  exportRecords,
   addNewFieldToAllRecords,
   deleteFieldsFromAllRecords,
+  deleteFieldsFromRecord,
 } from "../controllers/record.controller";
 
 const router = Router();
 
-// Ruta para crear un nuevo registro dinámico
-router.post("/", createDynamicRecord);
+// Validación
+router.post("/validate", validateRecord);
 
-// Ruta para buscar un registro por su ID
-router.get("/:c_name/:id", getDynamicRecordById);
+// Operaciones masivas
+router.post("/:c_name/:tableSlug/bulk", bulkUpdateRecords);
+router.delete("/:c_name/:tableSlug/bulk", bulkDeleteRecords);
+router.post("/:c_name/:tableSlug/import", importRecords);
+router.get("/:c_name/:tableSlug/export", exportRecords);
 
-// Ruta para obtener todos los registros de una tabla
+// Búsqueda
+router.post("/:c_name/:tableSlug/search", searchRecords);
+
+// Campos
+router.post("/add-field", addNewFieldToAllRecords);
+router.post("/delete-fields", deleteFieldsFromAllRecords);
+
+// Registros individuales
+router.get("/:c_name/:id/with-structure", getRecordWithStructure);
+router.get("/:c_name/:id/with-table", getRecordWithTable);
 router.get("/table/:c_name/:tableSlug", getDynamicRecords);
-
-// Ruta para actualizar un registro dinámico
+router.get("/:c_name/:id", getDynamicRecordById);
+router.post("/", createDynamicRecord);
 router.put("/:id", updateDynamicRecord);
-
-// Ruta para eliminar un registro dinámico
+router.patch("/:id/fields", deleteFieldsFromRecord);
 router.delete("/:c_name/:id", deleteDynamicRecord);
 
-// Ruta para eliminar ciertos campos de un registro dinámico
-router.patch("/:id/fields", deleteFieldsFromRecord);
-
-// Ruta para agregar un campo vacío a todos los registros
-router.post("/add-field", addNewFieldToAllRecords);
-
-// Ruta para eliminar ciertos campos de todos los registros
-router.post("/delete-fields", deleteFieldsFromAllRecords);
+// Estadísticas
+router.get("/stats/:c_name/:tableSlug", getRecordStats);
 
 export default router;

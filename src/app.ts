@@ -6,6 +6,7 @@ import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import userRoutes from "./routes/user.routes";
+import toolRoutes from "./routes/tool.routes";
 import { getEnvironmentConfig } from "./config/environments";
 import { getDatabaseInfo } from "./config/database";
 
@@ -55,6 +56,9 @@ app.use("/api/companies", companyRoutes);
 
 // Rutas para configuraciones de IA
 app.use("/api/ia-configs", iaConfigRoutes);
+
+// Rutas para herramientas dinámicas
+app.use("/api/tools", toolRoutes);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

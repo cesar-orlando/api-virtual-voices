@@ -5,7 +5,7 @@ const router = Router();
 
 router.post("/:c_name", createIAConfig);
 
-router.post("/testIA/:c_name", testIA);
+router.post("/simulate/:c_name", testIA);
 
 router.get("/:c_name/:user_id", getAllIAConfigs);
 

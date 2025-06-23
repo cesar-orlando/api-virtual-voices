@@ -129,7 +129,7 @@ export async function generateResponse(
 
     const messages = [
       { role: "system", content: prompt || "Eres un asistente virtual." },
-      { role: "system", content: `Estos son los productos disponibles ${JSON.stringify(records)}`},
+      { role: "system", content: `Estos son los productos disponibles solo si el cliente pregunta por ellos ${JSON.stringify(records)}`},
       ...chatHistory
     ];
 

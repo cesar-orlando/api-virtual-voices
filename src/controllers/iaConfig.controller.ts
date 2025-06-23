@@ -210,7 +210,7 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     const conn = await getDbConnection(c_name);
 
     const Record = getRecordModel(conn);
-    const records = await Record.find();
+    const records = await Record.find({'tableSlug': 'inventario'});
     
     try {
       const response = await generateResponse(

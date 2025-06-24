@@ -56,3 +56,42 @@ export const getCompany = async (req: Request, res: Response) => {
     return;
   }
 };
+
+export const updateCompany = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name } = req.params;
+    const { displayName, logoUrl, statuses, address, phone } = req.body;
+
+    if (!name) {
+      res.status(400).json({ message: "Company name is required" });
+      return 
+    }
+
+    // Conexión a la base de datos de la empresa
+    const conn = await getDbConnection(name);
+    const Company = getCompanyModel(conn);
+
+    // Solo permitir actualizar los campos definidos
+    const updateFields: any = {};
+    if (displayName !== undefined) updateFields.displayName = displayName;
+    if (logoUrl !== undefined) updateFields.logoUrl = logoUrl;
+    if (statuses !== undefined) updateFields.statuses = statuses;
+    if (address !== undefined) updateFields.address = address;
+    if (phone !== undefined) updateFields.phone = phone;
+
+    const updatedCompany = await Company.findOneAndUpdate(
+      { name },
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedCompany) {
+      res.status(404).json({ message: "Company not found" });
+      return 
+    }
+
+    res.status(200).json({ message: "Company updated successfully", company: updatedCompany });
+  } catch (error) {
+    res.status(500).json({ message: "Error updating company", error });
+  }
+};

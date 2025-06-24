@@ -6,6 +6,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: string;
+  status?: string; // Estatus flexible, validado contra company.statuses
   createdAt: Date;
 }
 
@@ -16,11 +17,7 @@ const UserSchema: Schema = new Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum:['Admin','Usuario'], default: 'Usuario'},
-    status: { 
-      type: String, 
-      enum: [1, 2, 3], // 1: Active, 2: Inactive, 3: Suspended
-      default: 1 
-    },
+    status: { type: String }, // Flexible, validado en el controlador
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

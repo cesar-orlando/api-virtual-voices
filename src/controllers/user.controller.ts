@@ -4,6 +4,7 @@ import getUserModel from "../models/user.model";
 import { getDbConnection } from "../config/connectionManager";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken"; // Add this at the top if not already imported
+import getCompanyModel from "../models/company.model";
 
 const saltRound = 10; // Number of rounds for bcrypt hashing
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key"; // Add this at the top
@@ -127,17 +128,22 @@ export const updateUser = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  const { name, email, password, c_name } = req.body;
+  const { c_name } = req.body;
+  const updateFields: any = {};
+
+  // Solo actualiza los campos que vienen en el body, excepto password
+  if (req.body.name !== undefined) updateFields.name = req.body.name;
+  if (req.body.email !== undefined) updateFields.email = req.body.email;
+  if (req.body.role !== undefined) updateFields.role = req.body.role;
+  if (req.body.status !== undefined) updateFields.status = req.body.status;
+  // Ignorar password aunque venga en el body
 
   const conn = await getDbConnection(c_name);
-
   const User = getUserModel(conn);
-
-  const hashedPassword = await bcrypt.hash(password, saltRound);
 
   const updatedUser = await User.findByIdAndUpdate(
     req.params.id,
-    { name, email, password: hashedPassword, },
+    updateFields,
     { new: true, runValidators: true }
   );
 
@@ -237,5 +243,50 @@ export const compareLogin = async (
       .status(400)
       .json({ message: "Error comparing login", error: error.message });
     return;
+  }
+};
+
+// PATCH /user/:id/status
+export const patchUserStatus = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { status, c_name } = req.body;
+
+  if (!status || !c_name) {
+    res.status(400).json({ message: "status and c_name are required" });
+    return;
+  }
+
+  try {
+    // Obtener conexión y modelos
+    const conn = await getDbConnection(c_name);
+    const User = getUserModel(conn);
+    const Company = getCompanyModel(conn);
+
+    // Validar que el status esté permitido por la empresa
+    const company = await Company.findOne({ name: c_name });
+    if (!company) {
+      res.status(404).json({ message: "Company not found" });
+      return;
+    }
+    if (!company.statuses || !company.statuses.includes(status)) {
+      res.status(400).json({ message: "Status not allowed for this company" });
+      return;
+    }
+
+    // Actualizar el status del usuario
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    res.status(200).json({ message: "User status updated", user: updatedUser });
+  } catch (error) {
+    res.status(500).json({ message: "Error updating user status", error });
   }
 };

@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { createCompanyAndDatabase, getCompany } from "../controllers/company.controller";
+import { createCompanyAndDatabase, getCompany, updateCompany } from "../controllers/company.controller";
 
 const router = Router();
 
 router.post("/", createCompanyAndDatabase);
 router.get("/:name", getCompany);
+router.patch("/:name", updateCompany);
 
 export default router;

@@ -2,6 +2,9 @@ import { Schema, Document, Connection, Model } from "mongoose";
 
 export interface ICompany extends Document {
   name: string;
+  displayName?: string;
+  logoUrl?: string;
+  statuses?: string[];
   address?: string;
   phone?: string;
   createdAt?: Date;
@@ -11,6 +14,9 @@ export interface ICompany extends Document {
 const CompanySchema: Schema = new Schema(
   {
     name: { type: String, required: true },
+    displayName: { type: String },
+    logoUrl: { type: String },
+    statuses: { type: [String], default: ["online", "offline"] },
     address: { type: String },
     phone: { type: String },
   },

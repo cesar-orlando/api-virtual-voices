@@ -16,7 +16,8 @@ const config = getEnvironmentConfig();
 const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
-    origin: config.corsOrigin,
+    origin: "*",
+    // origin: config.corsOrigin,
     methods: ["GET", "POST"]
   }
 });

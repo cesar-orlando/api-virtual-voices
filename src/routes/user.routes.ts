@@ -7,6 +7,7 @@ import {
   deleteUser,
   compareLogin,
   getAllUsers,
+  patchUserStatus
 } from "../controllers/user.controller";
 
 const router = Router();
@@ -19,5 +20,6 @@ router.post("/register", createUser);
 router.put("/:id", updateUser);
 router.delete("/:id", deleteUser);
 router.post("/login", compareLogin);
+router.patch("/:id/status", patchUserStatus);
 
 export default router;

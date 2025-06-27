@@ -133,7 +133,7 @@ export async function generateResponse(
   try {
     console.log("🚀 [generateResponse] Iniciando generación de respuesta");
     console.log("🏢 [generateResponse] c_name recibido:", c_name);
-    console.log("📝 [generateResponse] prompt:", prompt);
+    console.log("📝 [generateResponse] prompt length:", prompt?.length || 0);
     console.log("⚙️ [generateResponse] config:", config?.name);
     console.log("💬 [generateResponse] chatHistory length:", chatHistory?.length || 0);
     console.log("📊 [generateResponse] records length:", records?.length || 0);
@@ -149,13 +149,29 @@ export async function generateResponse(
       console.log("⚠️ [generateResponse] NO HAY TOOLS DISPONIBLES para empresa:", c_name);
     }
 
+    // Optimizar el prompt para reducir tokens
+    const optimizedPrompt = optimizePrompt(prompt);
+    console.log("📝 [generateResponse] prompt optimizado length:", optimizedPrompt.length);
+
+    // Truncar historial si es muy largo (mantener solo los últimos mensajes)
+    const maxHistoryMessages = 10; // Máximo 10 mensajes en el historial
+    const truncatedHistory = chatHistory.length > maxHistoryMessages 
+      ? chatHistory.slice(-maxHistoryMessages) 
+      : chatHistory;
+    
+    console.log("💬 [generateResponse] Historial truncado:", truncatedHistory.length, "de", chatHistory.length);
+
+    // Optimizar records para reducir tokens
+    const optimizedRecords = optimizeRecords(records);
+    console.log("📊 [generateResponse] Records optimizados:", optimizedRecords.length);
+
     const messages = [
-      { role: "system", content: prompt || "Eres un asistente virtual." },
+      { role: "system", content: optimizedPrompt || "Eres un asistente virtual." },
       {
         role: "system",
-        content: `Estos son los productos disponibles solo si el cliente pregunta por ellos ${JSON.stringify(records)}`,
+        content: `Productos disponibles (solo mencionar si el cliente pregunta): ${JSON.stringify(optimizedRecords)}`,
       },
-      ...chatHistory,
+      ...truncatedHistory,
     ];
 
     console.log("💬 [generateResponse] Messages preparados:", messages.length);
@@ -226,12 +242,15 @@ export async function generateResponse(
     // Fallback a respuesta sin herramientas
     try {
       console.log("🔄 [generateResponse] Intentando fallback sin tools...");
+      
+      // Usar prompt más simple para fallback
+      const fallbackPrompt = "Eres un asistente virtual amigable y profesional. Responde de manera natural y útil.";
+      
       const response = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
-          { role: "system", content: prompt || "Eres un asistente virtual." },
-          { role: "system", content: `Estos son los productos disponibles ${JSON.stringify(records)}` },
-          ...chatHistory,
+          { role: "system", content: fallbackPrompt },
+          ...chatHistory.slice(-5), // Solo últimos 5 mensajes para fallback
         ],
         temperature: 0.3,
       });
@@ -242,6 +261,41 @@ export async function generateResponse(
       return "Lo siento, estoy experimentando dificultades técnicas. Por favor, intenta nuevamente.";
     }
   }
+}
+
+// Función para optimizar el prompt y reducir tokens
+function optimizePrompt(prompt: string | undefined): string {
+  if (!prompt) return "Eres un asistente virtual amigable y profesional.";
+  
+  // Si el prompt es muy largo, truncarlo
+  const maxPromptLength = 2000; // Máximo 2000 caracteres para el prompt
+  
+  if (prompt.length > maxPromptLength) {
+    console.log("⚠️ [optimizePrompt] Prompt muy largo, truncando de", prompt.length, "a", maxPromptLength);
+    return prompt.substring(0, maxPromptLength) + "...";
+  }
+  
+  return prompt;
+}
+
+// Función para optimizar records y reducir tokens
+function optimizeRecords(records: IRecord[]): any[] {
+  if (!records || records.length === 0) return [];
+  
+  // Limitar a máximo 5 records para reducir tokens
+  const maxRecords = 5;
+  const limitedRecords = records.slice(0, maxRecords);
+  
+  // Simplificar cada record para usar menos tokens
+  return limitedRecords.map(record => ({
+    id: record._id,
+    tableSlug: record.tableSlug,
+    // Extraer campos comunes del objeto data dinámico
+    name: record.data?.nombre || record.data?.name || record.data?.title || 'Sin nombre',
+    price: record.data?.precio || record.data?.price || record.data?.valor,
+    location: record.data?.ubicacion || record.data?.location || record.data?.zona,
+    type: record.data?.tipo || record.data?.type || record.data?.categoria,
+  }));
 }
 
 // Limpiar cache de herramientas

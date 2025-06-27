@@ -15,7 +15,7 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
   const userPhone = message.fromMe ? message.to : message.from;
 
-  if (userPhone !== '5216441500358@c.us') return;
+  // if (userPhone !== '5216441500358@c.us') return;
 
   try {
 

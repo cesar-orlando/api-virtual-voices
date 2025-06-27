@@ -15,7 +15,10 @@ import {
   batchExecuteTools,
   getOpenAISchema,
   getAnalytics,
-  getToolLogs
+  getToolLogs,
+  debugToolsForCompany,
+  getFunctionTypes,
+  createCustomTool
 } from "../controllers/tool.controller";
 
 const router = Router();
@@ -49,5 +52,14 @@ router.get("/openai-schema/:c_name", getOpenAISchema);  // GET /api/tools/openai
 // Analytics y logging
 router.get("/analytics/:c_name", getAnalytics);         // GET /api/tools/analytics/:c_name
 router.get("/logs/:c_name/:toolId", getToolLogs);       // GET /api/tools/logs/:c_name/:toolId
+
+// Debug endpoint
+router.get("/debug/:c_name", debugToolsForCompany);
+
+// Nuevo endpoint para obtener tipos de funciones
+router.get("/function-types/:c_name", getFunctionTypes);
+
+// Nuevo endpoint para crear una herramienta personalizada
+router.post("/custom-tool", createCustomTool);
 
 export default router;

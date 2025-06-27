@@ -140,7 +140,10 @@ async function sendAndRecordBotResponse(
       IAPrompt,
       config,
       history,
-      records)
+      records,
+      company,
+      session?.user?.id?.toString()
+    )
     aiResponse = response || defaultResponse;
   } catch (error) {
     console.error("Error al obtener respuesta de OpenAI:", error);

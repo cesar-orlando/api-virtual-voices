@@ -8,6 +8,7 @@ import {
   DEFAULT_CATEGORIES,
   COMPANY_LIMITS 
 } from "../types/tool.types";
+import { getAllFunctionTypes, generateCustomTool } from "../config/defaultTools";
 
 // Crear una nueva herramienta
 export const createTool = async (req: Request, res: Response) => {
@@ -295,11 +296,17 @@ export const testTool = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
   const { testParameters } = req.body;
 
+  console.log('== TEST TOOL ==');
+  console.log('Params:', { id, c_name });
+  console.log('Body:', req.body);
+
   try {
     const conn = await getDbConnection(c_name);
+    console.log('DB Connection OK');
     const Tool = getToolModel(conn);
 
     const tool = await Tool.findOne({ _id: id, c_name });
+    console.log('Tool found:', tool ? tool.name : 'NOT FOUND');
     if (!tool) {
       res.status(404).json({ message: "Tool not found" });
       return;
@@ -309,24 +316,27 @@ export const testTool = async (req: Request, res: Response) => {
     const startTime = Date.now();
     try {
       // Aquí iría la lógica de ejecución real
+      console.log('Test parameters:', testParameters);
       const mockResponse = {
         success: true,
         data: { message: "Test execution successful", parameters: testParameters },
         statusCode: 200,
         executionTime: Date.now() - startTime
       };
-
+      console.log('Mock response:', mockResponse);
       res.json({ 
         message: "Tool test completed", 
         result: mockResponse 
       });
     } catch (execError) {
+      console.error('Error in test execution:', execError);
       res.status(500).json({ 
         message: "Tool execution failed", 
         error: execError 
       });
     }
   } catch (error) {
+    console.error('Error in testTool:', error);
     res.status(500).json({ message: "Error testing tool", error });
   }
 };
@@ -712,5 +722,121 @@ export const getToolLogs = async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Error fetching tool logs", error });
+  }
+};
+
+// Debug endpoint para verificar tools de una empresa
+export const debugToolsForCompany = async (req: Request, res: Response) => {
+  const { c_name } = req.params;
+
+  try {
+    console.log("🔍 [debugToolsForCompany] Verificando tools para empresa:", c_name);
+    
+    const conn = await getDbConnection(c_name);
+    const Tool = getToolModel(conn);
+    
+    // Buscar todas las tools (activas e inactivas)
+    const allTools = await Tool.find({ c_name }).lean();
+    console.log("📊 [debugToolsForCompany] Total tools encontradas:", allTools.length);
+    
+    // Buscar solo tools activas
+    const activeTools = await Tool.find({ c_name, isActive: true }).lean();
+    console.log("✅ [debugToolsForCompany] Tools activas:", activeTools.length);
+    
+    // Buscar tools inactivas
+    const inactiveTools = await Tool.find({ c_name, isActive: false }).lean();
+    console.log("❌ [debugToolsForCompany] Tools inactivas:", inactiveTools.length);
+
+    res.json({
+      c_name,
+      totalTools: allTools.length,
+      activeTools: activeTools.length,
+      inactiveTools: inactiveTools.length,
+      activeToolsDetails: activeTools.map(tool => ({
+        _id: tool._id,
+        name: tool.name,
+        displayName: tool.displayName,
+        isActive: tool.isActive,
+        category: tool.category
+      })),
+      allToolsDetails: allTools.map(tool => ({
+        _id: tool._id,
+        name: tool.name,
+        displayName: tool.displayName,
+        isActive: tool.isActive,
+        category: tool.category
+      }))
+    });
+  } catch (error: any) {
+    console.error("❌ [debugToolsForCompany] Error:", error);
+    res.status(500).json({ 
+      message: "Error verificando tools", 
+      error: error.message,
+      c_name 
+    });
+  }
+};
+
+// Obtener tipos de funciones disponibles
+export const getFunctionTypes = async (req: Request, res: Response) => {
+  try {
+    const functionTypes = getAllFunctionTypes();
+    res.json({
+      message: "Tipos de funciones disponibles",
+      functionTypes
+    });
+  } catch (error) {
+    console.error("Error obteniendo tipos de funciones:", error);
+    res.status(500).json({ message: "Error obteniendo tipos de funciones" });
+  }
+};
+
+// Crear tool personalizada
+export const createCustomTool = async (req: Request, res: Response) => {
+  try {
+    const { c_name } = req.params;
+    const { name, functionType, tableSlug, customDescription, createdBy } = req.body;
+
+    if (!name || !functionType || !tableSlug) {
+      res.status(400).json({ 
+        message: "Faltan campos requeridos: name, functionType, tableSlug" 
+      });
+      return;
+    }
+
+    const conn = await getDbConnection(c_name);
+    const Tool = getToolModel(conn);
+
+    // Verificar si ya existe una tool con ese nombre
+    const existingTool = await Tool.findOne({ c_name, name });
+    if (existingTool) {
+      res.status(400).json({ 
+        message: "Ya existe una herramienta con ese nombre" 
+      });
+      return;
+    }
+
+    // Generar tool personalizada
+    const toolData = generateCustomTool(name, functionType, tableSlug, customDescription);
+    
+    // Agregar campos específicos de la empresa
+    const newTool = new Tool({
+      ...toolData,
+      c_name,
+      createdBy
+    });
+
+    await newTool.save();
+
+    res.status(201).json({
+      message: "Tool personalizada creada exitosamente",
+      tool: newTool
+    });
+  } catch (error: any) {
+    console.error("Error creando tool personalizada:", error);
+    res.status(500).json({ 
+      message: "Error creando tool personalizada", 
+      error: error.message 
+    });
   }
 };

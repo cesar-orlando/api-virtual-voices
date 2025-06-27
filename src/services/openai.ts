@@ -20,9 +20,7 @@ export const openai = new OpenAI({
 const toolSchemaCache: Map<string, { schema: OpenAIToolSchema[]; timestamp: number }> = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
-export async function preparePrompt(
-  config: IIaConfig
-): Promise<string> {
+export async function preparePrompt(config: IIaConfig): Promise<string> {
   const prompt = `Al iniciar una conversacion siempre te presentas como: ${config?.name} e incluyes el saludo: ${config?.welcomeMessage}, tu objetivo es el de ${config?.objective}, informacion previa y contexto para despues del saludo inicial: ${config?.customPrompt}`;
   return prompt;
 }
@@ -30,20 +28,29 @@ export async function preparePrompt(
 // Generar esquemas de herramientas para OpenAI por empresa
 export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSchema[]> {
   try {
+    console.log("🔍 [getToolsForCompany] Buscando tools para empresa:", c_name);
+    
     // Verificar cache
     const cached = toolSchemaCache.get(c_name);
-    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log("📦 [getToolsForCompany] Usando cache para empresa:", c_name, "Tools en cache:", cached.schema.length);
       return cached.schema;
     }
 
+    console.log("🗄️ [getToolsForCompany] Cache no encontrado o expirado, consultando BD...");
+
     // Obtener herramientas activas de la empresa
     const conn = await getDbConnection(c_name);
+    console.log("🔌 [getToolsForCompany] Conexión BD establecida para empresa:", c_name);
+    
     const Tool = getToolModel(conn);
+    console.log("📋 [getToolsForCompany] Modelo Tool obtenido, consultando...");
+    
     const tools = await Tool.find({ c_name, isActive: true }).lean();
 
     // Generar schemas para OpenAI
-    const schemas: OpenAIToolSchema[] = tools.map(tool => ({
-      type: 'function',
+    const schemas: OpenAIToolSchema[] = tools.map((tool) => ({
+      type: "function",
       function: {
         name: tool.name,
         description: tool.description,
@@ -56,34 +63,34 @@ export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSche
                 type: value.type,
                 description: value.description,
                 ...(value.enum && { enum: value.enum }),
-                ...(value.format && { format: value.format })
-              }
+                ...(value.format && { format: value.format }),
+              },
             ])
           ),
-          required: tool.parameters.required
-        }
-      }
+          required: tool.parameters.required,
+        },
+      },
     }));
+
+    console.log("🔧 [getToolsForCompany] Schemas generados:", schemas.length);
+    console.log("📝 [getToolsForCompany] Schemas:", JSON.stringify(schemas, null, 2));
 
     // Guardar en cache
     toolSchemaCache.set(c_name, { schema: schemas, timestamp: Date.now() });
+    console.log("💾 [getToolsForCompany] Schemas guardados en cache para empresa:", c_name);
 
     return schemas;
   } catch (error) {
-    console.error('Error getting tools for company:', error);
+    console.error("❌ [getToolsForCompany] Error getting tools for company:", error);
     return [];
   }
 }
 
 // Ejecutar función de herramienta llamada por OpenAI
-export async function executeFunctionCall(
-  functionCall: any,
-  c_name: string,
-  executedBy?: string
-): Promise<any> {
+export async function executeFunctionCall(functionCall: any, c_name: string, executedBy?: string): Promise<any> {
   try {
     const { name: toolName, arguments: argsString } = functionCall;
-    
+
     // Parsear argumentos
     let parameters: Record<string, any> = {};
     try {
@@ -97,41 +104,61 @@ export async function executeFunctionCall(
       toolName,
       parameters,
       c_name,
-      executedBy
+      executedBy,
     });
 
     return {
       success: true,
       data: result.data,
-      executionTime: result.executionTime
+      executionTime: result.executionTime,
     };
   } catch (error: any) {
-    console.error('Function call execution error:', error);
+    console.error("Function call execution error:", error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 }
 
 // Generar respuesta con herramientas dinámicas
 export async function generateResponse(
-  prompt: string|undefined,
-  config: IIaConfig|null,
+  prompt: string | undefined,
+  config: IIaConfig | null,
   chatHistory: any,
   records: IRecord[],
   c_name?: string,
   executedBy?: string
-): Promise<string|null> {
+): Promise<string | null> {
   try {
+    console.log("🚀 [generateResponse] Iniciando generación de respuesta");
+    console.log("🏢 [generateResponse] c_name recibido:", c_name);
+    console.log("📝 [generateResponse] prompt:", prompt);
+    console.log("⚙️ [generateResponse] config:", config?.name);
+    console.log("💬 [generateResponse] chatHistory length:", chatHistory?.length || 0);
+    console.log("📊 [generateResponse] records length:", records?.length || 0);
+
     // Obtener herramientas para la empresa
     const tools = c_name ? await getToolsForCompany(c_name) : [];
+    console.log("🔧 [generateResponse] Tools obtenidas:", tools.length);
+
+    if (tools.length > 0) {
+      console.log("=== TOOLS ENVIADAS A OPENAI ===");
+      console.dir(tools, { depth: null });
+    } else {
+      console.log("⚠️ [generateResponse] NO HAY TOOLS DISPONIBLES para empresa:", c_name);
+    }
 
     const messages = [
       { role: "system", content: prompt || "Eres un asistente virtual." },
-      { role: "system", content: `Estos son los productos disponibles solo si el cliente pregunta por ellos ${JSON.stringify(records)}`},
-      ...chatHistory
+      {
+        role: "system",
+        content: `Estos son los productos disponibles solo si el cliente pregunta por ellos ${JSON.stringify(records)}`,
+      },
+      ...chatHistory,
     ];
+
+    console.log("💬 [generateResponse] Messages preparados:", messages.length);
 
     // Configurar request con herramientas si están disponibles
     const requestConfig: any = {
@@ -143,40 +170,42 @@ export async function generateResponse(
     if (tools.length > 0) {
       requestConfig.tools = tools;
       requestConfig.tool_choice = "auto";
+      console.log("🛠️ [generateResponse] Configurando request CON tools:", tools.length);
+    } else {
+      console.log("🚫 [generateResponse] Configurando request SIN tools");
     }
 
+    console.log("📤 [generateResponse] Enviando request a OpenAI...");
     const response = await openai.chat.completions.create(requestConfig);
 
     const choice = response.choices[0];
-    
+
+    console.log("📥 [generateResponse] Respuesta recibida de OpenAI");
+    console.log("🛠️ [generateResponse] OpenAI tool_calls:", choice.message.tool_calls);
+
     // Verificar si OpenAI quiere llamar una función
     if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+      console.log("✅ [generateResponse] OpenAI decidió usar tools:", choice.message.tool_calls.length);
       const toolResults = [];
-      
+
       // Ejecutar cada función llamada
       for (const toolCall of choice.message.tool_calls) {
-        if (toolCall.type === 'function') {
-          const result = await executeFunctionCall(
-            toolCall.function,
-            c_name!,
-            executedBy
-          );
-          
+        if (toolCall.type === "function") {
+          console.log("🔧 [generateResponse] Ejecutando tool:", toolCall.function.name);
+          const result = await executeFunctionCall(toolCall.function, c_name!, executedBy);
+
           toolResults.push({
             tool_call_id: toolCall.id,
             role: "tool",
-            content: JSON.stringify(result)
+            content: JSON.stringify(result),
           });
         }
       }
 
       // Continuar conversación con resultados de herramientas
       if (toolResults.length > 0) {
-        const followUpMessages = [
-          ...messages,
-          choice.message,
-          ...toolResults
-        ];
+        console.log("🔄 [generateResponse] Continuando conversación con resultados de tools");
+        const followUpMessages = [...messages, choice.message, ...toolResults];
 
         const followUpResponse = await openai.chat.completions.create({
           model: "gpt-4",
@@ -186,27 +215,30 @@ export async function generateResponse(
 
         return followUpResponse.choices[0].message.content;
       }
+    } else {
+      console.log("❌ [generateResponse] OpenAI NO usó ninguna tool");
     }
 
     return choice.message.content;
   } catch (error: any) {
-    console.error('Error generating response with tools:', error);
-    
+    console.error("❌ [generateResponse] Error generating response with tools:", error);
+
     // Fallback a respuesta sin herramientas
     try {
+      console.log("🔄 [generateResponse] Intentando fallback sin tools...");
       const response = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
           { role: "system", content: prompt || "Eres un asistente virtual." },
-          { role: "system", content: `Estos son los productos disponibles ${JSON.stringify(records)}`},
-          ...chatHistory
+          { role: "system", content: `Estos son los productos disponibles ${JSON.stringify(records)}` },
+          ...chatHistory,
         ],
         temperature: 0.3,
       });
 
       return response.choices[0].message.content;
     } catch (fallbackError) {
-      console.error('Fallback response error:', fallbackError);
+      console.error("❌ [generateResponse] Fallback response error:", fallbackError);
       return "Lo siento, estoy experimentando dificultades técnicas. Por favor, intenta nuevamente.";
     }
   }
@@ -222,23 +254,25 @@ export function clearToolsCache(c_name?: string): void {
 }
 
 // Actualizar schema de herramientas en OpenAI para una empresa
-export async function updateOpenAISchema(c_name: string): Promise<{ success: boolean; toolsCount: number; error?: string }> {
+export async function updateOpenAISchema(
+  c_name: string
+): Promise<{ success: boolean; toolsCount: number; error?: string }> {
   try {
     // Limpiar cache para forzar actualización
     clearToolsCache(c_name);
-    
+
     // Obtener nuevas herramientas
     const tools = await getToolsForCompany(c_name);
-    
+
     return {
       success: true,
-      toolsCount: tools.length
+      toolsCount: tools.length,
     };
   } catch (error: any) {
     return {
       success: false,
       toolsCount: 0,
-      error: error.message
+      error: error.message,
     };
   }
 }

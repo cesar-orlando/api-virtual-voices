@@ -69,7 +69,6 @@ export function validateEnvironmentConfig(config: EnvironmentConfig): void {
 // Función para mostrar información del entorno
 export function logEnvironmentInfo(config: EnvironmentConfig): void {
   console.log("process.env.MONGO_URI_DEV", process.env.MONGO_URI_DEV);
-  console.log("config", config);
   console.log(`🚀 Starting Virtual Voices API in ${config.name.toUpperCase()} mode`);
   console.log(`📊 Environment: ${config.nodeEnv}`);
   console.log(`🌐 Port: ${config.port}`);

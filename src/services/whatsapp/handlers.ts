@@ -42,13 +42,53 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     const conn = await getDbConnection(company);
 
     const Table = getTableModel(conn);
+    const Session = getSessionModel(conn);
+    const session = await Session.findOne({ name: sessionName });
+
+    if (!session) {
+      console.error(`[WHATSAPP] No se encontró la sesión: ${sessionName}`);
+      return;
+    }
 
     // Verifica si la tabla existe
-    const table = await Table.findOne({ slug: "clientes" });
+    const table = await Table.findOne({ slug: "clientes", c_name: company });
 
     if (!table) {
-      const newTable = new Table({ name: "Clientes", slug: "clientes", icon: "👤" });
+      const newTable = new Table({ 
+        name: "Clientes", 
+        slug: "clientes", 
+        icon: "👤",
+        c_name: company,
+        createdBy: session.user.id.toString(),
+        fields: [
+          {
+            name: "nombre",
+            label: "Nombre",
+            type: "text",
+            required: true,
+            order: 1,
+            width: 200
+          },
+          {
+            name: "telefono",
+            label: "Teléfono",
+            type: "text",
+            required: true,
+            order: 2,
+            width: 150
+          },
+          {
+            name: "email",
+            label: "Email",
+            type: "email",
+            required: false,
+            order: 3,
+            width: 200
+          }
+        ]
+      });
       await newTable.save();
+      console.log(`[WHATSAPP] Tabla "clientes" creada para ${company}`);
     }
 
     const WhatsappChat = getWhatsappChatModel(conn);
@@ -58,8 +98,6 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
-      const Session = getSessionModel(conn);
-      const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "clientes", userPhone, message, session);
     } else {
       await updateChatRecord(company, existingRecord, "inbound", message.body, "human")

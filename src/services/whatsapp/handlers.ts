@@ -134,7 +134,7 @@ async function createNewChatRecord(
     messages: [
       {
         direction: message.fromMe ? "outbound" : "inbound",
-        body: message.body,
+        body: message.body || '',
         respondedBy: "human",
       },
     ],
@@ -147,9 +147,13 @@ async function updateChatRecord(
   company: string,
   chatRecord: any,
   direction: string,
-  body: string,
+  body: string | undefined,
   respondedBy: string
 ) {
+  if (!body) {
+    console.warn(`[WHATSAPP][updateChatRecord] body está undefined, no se guardará el mensaje.`);
+    return;
+  }
   chatRecord.messages.push({
     direction: direction,
     body: body,
@@ -157,6 +161,7 @@ async function updateChatRecord(
   });
   await chatRecord.save();
   io.emit(`whatsapp-message-${company}`, chatRecord);
+  console.log(`[WHATSAPP][updateChatRecord] Mensaje guardado y emitido al frontend. body:`, body);
 }
 
 async function sendAndRecordBotResponse(
@@ -191,7 +196,7 @@ async function sendAndRecordBotResponse(
   }).filter(Boolean);
 
   // Agrega el mensaje actual
-  history.push({ role: "user", content: message.body });
+  history.push({ role: "user", content: message.body || '' });
 
   try {
     const response = await generateResponse(
@@ -207,7 +212,16 @@ async function sendAndRecordBotResponse(
     console.error("Error al obtener respuesta de OpenAI:", error);
   }
 
+  // Enviar mensaje solo si hay respuesta
+  if (!aiResponse) {
+    console.warn('[WHATSAPP][sendAndRecordBotResponse] aiResponse está vacío, no se enviará mensaje.');
+    return;
+  }
+
   const msg = await client.sendMessage(message.from, aiResponse);
   existingRecord.botActive = activeBot;
-  await updateChatRecord(company, existingRecord, "outbound-api", msg.body, "bot");
+  // Proteger acceso a msg.body
+  const msgBody = (msg && typeof msg === 'object' && 'body' in msg) ? (msg as any).body : aiResponse;
+  await updateChatRecord(company, existingRecord, "outbound-api", msgBody, "bot");
+  console.log(`[WHATSAPP][sendAndRecordBotResponse] Mensaje de IA enviado y guardado. body:`, msgBody);
 }

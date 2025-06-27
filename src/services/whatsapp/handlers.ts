@@ -225,9 +225,9 @@ async function sendAndRecordBotResponse(
   }
 
   const msg = await client.sendMessage(message.from, aiResponse);
+  console.log("msg ---->", msg);
   existingRecord.botActive = activeBot;
-  // Proteger acceso a msg.body
-  const msgBody = (msg && typeof msg === 'object' && 'body' in msg) ? (msg as any).body : aiResponse;
-  await updateChatRecord(company, existingRecord, "outbound-api", msgBody, "bot");
-  console.log(`[WHATSAPP][sendAndRecordBotResponse] Mensaje de IA enviado y guardado. body:`, msgBody);
+  // Siempre guardar el texto generado por la IA
+  await updateChatRecord(company, existingRecord, "outbound-api", aiResponse, "bot");
+  console.log(`[WHATSAPP][sendAndRecordBotResponse] Mensaje de IA enviado y guardado. body:`, aiResponse);
 }

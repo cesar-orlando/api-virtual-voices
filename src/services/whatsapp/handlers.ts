@@ -35,6 +35,12 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
   const userPhone = message.fromMe ? message.to : message.from;
 
+  // FILTRO: Ignorar mensajes vacíos o sin texto relevante
+  if (!message.body || !message.body.trim()) {
+    console.log(`[WHATSAPP] Mensaje vacío recibido de ${userPhone}, ignorando.`);
+    return;
+  }
+
   // if (userPhone !== '5216441500358@c.us') return;
 
   try {

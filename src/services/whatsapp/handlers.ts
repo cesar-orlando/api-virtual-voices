@@ -11,6 +11,26 @@ import getRecordModel from '../../models/record.model';
 
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
+  // Agrega listeners de log solo una vez por cliente
+  if (!(client as any)._loggingListenersAdded) {
+    client.on('message', (msg: Message) => {
+      console.log(`[WHATSAPP] Mensaje recibido de ${msg.from}: ${msg.body?.slice(0, 100)}`);
+      if ((msg as any).hasMedia) {
+        console.log(`[WHATSAPP] Archivo recibido de ${msg.from}, tipo: ${(msg as any).type}, tamaño: ${(msg as any).mediaKey?.length || 'desconocido'}`);
+      }
+    });
+    client.on('authenticated', () => {
+      console.log('[WHATSAPP] Sesión autenticada');
+    });
+    client.on('disconnected', (reason: any) => {
+      console.log(`[WHATSAPP] Sesión desconectada: ${reason}`);
+    });
+    client.on('auth_failure', (msg: any) => {
+      console.log(`[WHATSAPP] Fallo de autenticación: ${msg}`);
+    });
+    (client as any)._loggingListenersAdded = true;
+  }
+
   if (message.isStatus) return;
 
   const userPhone = message.fromMe ? message.to : message.from;

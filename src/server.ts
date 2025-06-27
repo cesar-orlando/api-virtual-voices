@@ -59,6 +59,12 @@ async function main() {
         });
     }
     
+    // Log de memoria cada 30 segundos para monitoreo en producción
+    setInterval(() => {
+      const used = process.memoryUsage();
+      console.log(`[MEMORY] RSS: ${(used.rss / 1024 / 1024).toFixed(2)} MB, Heap: ${(used.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+    }, 30000);
+    
   } catch (error) {
     console.error('❌ Error starting server:', error);
     process.exit(1);

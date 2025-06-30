@@ -90,6 +90,10 @@ OPENCAGE_API_KEY="your-opencage-api-key"
 
 # OpenAI (ya existente)
 OPENAI_API_KEY="sk-your-openai-api-key"
+
+TWILIO_ACCOUNT_SID="ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+TWILIO_AUTH_TOKEN="210fbd6d7efb23fb555c45d3813a1497"
+TWILIO_PHONE_NUMBER=+5213341610750
 ```
 
 ### **2. Configurar Webhook en Twilio**

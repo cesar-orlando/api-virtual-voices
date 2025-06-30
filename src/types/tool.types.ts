@@ -141,6 +141,7 @@ export const ALLOWED_DOMAINS = [
   'api.postman.com',
   'api.insomnia.rest',
   'api.httpbin.org',
+  "api-virtual-voices.onrender.com",
   'jsonplaceholder.typicode.com',
   'reqres.in',
   'httpbin.org',

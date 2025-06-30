@@ -20,7 +20,7 @@ const environments: Record<string, EnvironmentConfig> = {
     port: parseInt(process.env.PORT || '3001'),
     nodeEnv: 'development',
     corsOrigin: process.env.CORS_ORIGIN_DEV || '',
-    jwtSecret: process.env.JWT_SECRET_DEV || '',
+    jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_DEV || '',
     openaiApiKey: process.env.OPENAI_API_KEY_DEV || ''
   },
   qa: {
@@ -29,7 +29,7 @@ const environments: Record<string, EnvironmentConfig> = {
     port: parseInt(process.env.PORT || '3002'),
     nodeEnv: 'qa',
     corsOrigin: process.env.CORS_ORIGIN_QA || 'http://localhost:3001',
-    jwtSecret: process.env.JWT_SECRET_QA || 'qa-secret-key',
+    jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_QA || 'qa-secret-key',
     openaiApiKey: process.env.OPENAI_API_KEY_QA || ''
   },
   production: {
@@ -38,7 +38,7 @@ const environments: Record<string, EnvironmentConfig> = {
     port: parseInt(process.env.PORT || '3003'),
     nodeEnv: 'production',
     corsOrigin: process.env.CORS_ORIGIN_PROD || 'https://yourdomain.com',
-    jwtSecret: process.env.JWT_SECRET_PROD || 'prod-secret-key',
+    jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_PROD || 'prod-secret-key',
     openaiApiKey: process.env.OPENAI_API_KEY_PROD || ''
   }
 };
@@ -69,6 +69,7 @@ export function validateEnvironmentConfig(config: EnvironmentConfig): void {
 // Función para mostrar información del entorno
 export function logEnvironmentInfo(config: EnvironmentConfig): void {
   console.log("process.env.MONGO_URI_DEV", process.env.MONGO_URI_DEV);
+  console.log("process.env.JWT_SECRET", process.env.JWT_SECRET ? "Configured" : "Not configured");
   console.log("config", config);
   console.log(`🚀 Starting Virtual Voices API in ${config.name.toUpperCase()} mode`);
   console.log(`📊 Environment: ${config.nodeEnv}`);

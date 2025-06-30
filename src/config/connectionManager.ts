@@ -4,15 +4,17 @@ import { getEnvironmentConfig } from "./environments";
 const connections: Record<string, Connection> = {};
 
 export async function getDbConnection(dbName: string): Promise<Connection> {
-  if (connections[dbName]) return connections[dbName];
+  // Si la empresa es quicklearning, usar la base de datos test
+  const realDbName = dbName === 'quicklearning' ? 'test' : dbName;
+  if (connections[realDbName]) return connections[realDbName];
 
   const config = getEnvironmentConfig();
   const uriBase = config.mongoUri.split("/")[0] + "//" + config.mongoUri.split("/")[2];
 
-  const uri = `${uriBase}/${dbName}`;
+  const uri = `${uriBase}/${realDbName}`;
   const conn = await mongoose.createConnection(uri).asPromise();
 
-  connections[dbName] = conn;
+  connections[realDbName] = conn;
   return conn;
 }
 
@@ -40,4 +42,8 @@ export function getActiveConnections(): string[] {
     const conn = connections[key];
     return conn.readyState === 1; // Connected
   });
+}
+
+export async function getConnectionByCompanySlug(companySlug: string): Promise<Connection> {
+  return getDbConnection(companySlug);
 }

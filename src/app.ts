@@ -5,10 +5,16 @@ import dynamicRecordRoutes from "./routes/record.routes";
 import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
-import userRoutes from "./routes/user.routes";
 import toolRoutes from "./routes/tool.routes";
+
+// Nuevas rutas del sistema multiempresa
+import coreUserRoutes from "./core/users/user.routes";
+import quickLearningRoutes from "./projects/quicklearning/routes";
+
 import { getEnvironmentConfig } from "./config/environments";
 import { getDatabaseInfo } from "./config/database";
+import { initializeProjects } from "./shared/projectManager";
+import { detectCompanyFromToken } from "./core/auth/companyMiddleware";
 
 const app = express();
 
@@ -40,7 +46,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/api/users', userRoutes);
+// Middleware global para detectar empresa automáticamente
+app.use(detectCompanyFromToken);
+
+// Inicializar proyectos al arrancar
+initializeProjects();
 
 // Rutas para tablas
 app.use("/api/tables", tableRoutes);
@@ -60,6 +70,12 @@ app.use("/api/ia-configs", iaConfigRoutes);
 // Rutas para herramientas dinámicas
 app.use("/api/tools", toolRoutes);
 
+// Nuevas rutas del sistema multiempresa
+app.use('/api/core/users', coreUserRoutes);
+
+// Rutas específicas de Quick Learning
+app.use('/api/projects/quicklearning', quickLearningRoutes);
+
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();
     const dbInfo = getDatabaseInfo();
@@ -67,14 +83,21 @@ app.get("/", (req, res) => {
     res.json({
       status: "ok",
       code: 200,
-      message: "Sistema operativo: Virtual Voices Node Engine v2.4",
+      message: "Sistema operativo: Virtual Voices Node Engine v2.5 (Multiempresa)",
       uptime: `${Math.floor(process.uptime())}s`,
-      trace: "XJ-85::Verified",
+      trace: "XJ-85::Verified::MultiTenant",
       environment: config.name,
       nodeEnv: config.nodeEnv,
       port: config.port,
       database: dbInfo.mongoUri,
       corsOrigin: config.corsOrigin,
+      features: {
+        multiempresa: true,
+        quickLearning: true,
+        controlMinutos: true,
+        elevenLabs: true,
+        autoAssignment: true
+      },
       timestamp: new Date().toISOString()
     });
   });

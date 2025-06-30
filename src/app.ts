@@ -11,6 +11,9 @@ import toolRoutes from "./routes/tool.routes";
 import coreUserRoutes from "./core/users/user.routes";
 import quickLearningRoutes from "./projects/quicklearning/routes";
 
+// Swagger configuration
+import { swaggerUi, specs } from "./config/swagger";
+
 import { getEnvironmentConfig } from "./config/environments";
 import { getDatabaseInfo } from "./config/database";
 import { initializeProjects } from "./shared/projectManager";
@@ -23,6 +26,18 @@ app.use(cors());
 // Configurar límites de body-parser para importaciones masivas
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// ========================================
+// SWAGGER DOCUMENTATION
+// ========================================
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: "Virtual Voices API - Multi-Empresa",
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true
+  }
+}));
 
 // Middleware para logging de importaciones masivas
 app.use((req, res, next) => {
@@ -52,6 +67,11 @@ app.use(detectCompanyFromToken);
 // Inicializar proyectos al arrancar
 initializeProjects();
 
+// ========================================
+// CORE USER SYSTEM ROUTES (Multi-Empresa)
+// ========================================
+app.use('/api/core/users', coreUserRoutes);
+
 // Rutas para tablas
 app.use("/api/tables", tableRoutes);
 
@@ -69,9 +89,6 @@ app.use("/api/ia-configs", iaConfigRoutes);
 
 // Rutas para herramientas dinámicas
 app.use("/api/tools", toolRoutes);
-
-// Nuevas rutas del sistema multiempresa
-app.use('/api/core/users', coreUserRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);
@@ -96,7 +113,12 @@ app.get("/", (req, res) => {
         quickLearning: true,
         controlMinutos: true,
         elevenLabs: true,
-        autoAssignment: true
+        autoAssignment: true,
+        swaggerDocs: true
+      },
+      links: {
+        swagger: "/api/docs",
+        coreUsers: "/api/core/users"
       },
       timestamp: new Date().toISOString()
     });

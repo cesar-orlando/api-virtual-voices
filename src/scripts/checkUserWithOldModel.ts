@@ -6,7 +6,7 @@ import { getProjectConfig } from '../shared/projectManager';
 import { getDbConnection } from '../config/connectionManager';
 
 // Importar el modelo antiguo
-import getUserModelOld from '../models/user.model';
+import getUserModelOld from '../core/users/user.model';
 
 async function checkUserWithOldModel() {
   console.log('🔍 Verificando usuario con modelo antiguo...\n');

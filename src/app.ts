@@ -10,6 +10,7 @@ import toolRoutes from "./routes/tool.routes";
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
 import quickLearningRoutes from "./projects/quicklearning/routes";
+import quickLearningTwilioRoutes from "./routes/quicklearning/twilioRoutes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -92,6 +93,9 @@ app.use("/api/tools", toolRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);
+
+// Rutas de Twilio para Quick Learning
+app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

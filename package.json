@@ -24,17 +24,23 @@
     "check:user-in-test-db": "NODE_ENV=production ts-node src/scripts/checkUserInTestDb.ts",
     "check:user-with-old-model": "NODE_ENV=production ts-node src/scripts/checkUserWithOldModel.ts",
     "check:user-in-quicklearning-db": "NODE_ENV=production ts-node src/scripts/checkUserInQuickLearningDb.ts",
-    "test:login-controller": "NODE_ENV=production ts-node src/scripts/testLoginController.ts"
+    "test:login-controller": "NODE_ENV=production ts-node src/scripts/testLoginController.ts",
+    "test:twilio-quicklearning": "NODE_ENV=development ts-node src/scripts/testTwilioQuickLearning.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/geolib": "^2.0.3",
+    "@types/twilio": "^3.19.2",
+    "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "form-data": "^4.0.3",
+    "geolib": "^3.3.4",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.14.1",
     "openai": "^5.1.1",
@@ -43,6 +49,7 @@
     "socket.io": "^4.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "twilio": "^5.7.1",
     "whatsapp-web.js": "^1.28.0"
   },
   "devDependencies": {

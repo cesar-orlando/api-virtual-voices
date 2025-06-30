@@ -10,6 +10,7 @@ import coreUserRoutes from "./core/users/user.routes";
 import toolRoutes from "./routes/tool.routes";
 import { getEnvironmentConfig } from "./config/environments";
 import { getDatabaseInfo } from "./config/database";
+import { swaggerUi, specs } from "./config/swagger";
 
 const app = express();
 
@@ -64,6 +65,13 @@ app.use("/api/ia-configs", iaConfigRoutes);
 // Rutas para herramientas dinámicas
 app.use("/api/tools", toolRoutes);
 
+// Swagger Documentation
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  customSiteTitle: 'Virtual Voices API Documentation',
+  customCss: '.swagger-ui .topbar { display: none }',
+  customfavIcon: '/favicon.ico'
+}));
+
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();
     const dbInfo = getDatabaseInfo();
@@ -79,7 +87,13 @@ app.get("/", (req, res) => {
       port: config.port,
       database: dbInfo.mongoUri,
       corsOrigin: config.corsOrigin,
-      timestamp: new Date().toISOString()
+      documentation: `${req.protocol}://${req.get('host')}/api/docs`,
+      timestamp: new Date().toISOString(),
+      features: {
+        quickLearningEnterprise: "✅ Conectado a base de datos externa",
+        multiCompany: "✅ Soporte multi-empresa",
+        authentication: "✅ JWT con secrets específicos por empresa"
+      }
     });
   });
 

@@ -44,7 +44,32 @@ export function getActiveConnections(): string[] {
 
 // Función para obtener conexión por company slug
 export async function getConnectionByCompanySlug(companySlug?: string): Promise<Connection> {
-  // Map quicklearning to test database
-  const dbName = companySlug === "quicklearning" ? "test" : (companySlug || "test");
+  // Quick Learning tiene su propia base de datos enterprise
+  if (companySlug === "quicklearning") {
+    return getQuickLearningConnection();
+  }
+  
+  // Para otros usuarios, usar base de datos local
+  const dbName = companySlug || "test";
   return getDbConnection(dbName);
+}
+
+// Función específica para Quick Learning Enterprise
+export async function getQuickLearningConnection(): Promise<Connection> {
+  const connectionKey = "quicklearning-enterprise";
+  
+  if (connections[connectionKey]) {
+    return connections[connectionKey];
+  }
+
+  const quickLearningUri = process.env.MONGO_URI_QUICKLEARNING;
+  if (!quickLearningUri) {
+    throw new Error("MONGO_URI_QUICKLEARNING is not configured");
+  }
+
+  const conn = await mongoose.createConnection(quickLearningUri).asPromise();
+  connections[connectionKey] = conn;
+  
+  console.log(`🎓 Connected to Quick Learning Enterprise Database`);
+  return conn;
 }

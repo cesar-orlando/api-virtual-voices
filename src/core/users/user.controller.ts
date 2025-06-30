@@ -4,7 +4,17 @@ import jwt from "jsonwebtoken";
 import { getConnectionByCompanySlug } from "../../config/connectionManager";
 import getUserModel from "../../models/user.model";
 
-const JWT_SECRET = process.env.JWT_SECRET || "changeme";
+// Función para obtener el JWT secret específico por empresa
+function getJWTSecret(companySlug?: string): string {
+  if (companySlug === "quicklearning") {
+    return process.env.JWT_SECRET_QUICKLEARNING || "changeme";
+  }
+  
+  // Para otros usuarios, usar el JWT secret del entorno actual
+  const { getEnvironmentConfig } = require("../../config/environments");
+  const config = getEnvironmentConfig();
+  return config.jwtSecret || "changeme";
+}
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -72,7 +82,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         role: user.role,
         companySlug: user.companySlug,
       },
-      JWT_SECRET,
+      getJWTSecret(companySlug),
       { expiresIn: "7d" }
     );
     res.json({

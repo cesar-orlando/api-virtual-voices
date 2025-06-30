@@ -6,6 +6,7 @@ import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import userRoutes from "./routes/user.routes";
+import coreUserRoutes from "./core/users/user.routes";
 import toolRoutes from "./routes/tool.routes";
 import { getEnvironmentConfig } from "./config/environments";
 import { getDatabaseInfo } from "./config/database";
@@ -41,6 +42,9 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/users', userRoutes);
+
+// Core user system routes
+app.use("/api/core/users", coreUserRoutes);
 
 // Rutas para tablas
 app.use("/api/tables", tableRoutes);

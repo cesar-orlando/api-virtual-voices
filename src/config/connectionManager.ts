@@ -41,3 +41,10 @@ export function getActiveConnections(): string[] {
     return conn.readyState === 1; // Connected
   });
 }
+
+// Función para obtener conexión por company slug
+export async function getConnectionByCompanySlug(companySlug?: string): Promise<Connection> {
+  // Map quicklearning to test database
+  const dbName = companySlug === "quicklearning" ? "test" : (companySlug || "test");
+  return getDbConnection(dbName);
+}

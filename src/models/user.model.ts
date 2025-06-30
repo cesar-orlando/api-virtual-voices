@@ -6,7 +6,8 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: string;
-  status?: string; // Estatus flexible, validado contra company.statuses
+  companySlug?: string;
+  status?: string | number; // Estatus flexible, validado contra company.statuses
   createdAt: Date;
 }
 
@@ -17,7 +18,8 @@ const UserSchema: Schema = new Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum:['Admin','Usuario'], default: 'Usuario'},
-    status: { type: String }, // Flexible, validado en el controlador
+    companySlug: { type: String }, // Company identifier
+    status: { type: Schema.Types.Mixed }, // Flexible, can be string or number
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

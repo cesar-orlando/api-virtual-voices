@@ -10,7 +10,14 @@ import { getCurrentCompanyContext, requireCompanyContext } from "../auth/company
 import { hasFeature } from "../../shared/projectManager";
 
 const saltRound = 10;
-const JWT_SECRET = process.env.JWT_SECRET || "changeme";
+
+// Función para obtener JWT secret específico por empresa
+function getJwtSecret(companySlug?: string): string {
+  if (companySlug === "quicklearning") {
+    return process.env.JWT_SECRET_QUICKLEARNING || process.env.JWT_SECRET || "changeme";
+  }
+  return process.env.JWT_SECRET || "changeme";
+}
 
 // Get all users for a company
 export const getAllCompanyUsers = async (req: Request, res: Response) => {
@@ -267,7 +274,7 @@ export const compareLogin = async (
             c_name: dbName,
             id: existingUser._id,
           },
-          JWT_SECRET,
+          getJwtSecret(existingUser.companySlug),
           { expiresIn: "1h" }
         );
         res.json({
@@ -374,4 +381,238 @@ export const getUserElevenLabsCalls = async (req: Request, res: Response): Promi
   }
 };
 
-export { login, register, getProfile, updateProfile }; 
+// ========================================
+// NUEVAS FUNCIONES CRÍTICAS PARA LOGIN/REGISTER
+// ========================================
+
+// Get all users for current company (improved version)
+export const getUsers = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { companySlug } = req.query;
+    
+    if (!companySlug) {
+      res.status(400).json({ message: "companySlug is required" });
+      return;
+    }
+
+    const connection = await getConnectionByCompanySlug(companySlug as string);
+    const User = getUserModel(connection);
+    
+    // Exclude password field from response
+    const users = await User.find({}, { password: 0 }).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: users.length,
+      companySlug: companySlug,
+      users: users
+    });
+    return;
+  } catch (err: any) {
+    console.error('Error getting users:', err);
+    res.status(500).json({ message: "Error getting users", error: err.message });
+    return;
+  }
+};
+
+// Get all users from all companies (admin only)
+export const getAllUsersFromAllCompanies = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const allUsers: any[] = [];
+    
+    // Get users from Quick Learning Enterprise
+    try {
+      const quickLearningConn = await getConnectionByCompanySlug("quicklearning");
+      const QuickLearningUser = getUserModel(quickLearningConn);
+      const quickLearningUsers = await QuickLearningUser.find({}, { password: 0 });
+      quickLearningUsers.forEach((user: any) => {
+        allUsers.push({ 
+          ...user.toObject(), 
+          companySlug: "quicklearning",
+          companyName: "Quick Learning Enterprise"
+        });
+      });
+    } catch (err) {
+      console.error('Error fetching Quick Learning users:', err);
+    }
+
+    // Get users from test database (regular companies)
+    try {
+      const testConn = await getConnectionByCompanySlug("test");
+      const TestUser = getUserModel(testConn);
+      const testUsers = await TestUser.find({}, { password: 0 });
+      testUsers.forEach((user: any) => {
+        allUsers.push({ 
+          ...user.toObject(), 
+          companySlug: user.companySlug || "test",
+          companyName: user.companySlug === "quicklearning" ? "Quick Learning" : "Regular Company"
+        });
+      });
+    } catch (err) {
+      console.error('Error fetching test users:', err);
+    }
+
+    res.json({
+      success: true,
+      count: allUsers.length,
+      users: allUsers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    });
+    return;
+  } catch (err: any) {
+    console.error('Error getting all users:', err);
+    res.status(500).json({ message: "Error getting all users", error: err.message });
+    return;
+  }
+};
+
+export const register = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, email, password, role, companySlug } = req.body;
+    if (!name || !email || !password || !role) {
+      res.status(400).json({ message: "Missing required fields" });
+      return;
+    }
+    const connection = await getConnectionByCompanySlug(companySlug);
+    const User = getUserModel(connection);
+    const existing = await User.findOne({ email });
+    if (existing) {
+      res.status(409).json({ message: "User already exists" });
+      return;
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      name,
+      email,
+      password: hashed,
+      role,
+      companySlug,
+      status: 1,
+    });
+    res.status(201).json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      companySlug: user.companySlug,
+      status: user.status,
+    });
+    return;
+  } catch (err: any) {
+    res.status(500).json({ message: "Registration error", error: err.message });
+    return;
+  }
+};
+
+export const login = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, password, companySlug } = req.body;
+    if (!email || !password) {
+      res.status(400).json({ message: "Missing credentials" });
+      return;
+    }
+    const connection = await getConnectionByCompanySlug(companySlug);
+    const User = getUserModel(connection);
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(401).json({ message: "Invalid credentials" });
+      return;
+    }
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      res.status(401).json({ message: "Invalid credentials" });
+      return;
+    }
+    if (user.status !== 1) {
+      res.status(403).json({ message: "User is not active" });
+      return;
+    }
+    const jwtSecret = getJwtSecret(companySlug);
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        companySlug: user.companySlug,
+      },
+      jwtSecret,
+      { expiresIn: "7d" }
+    );
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        companySlug: user.companySlug,
+        status: user.status,
+      },
+    });
+    return;
+  } catch (err: any) {
+    res.status(500).json({ message: "Login error", error: err.message });
+    return;
+  }
+};
+
+export const getProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { user } = req as any;
+    if (!user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const connection = await getConnectionByCompanySlug(user.companySlug);
+    const User = getUserModel(connection);
+    const dbUser = await User.findById(user.id);
+    if (!dbUser) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+    res.json({
+      id: dbUser._id,
+      name: dbUser.name,
+      email: dbUser.email,
+      role: dbUser.role,
+      companySlug: dbUser.companySlug,
+      status: dbUser.status,
+    });
+    return;
+  } catch (err: any) {
+    res.status(500).json({ message: "Profile error", error: err.message });
+    return;
+  }
+};
+
+export const updateProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { user } = req as any;
+    if (!user) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    const { name, password } = req.body;
+    const connection = await getConnectionByCompanySlug(user.companySlug);
+    const User = getUserModel(connection);
+    const dbUser = await User.findById(user.id);
+    if (!dbUser) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+    if (name) dbUser.name = name;
+    if (password) dbUser.password = await bcrypt.hash(password, 10);
+    await dbUser.save();
+    res.json({
+      id: dbUser._id,
+      name: dbUser.name,
+      email: dbUser.email,
+      role: dbUser.role,
+      companySlug: dbUser.companySlug,
+      status: dbUser.status,
+    });
+    return;
+  } catch (err: any) {
+    res.status(500).json({ message: "Update error", error: err.message });
+    return;
+  }
+}; 

@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import getIaConfigModel, { IIaConfig } from "../models/iaConfig.model";
 import { getDbConnection } from "../config/connectionManager";
 import { generateResponse, openai, preparePrompt } from "../services/openai";
-import getUserModel from "../models/user.model";
+import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
 
 // 🔥 Crear configuración inicial si no existe

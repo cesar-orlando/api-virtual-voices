@@ -4,7 +4,7 @@ import { getSessionModel } from "../models/whatsappSession.model";
 import { getDbConnection } from "../config/connectionManager";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 import getIaConfigModel from "../models/iaConfig.model";
-import getUserModel from "../models/user.model";
+import getUserModel from "../core/users/user.model";
 import fs from "fs";
 import path from "path";
 

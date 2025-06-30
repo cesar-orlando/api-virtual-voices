@@ -78,9 +78,6 @@ Agrega estas variables a tu `.env`:
 
 ```bash
 # TWILIO CONFIGURATION (QUICK LEARNING)
-TWILIO_ACCOUNT_SID="AC5f21ea4eaf1c576c0d13fca789f63a5d"
-TWILIO_AUTH_TOKEN="210fbd6d7efb23fb555c45d3813a1497"
-TWILIO_PHONE_NUMBER=+5213341610750
 
 # URLs para webhooks de Twilio (ajustar según entorno)
 TWILIO_WEBHOOK_URL_DEV="http://localhost:3001/api/quicklearning/twilio/webhook"

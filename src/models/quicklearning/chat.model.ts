@@ -125,7 +125,7 @@ const QuickLearningChatSchema: Schema = new mongoose.Schema({
   }
 }, { 
   timestamps: true,
-  collection: 'quicklearning_chats'
+  collection: 'chats'
 });
 
 // Índices para optimizar consultas

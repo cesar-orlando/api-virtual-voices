@@ -146,7 +146,13 @@ const options = {
       }
     }
   },
-  apis: ['./src/core/users/*.ts', './src/routes/*.ts', './src/controllers/*.ts']
+  apis: [
+    './src/core/users/*.ts',
+    './src/routes/*.ts',
+    './src/routes/quicklearning/*.ts',
+    './src/projects/quicklearning/routes.ts',
+    './src/controllers/*.ts'
+  ]
 };
 
 const specs = swaggerJSDoc(options);

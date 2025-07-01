@@ -12,6 +12,51 @@ router.use(detectCompanyFromToken);
 // Middleware para requerir contexto de empresa
 router.use(requireCompanyContext);
 
+/**
+ * @swagger
+ * tags:
+ *   name: Quick Learning Project
+ *   description: Endpoints generales de lógica de negocio para Quick Learning
+ */
+
+/**
+ * @swagger
+ * /api/projects/quicklearning/flows/prospectos:
+ *   post:
+ *     summary: Ejecutar flujo de prospectos (IA, lógica de negocio)
+ *     tags: [Quick Learning Project]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - message
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 description: Mensaje del usuario
+ *               chatHistory:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                 description: Historial de chat previo
+ *     responses:
+ *       200:
+ *         description: Respuesta generada por el flujo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 response:
+ *                   type: string
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para obtener flujo de prospectos
 router.post("/flows/prospectos", requireFeature('customFlows'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -42,6 +87,43 @@ router.post("/flows/prospectos", requireFeature('customFlows'), async (req: Requ
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/quicklearning/auto-assignment:
+ *   post:
+ *     summary: Asignar prospecto automáticamente al mejor asesor disponible
+ *     tags: [Quick Learning Project]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - prospectType
+ *               - phoneNumber
+ *             properties:
+ *               prospectType:
+ *                 type: string
+ *                 description: Tipo de prospecto
+ *               phoneNumber:
+ *                 type: string
+ *                 description: Número de teléfono del prospecto
+ *     responses:
+ *       200:
+ *         description: Asignación realizada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 assignment:
+ *                   type: object
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para asignación automática de prospectos
 router.post("/auto-assignment", requireFeature('autoAssignment'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -77,6 +159,43 @@ router.post("/auto-assignment", requireFeature('autoAssignment'), async (req: Re
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/quicklearning/move-prospect:
+ *   post:
+ *     summary: Mover prospecto a una tabla específica
+ *     tags: [Quick Learning Project]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *               - destinationTable
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 description: Número de teléfono del prospecto
+ *               destinationTable:
+ *                 type: string
+ *                 description: Slug de la tabla de destino
+ *     responses:
+ *       200:
+ *         description: Prospecto movido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para mover prospecto a tabla específica
 router.post("/move-prospect", requireFeature('autoAssignment'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -112,6 +231,27 @@ router.post("/move-prospect", requireFeature('autoAssignment'), async (req: Requ
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/quicklearning/reports/prospectos:
+ *   get:
+ *     summary: Generar reporte de prospectos
+ *     tags: [Quick Learning Project]
+ *     responses:
+ *       200:
+ *         description: Reporte generado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 report:
+ *                   type: object
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para generar reporte de prospectos
 router.get("/reports/prospectos", requireFeature('autoAssignment'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -140,6 +280,43 @@ router.get("/reports/prospectos", requireFeature('autoAssignment'), async (req: 
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/quicklearning/validate-phone:
+ *   post:
+ *     summary: Validar número de teléfono
+ *     tags: [Quick Learning Project]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phoneNumber
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 description: Número de teléfono a validar
+ *     responses:
+ *       200:
+ *         description: Resultado de la validación
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 isValid:
+ *                   type: boolean
+ *                 formatted:
+ *                   type: string
+ *                 original:
+ *                   type: string
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para validar número de teléfono
 router.post("/validate-phone", async (req: Request, res: Response): Promise<void> => {
   try {
@@ -173,6 +350,29 @@ router.post("/validate-phone", async (req: Request, res: Response): Promise<void
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/quicklearning/business-hours:
+ *   get:
+ *     summary: Obtener horarios de atención
+ *     tags: [Quick Learning Project]
+ *     responses:
+ *       200:
+ *         description: Horarios de atención y estado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 businessHours:
+ *                   type: object
+ *                 isOpen:
+ *                   type: boolean
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para verificar horarios de atención
 router.get("/business-hours", async (req: Request, res: Response): Promise<void> => {
   try {
@@ -198,6 +398,27 @@ router.get("/business-hours", async (req: Request, res: Response): Promise<void>
   }
 });
 
+/**
+ * @swagger
+ * /api/projects/quicklearning/config:
+ *   get:
+ *     summary: Obtener configuración específica de Quick Learning
+ *     tags: [Quick Learning Project]
+ *     responses:
+ *       200:
+ *         description: Configuración de la empresa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 config:
+ *                   type: object
+ *                 companySlug:
+ *                   type: string
+ */
 // Ruta para obtener configuración específica de Quick Learning
 router.get("/config", async (req: Request, res: Response): Promise<void> => {
   try {

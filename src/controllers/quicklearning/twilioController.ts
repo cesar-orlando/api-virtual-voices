@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
 import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
-import { getDbConnection } from "../../config/connectionManager";
+import { getDbConnection, getConnectionByCompanySlug } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
 import getRecordModel from "../../models/record.model";
 import fs from "fs";
@@ -404,6 +404,55 @@ export const getMessageHistory = async (req: Request, res: Response): Promise<vo
     res.status(200).json(history);
   } catch (error) {
     console.error("❌ Error obteniendo historial:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Listar chats activos
+export const getActiveChats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const conn = await getDbConnection('quicklearning');
+    const QuickLearningChat = getQuickLearningChatModel(conn);
+
+    const chats = await QuickLearningChat.find({ status: "active" })
+      .sort({ "lastMessage.date": -1 })
+      .limit(100)
+      .lean();
+
+    res.status(200).json(chats);
+  } catch (error) {
+    console.error("❌ Error obteniendo chats activos:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Obtener historial de un chat por teléfono
+export const getChatHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { phone } = req.params;
+    const companySlug = req.query.companySlug || req.body.companySlug;
+    if (!companySlug) {
+      res.status(400).json({ error: "companySlug query param is required" });
+      return;
+    }
+    const conn = await getConnectionByCompanySlug(companySlug as string);
+    const QuickLearningChat = getQuickLearningChatModel(conn);
+
+    // Buscar primero el valor exacto
+    let chat = await QuickLearningChat.findOne({ phone }).lean();
+    // Si no lo encuentra, probar con + y sin +
+    if (!chat && phone.startsWith('+')) {
+      chat = await QuickLearningChat.findOne({ phone: phone.replace(/^\+/, '') }).lean();
+    } else if (!chat && !phone.startsWith('+')) {
+      chat = await QuickLearningChat.findOne({ phone: `+${phone}` }).lean();
+    }
+    if (!chat) {
+      res.status(404).json({ error: "Chat not found" });
+      return;
+    }
+    res.status(200).json(chat.messages);
+  } catch (error) {
+    console.error("❌ Error obteniendo historial de chat:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };

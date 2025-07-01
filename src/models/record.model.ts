@@ -131,5 +131,5 @@ RecordSchema.methods.getFormattedData = function(): Record<string, any> {
 
 // Exporta el modelo
 export default function getRecordModel(conn: Connection): IRecordModel {
-  return conn.model<IRecord, IRecordModel>("Record", RecordSchema);
+  return conn.model<IRecord, IRecordModel>("Record", RecordSchema, "dynamicrecords");
 }

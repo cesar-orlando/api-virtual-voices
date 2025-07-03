@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { startWhatsappBot, clients } from "../services/whatsapp/index";
 import { getSessionModel } from "../models/whatsappSession.model";
-import { getDbConnection } from "../config/connectionManager";
+import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 import getIaConfigModel from "../models/iaConfig.model";
 import getUserModel from "../core/users/user.model";
@@ -12,7 +12,7 @@ import path from "path";
 export const getAllWhatsappMessages = async (req: Request, res: Response) => {
   try {
     const { c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const WhatsappChat = getWhatsappChatModel(conn);
 
     const chats = await WhatsappChat.find({});
@@ -29,7 +29,7 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
     return;
   }
 
-  const conn = await getDbConnection(c_name);
+  const conn = await getConnectionByCompanySlug(c_name);
 
   const WhatsappSession = getSessionModel(conn);
   const IAConfig = getIaConfigModel(conn);
@@ -68,7 +68,7 @@ export const getAllWhatsappSessions = async (req: Request, res: Response) => {
   try {
     const { c_name, user_id } = req.params;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const UserConfig = getUserModel(conn);
 
@@ -82,7 +82,7 @@ export const getAllWhatsappSessions = async (req: Request, res: Response) => {
 
     let sessions;
 
-    if (user.role !== "Admin") {
+    if (user.role !== "Administrador") {
       sessions = await WhatsappSession.find({ "user.id": user_id });
     } else {
       sessions = await WhatsappSession.find({});
@@ -98,7 +98,7 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
   const { c_name } = req.params;
   const updates = req.body;
 
-  const conn = await getDbConnection(c_name);
+  const conn = await getConnectionByCompanySlug(c_name);
 
   const WhatsappSession = getSessionModel(conn);
   const session = await WhatsappSession.findOneAndUpdate(
@@ -118,7 +118,7 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
 export const deleteWhatsappSession = async (req: Request, res: Response) => {
   const { c_name, sessionId } = req.params;
 
-  const conn = await getDbConnection(c_name);
+  const conn = await getConnectionByCompanySlug(c_name);
 
   const WhatsappSession = getSessionModel(conn);
   const session = await WhatsappSession.findByIdAndDelete(sessionId);
@@ -162,7 +162,7 @@ export const MessageToAll = async (
   const { messageAll } = req.body;
   const { c_name, sessionId } = req.params;
 
-  const conn = await getDbConnection(c_name);
+  const conn = await getConnectionByCompanySlug(c_name);
 
   const WhatsappSession = getSessionModel(conn);
   const session = await WhatsappSession.findById(sessionId);
@@ -191,7 +191,7 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
     const { c_name, sessionId } = req.params;
     const { phone, message } = req.body;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const WhatsappSession = getSessionModel(conn);
     const WhatsappChat = getWhatsappChatModel(conn);

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import getCompanyModel from "../models/company.model";
-import { getDbConnection } from "../config/connectionManager";
+import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { createIAConfig } from "./iaConfig.controller";
 import getIaConfigModel from "../models/iaConfig.model";
 
@@ -10,7 +10,7 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
     if (!name) res.status(400).json({ message: "Name is required" });
 
     // Crea la base de datos específica para la empresa
-    const conn = await getDbConnection(name);
+    const conn = await getConnectionByCompanySlug(name);
 
     // Crea el registro de la empresa en la base principal
     const Company = getCompanyModel(conn);
@@ -45,7 +45,7 @@ export const getCompany = async (req: Request, res: Response) => {
   try {
     const { name } = req.params;
     
-    const conn = await getDbConnection(name);
+    const conn = await getConnectionByCompanySlug(name);
 
     const Company = getCompanyModel(conn);
     const company = await Company.find({ name });

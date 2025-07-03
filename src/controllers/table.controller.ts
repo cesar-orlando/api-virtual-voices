@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import getTableModel from "../models/table.model";
+import getTableModel, { ITable } from "../models/table.model";
 import getRecordModel from "../models/record.model";
-import { getDbConnection } from "../config/connectionManager";
+import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { TableField } from "../types";
 
 // Tipos de campo permitidos
@@ -110,7 +110,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  const conn = await getDbConnection(c_name);
+  const conn = await getConnectionByCompanySlug(c_name);
   const Table = getTableModel(conn);
 
   try {
@@ -148,12 +148,12 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 export const getTables = async (req: Request, res: Response) => {
   try {
     const { c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const Record = getRecordModel(conn);
     
     // Obtener tablas ordenadas por fecha de creación
-    const tables = await Table.find({ c_name, isActive: true })
+    const tables = await Table.find({ c_name})
       .sort({ createdAt: -1 })
       .lean();
 
@@ -186,7 +186,7 @@ export const getTables = async (req: Request, res: Response) => {
 export const getTable = async (req: Request, res: Response) => {
   try {
     const { id, c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const table = await Table.findOne({ _id: id, c_name });
     
@@ -205,7 +205,7 @@ export const getTable = async (req: Request, res: Response) => {
 export const getTableBySlug = async (req: Request, res: Response) => {
   try {
     const { slug, c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const table = await Table.findOne({ slug, c_name, isActive: true });
     
@@ -231,7 +231,7 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     
     // Obtener la tabla actual para validaciones
@@ -341,29 +341,38 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
 // Eliminar una tabla (soft delete cambiando isActive a false)
 export const deleteTable = async (req: Request, res: Response): Promise<void> => {
   const { id, c_name } = req.params;
+  const { deletedBy } = req.body; // usuario que elimina la tabla
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
-    
-    // Soft delete: cambiar isActive a false en lugar de eliminar
-    const deletedTable = await Table.findByIdAndUpdate(
-      id,
-      { isActive: false },
-      { new: true }
-    );
+    const Record = getRecordModel(conn);
 
-    if (!deletedTable) {
+    // Buscar la tabla para obtener el slug
+    const table = await Table.findById(id) as ITable;
+    if (!table) {
       res.status(404).json({ message: "Table not found" });
       return;
     }
 
+    // Soft delete: cambiar isActive a false y guardar info de eliminación
+    table.isActive = false;
+    table.deletedAt = new Date();
+    table.deletedBy = deletedBy || "unknown";
+    await table.save();
+
+    // Eliminar todos los registros asociados a la tabla
+    const deleteResult = await Record.deleteMany({ tableSlug: table.slug, c_name });
+
     res.status(200).json({ 
-      message: "Table deleted successfully", 
-      table: deletedTable 
+      message: "Table and associated records deleted successfully", 
+      table: table as ITable,
+      deletedBy: table.deletedBy,
+      deletedAt: table.deletedAt,
+      recordsDeleted: deleteResult.deletedCount
     });
   } catch (error) {
-    res.status(500).json({ message: "Error deleting table", error });
+    res.status(500).json({ message: "Error deleting table and records", error });
   }
 };
 
@@ -371,7 +380,7 @@ export const deleteTable = async (req: Request, res: Response): Promise<void> =>
 export const getTableFields = async (req: Request, res: Response) => {
   try {
     const { id, c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const table = await Table.findOne({ _id: id, c_name, isActive: true });
     
@@ -394,7 +403,7 @@ export const getTableFields = async (req: Request, res: Response) => {
 export const getTableFieldsBySlug = async (req: Request, res: Response) => {
   try {
     const { slug, c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const table = await Table.findOne({ slug, c_name, isActive: true });
     
@@ -417,7 +426,7 @@ export const getTableFieldsBySlug = async (req: Request, res: Response) => {
 export const getTableStructure = async (req: Request, res: Response) => {
   try {
     const { slug, c_name } = req.params;
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     
     const table = await Table.findOne({ slug, c_name, isActive: true });
@@ -464,7 +473,7 @@ export const updateTableStructure = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
 
     // Obtener la tabla actual
@@ -529,7 +538,7 @@ export const duplicateTable = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
 
     // Obtener la tabla original
@@ -584,7 +593,7 @@ export const exportTable = async (req: Request, res: Response) => {
     const { slug, c_name } = req.params;
     const { format = 'json' } = req.query;
     
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     
     const table = await Table.findOne({ slug, c_name, isActive: true });
@@ -636,7 +645,7 @@ export const importTable = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
 
     // Validar estructura de datos importados

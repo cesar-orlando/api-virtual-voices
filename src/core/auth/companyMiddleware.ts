@@ -25,11 +25,11 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
     const config = getEnvironmentConfig();
     const decoded = jwt.verify(token, config.jwtSecret) as any;
     
-    if (decoded.c_name) {
-      const companyContext = getCompanyContext(decoded.c_name);
+    const slug = decoded.companySlug || decoded.c_name;
+    if (slug) {
+      const companyContext = getCompanyContext(slug);
       if (companyContext) {
         req.companyContext = companyContext;
-        console.log(`🏢 Empresa detectada: ${companyContext.name} (${companyContext.slug})`);
       }
     }
   } catch (error) {

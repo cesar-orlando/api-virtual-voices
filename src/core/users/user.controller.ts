@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import getUserModel, { IUser } from "./user.model";
 import getMinutosControlModel from "./minutosControl.model";
 import getElevenLabsCallModel from "./elevenLabs.model";
-import { getDbConnection, getConnectionByCompanySlug } from "../../config/connectionManager";
+import { getConnectionByCompanySlug } from "../../config/connectionManager";
 import { getCurrentCompanyContext, requireCompanyContext } from "../auth/companyMiddleware";
 import { hasFeature } from "../../shared/projectManager";
 
@@ -28,7 +28,7 @@ export const getAllCompanyUsers = async (req: Request, res: Response) => {
       return;
     }
 
-    const conn = await getDbConnection(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
     const User = getUserModel(conn);
     const users = await User.find({ companySlug: companyContext.slug });
 
@@ -62,7 +62,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
       if (dbName === "admin" || dbName === "local") continue;
 
       try {
-        const conn = await getDbConnection(dbName);
+        const conn = await getConnectionByCompanySlug(dbName);
         const User = getUserModel(conn);
         const users = await User.find();
         users.forEach((user: any) => {
@@ -89,8 +89,13 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const conn = await getDbConnection(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
     const User = getUserModel(conn);
+
+    // Log para depuración
+    console.log('Buscando usuario por ID:', req.params.id, 'en empresa:', companyContext.slug);
+
+    // Buscar solo por _id
     const user = await User.findById(req.params.id);
 
     if (!user) {
@@ -131,7 +136,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 
     // --- FIX: Redirigir quicklearning a test ---
     const realDbName = companyContext.slug === 'quicklearning' ? 'test' : companyContext.slug;
-    const conn = await getDbConnection(realDbName);
+    const conn = await getConnectionByCompanySlug(realDbName);
     const User = getUserModel(conn);
 
     // Verificar si el email ya existe
@@ -161,7 +166,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 // Update a user by ID
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, status } = req.body;
     const companyContext = getCurrentCompanyContext(req);
     
     if (!companyContext) {
@@ -169,10 +174,17 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const conn = await getDbConnection(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
     const User = getUserModel(conn);
 
-    const updateData: any = { name, email, role };
+    // Log para depuración
+    console.log('Intentando actualizar usuario:', req.params.id, 'en empresa:', companyContext.slug);
+
+    const updateData: any = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (role) updateData.role = role;
+    if (status) updateData.status = status;
     if (password) {
       if (password.length < 10) {
         res.status(400).json({ message: "La contraseña debe tener al menos 10 caracteres" });
@@ -181,6 +193,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       updateData.password = await bcrypt.hash(password, saltRound);
     }
 
+    // Buscar solo por _id
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -208,7 +221,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const conn = await getDbConnection(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
     const User = getUserModel(conn);
 
     const deletedUser = await User.findByIdAndDelete(req.params.id);
@@ -243,7 +256,7 @@ export const compareLogin = async (
       const dbName = dbInfo.name;
       if (dbName === "admin" || dbName === "local") continue;
 
-      const conn = await getDbConnection(dbName);
+      const conn = await getConnectionByCompanySlug(dbName);
       const User = getUserModel(conn);
       console.log("email", email);
       console.log("User", User);
@@ -322,7 +335,7 @@ export const getUserMinutos = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const conn = await getDbConnection(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
     const MinutosControl = getMinutosControlModel(conn);
     
     const control = await MinutosControl.findOne({ 
@@ -363,7 +376,7 @@ export const getUserElevenLabsCalls = async (req: Request, res: Response): Promi
       return;
     }
 
-    const conn = await getDbConnection(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
     const ElevenLabsCall = getElevenLabsCallModel(conn);
     
     const calls = await ElevenLabsCall.find({ 
@@ -506,6 +519,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, companySlug } = req.body;
+    console.log("req.body", req.body);
     if (!email || !password) {
       res.status(400).json({ message: "Missing credentials" });
       return;
@@ -522,7 +536,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       res.status(401).json({ message: "Invalid credentials" });
       return;
     }
-    if (user.status !== 1) {
+    console.log("user", user);
+    if (user.status !== "active") {
       res.status(403).json({ message: "User is not active" });
       return;
     }

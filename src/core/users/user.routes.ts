@@ -5,9 +5,12 @@ import {
   getProfile,
   updateProfile,
   getUsers,
-  getAllUsersFromAllCompanies
+  getAllUsersFromAllCompanies,
+  updateUser,
+  getUserById
 } from "./user.controller";
 import { detectCompanyFromToken } from "../auth/companyMiddleware";
+import { requireCompanyContext } from "../auth/companyMiddleware";
 
 const router = Router();
 
@@ -309,5 +312,11 @@ router.get("/me", getProfile);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.put("/me/update", updateProfile);
+
+// Agregar endpoint para actualizar usuario por ID
+router.put("/:id", requireCompanyContext, updateUser);
+
+// Agregar endpoint para consultar usuario por ID
+router.get("/:id", requireCompanyContext, getUserById);
 
 export default router; 

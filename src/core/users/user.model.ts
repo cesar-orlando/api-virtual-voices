@@ -5,9 +5,9 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  role: string;
+  role: 'Administrador' | 'Gerente' | 'Marketing' | 'Asesor';
   companySlug?: string;
-  status: number; // 1: Active, 2: Inactive, 3: Suspended
+  status: 'active' | 'inactive';
   permissions?: string[];
   metadata?: Record<string, any>;
   createdAt: Date;
@@ -20,12 +20,16 @@ const UserSchema: Schema = new Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    role: { type: String, required: true },
+    role: { 
+      type: String, 
+      required: true, 
+      enum: ['Administrador', 'Gerente', 'Marketing', 'Asesor']
+    },
     companySlug: { type: String, required: false },
     status: {
-      type: Number,
-      enum: [1, 2, 3], // 1: Active, 2: Inactive, 3: Suspended
-      default: 1
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active'
     },
     permissions: [{ type: String }],
     metadata: { type: Schema.Types.Mixed }
@@ -42,13 +46,13 @@ UserSchema.index({ status: 1 });
 
 // Método para verificar permisos
 UserSchema.methods.hasPermission = function(permission: string): boolean {
-  if (this.role === 'Admin') return true;
+  if (this.role === 'Administrador') return true;
   return this.permissions?.includes(permission) || false;
 };
 
 // Método para verificar si el usuario está activo
 UserSchema.methods.isActive = function(): boolean {
-  return this.status === 1;
+  return this.status === 'active';
 };
 
 // Create and export the User model

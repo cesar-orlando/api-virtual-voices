@@ -35,6 +35,8 @@ if (!fs.existsSync(authDir)) {
   console.log(`✅ Directorio de autenticación creado en: ${authDir}`);
 }
 
+console.log('MONGO_URI_QUICKLEARNING:', process.env.MONGO_URI_QUICKLEARNING);
+
 async function main() {
   try {
     // Conectar a la base de datos usando la configuración del entorno

@@ -44,13 +44,19 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     const WhatsappChat = getWhatsappChatModel(conn);
 
     // Verifica si el registro ya existe
-    let existingRecord = await WhatsappChat.findOne({ tableSlug: "prospectos", phone: userPhone });
+    const cleanUserPhone = userPhone.replace('@c.us', '');
+    let existingRecord = await WhatsappChat.findOne({
+      $or: [
+        { phone: cleanUserPhone },
+        { phone: `${cleanUserPhone}@c.us` }
+      ]
+    });
 
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
       const Session = getSessionModel(conn);
       const session = await Session.findOne({ name: sessionName });
-      existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", userPhone, message, session);
+      existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
     } else {
       await updateChatRecord(company, existingRecord, "inbound", message.body, "human")
     }
@@ -66,6 +72,37 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       return;
     }
     // --- FIN VALIDACIÓN DE IA ---
+
+    if (existingRecord && existingRecord.phone === '5214521311888@c.us') {
+      console.log('Historial de mensajes para 4521311888:', (existingRecord.messages || []).length);
+      console.log('Últimos mensajes:', (existingRecord.messages));
+    }
+
+    // Limita el historial a los últimos 15 mensajes para evitar errores de tokens
+    const MAX_MSG_LENGTH = 1000;
+    const history = (existingRecord.messages || [])
+      .slice(-15)
+      .map((msg: any) => {
+        let content = typeof msg.body === 'string' ? msg.body : '';
+        if (content.length > MAX_MSG_LENGTH) content = content.slice(0, MAX_MSG_LENGTH);
+        if (msg.direction === "inbound") return { role: "user", content };
+        if (msg.direction === "outbound-api" || msg.respondedBy === "bot") return { role: "assistant", content };
+        return null;
+      })
+      .filter(Boolean);
+    console.log('history length:', history.length);
+    console.log('history sample:', history);
+    const safeHistory = history.filter((h): h is { role: string, content: string } => !!h && typeof h.content === 'string');
+    console.log('history total chars:', safeHistory.reduce((acc, h) => acc + (h.content.length), 0));
+
+    // Agrega el mensaje actual
+    history.push({ role: "user", content: message.body });
+
+    // Justo antes de llamar a OpenAI para generar la respuesta:
+    const safeHistoryForOpenAI = history
+      .filter((h): h is { role: string, content: string } => !!h && typeof h.content === 'string')
+      .map(h => ({ role: h.role, content: h.content }));
+    console.log('Enviando a OpenAI:', JSON.stringify(safeHistoryForOpenAI), 'tokens aprox:', safeHistoryForOpenAI.reduce((acc, h) => acc + h.content.length, 0));
 
     await sendAndRecordBotResponse(company, sessionName, client, message, existingRecord, conn);
 
@@ -135,7 +172,13 @@ async function sendAndRecordBotResponse(
   const IaConfig = getIaConfigModel(conn);
   const sessionModel = getSessionModel(conn);
   const Record = getRecordModel(conn);
-  const records = await Record.find();
+  // SOLO traer registros de prospectos para este usuario específico, no toda la BD
+  const userPhone = message.from;
+  const records = await Record.find({ 
+    tableSlug: 'prospectos', 
+    c_name: company,
+    'data.number': userPhone 
+  }).limit(1); // Solo necesitamos 1 registro
   const session = await sessionModel.findOne({ name: sessionName });
   const config = await IaConfig.findOne({ _id: session?.IA?.id });
 
@@ -145,28 +188,63 @@ async function sendAndRecordBotResponse(
     IAPrompt = await preparePrompt(config);
   }
 
-  // Mapea historial para OpenAI
-  const history = (existingRecord.messages || []).map((msg: any) => {
-    if (msg.direction === "inbound") return { role: "user", content: msg.body };
-    if (msg.direction === "outbound-api") return { role: "assistant", content: msg.body };
-    return null;
-  }).filter(Boolean);
+  // Mapea historial para OpenAI - LIMPIO Y SEGURO
+  const MAX_MSG_LENGTH = 1000;
+  const history = (existingRecord.messages || [])
+    .slice(-15)
+    .map((msg: any) => {
+      let content = typeof msg.body === 'string' ? msg.body : '';
+      if (content.length > MAX_MSG_LENGTH) content = content.slice(0, MAX_MSG_LENGTH);
+      if (msg.direction === "inbound") return { role: "user", content };
+      if (msg.direction === "outbound-api" || msg.respondedBy === "bot") return { role: "assistant", content };
+      return null;
+    })
+    .filter(Boolean);
 
   // Agrega el mensaje actual
   history.push({ role: "user", content: message.body });
 
+  // LIMPIA el historial para OpenAI - SOLO role y content
+  const safeHistoryForOpenAI = history
+    .filter((h): h is { role: string, content: string } => !!h && typeof h.content === 'string')
+    .map(h => ({ role: h.role, content: h.content }));
+
+  console.log("history ---->", safeHistoryForOpenAI);
+  console.log("Total caracteres:", safeHistoryForOpenAI.reduce((acc, h) => acc + h.content.length, 0));
+
   try {
+    console.log(`🤖 Generando respuesta para ${message.from}...`);
     const response = await generateResponse(
       IAPrompt,
       config,
-      history,
-      records)
+      safeHistoryForOpenAI,
+      records,
+      company) // Agregar c_name para las herramientas
     aiResponse = response || defaultResponse;
+    console.log(`🤖 Respuesta generada: "${aiResponse.substring(0, 100)}..."`);
   } catch (error) {
     console.error("Error al obtener respuesta de OpenAI:", error);
+    aiResponse = defaultResponse;
+    console.log(`🤖 Usando respuesta por defecto: "${aiResponse}"`);
   }
 
-  const msg = await client.sendMessage(message.from, aiResponse);
+  // Enviar mensaje y obtener respuesta
+  let msg;
+  try {
+    msg = await client.sendMessage(message.from, aiResponse);
+    console.log(`✅ Mensaje enviado exitosamente a ${message.from}`);
+  } catch (sendError) {
+    console.error("Error enviando mensaje:", sendError);
+    // Si falla el envío, crear un objeto mock para continuar
+    msg = { body: aiResponse };
+  }
+
+  // Asegurar que msg.body existe
+  const messageBody = msg?.body || aiResponse;
+  
+  // Actualizar el registro existente con la respuesta de la IA
   existingRecord.botActive = activeBot;
-  await updateChatRecord(company, existingRecord, "outbound-api", msg.body, "bot");
+  await updateChatRecord(company, existingRecord, "outbound-api", messageBody, "bot");
+  
+  console.log(`[WhatsappChat] Respuesta de IA guardada: "${messageBody.substring(0, 50)}..."`);
 }

@@ -127,10 +127,18 @@ export async function generateResponse(
     // Obtener herramientas para la empresa
     const tools = c_name ? await getToolsForCompany(c_name) : [];
 
+    // LIMPIA el historial para OpenAI - SOLO role y content
+    const safeHistoryForOpenAI = chatHistory
+      .filter((h: any): h is { role: string, content: string } => !!h && typeof h.content === 'string')
+      .map((h: any) => ({ role: h.role, content: h.content }));
+
+    console.log('OpenAI - Enviando:', JSON.stringify(safeHistoryForOpenAI), 'tokens aprox:', safeHistoryForOpenAI.reduce((acc: number, h: any) => acc + h.content.length, 0));
+
     const messages = [
       { role: "system", content: prompt || "Eres un asistente virtual." },
-      { role: "system", content: `Estos son los productos disponibles ${JSON.stringify(records)}`},
-      ...chatHistory
+      // Solo enviar información básica del prospecto, no toda la BD
+      { role: "system", content: `Información del prospecto: ${records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto'}`},
+      ...safeHistoryForOpenAI
     ];
 
     // Configurar request con herramientas si están disponibles
@@ -184,27 +192,41 @@ export async function generateResponse(
           temperature: 0.3,
         });
 
-        return followUpResponse.choices[0].message.content;
+        const toolResponse = followUpResponse.choices[0].message.content || "No se pudo generar una respuesta.";
+        console.log(`✅ Tool call respondió: "${toolResponse.substring(0, 100)}..."`);
+        return toolResponse;
       }
     }
 
-    return choice.message.content;
+    const finalResponse = choice.message.content || "No se pudo generar una respuesta.";
+    console.log(`✅ OpenAI respondió: "${finalResponse.substring(0, 100)}..."`);
+    return finalResponse;
   } catch (error: any) {
     console.error('Error generating response with tools:', error);
     
-    // Fallback a respuesta sin herramientas
+    // Fallback a respuesta sin herramientas - LIMPIO Y SEGURO
     try {
+      // LIMPIA el historial para el fallback también
+      const safeHistoryForFallback = chatHistory
+        .filter((h: any): h is { role: string, content: string } => !!h && typeof h.content === 'string')
+        .map((h: any) => ({ role: h.role, content: h.content }));
+
+      console.log('Fallback - Enviando a OpenAI:', JSON.stringify(safeHistoryForFallback), 'tokens aprox:', safeHistoryForFallback.reduce((acc: number, h: any) => acc + h.content.length, 0));
+
       const response = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
           { role: "system", content: prompt || "Eres un asistente virtual." },
-          { role: "system", content: `Estos son los productos disponibles ${JSON.stringify(records)}`},
-          ...chatHistory
+          // Solo enviar información básica del prospecto, no toda la BD
+          { role: "system", content: `Información del prospecto: ${records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto'}`},
+          ...safeHistoryForFallback
         ],
         temperature: 0.3,
       });
 
-      return response.choices[0].message.content;
+      const fallbackResponse = response.choices[0].message.content || "No se pudo generar una respuesta.";
+      console.log(`✅ Fallback respondió: "${fallbackResponse.substring(0, 100)}..."`);
+      return fallbackResponse;
     } catch (fallbackError) {
       console.error('Fallback response error:', fallbackError);
       return "Lo siento, estoy experimentando dificultades técnicas. Por favor, intenta nuevamente.";

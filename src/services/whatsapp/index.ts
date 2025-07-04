@@ -248,14 +248,14 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       const number = message.from;
       await saveProspectIfNotExists(company, number, (message as any).notifyName || number);
 
-      // GUARDAR MENSAJE EN WhatsappChat
+      // GUARDAR MENSAJE EN WhatsappChat (mensaje entrante)
       try {
         const conn = await getDbConnection(company);
         const WhatsappChat = getWhatsappChatModel(conn);
         let chatRecord = await WhatsappChat.findOne({ phone: message.from });
         if (!chatRecord) {
           chatRecord = new WhatsappChat({
-            tableSlug: "clientes",
+            tableSlug: "prospectos",
             phone: message.from,
             name: (message as any).notifyName || message.from,
             messages: [],
@@ -273,15 +273,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         console.error('[WhatsappChat] Error guardando mensaje:', err);
       }
 
-      // Si el mensaje es del número 4521311888, responde automáticamente
-      if (number === '5214521311888@c.us') {
-        try {
-          await whatsappClient.sendMessage(number, '¡Hola! Este es un mensaje automático de prueba desde el bot.');
-          console.log('✅ Mensaje de prueba enviado a 4521311888');
-        } catch (err) {
-          console.error('❌ Error enviando mensaje de prueba a 4521311888:', err);
-        }
-      }
+      // Lógica de producción: solo responde la IA (handleIncomingMessage) y guarda la respuesta en WhatsappChat
       await handleIncomingMessage(message, whatsappClient, company, sessionName);
     });
 

@@ -159,7 +159,7 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
     res.status(201).json(newUser);
   } catch (error) {
     console.error('Error creating user:', error);
-    res.status(500).json({ message: "Error interno del servidor" });
+    res.status(500).json({ message: "Error interno del servidor", error: error });
   }
 };
 
@@ -479,9 +479,10 @@ export const getAllUsersFromAllCompanies = async (req: Request, res: Response): 
 };
 
 export const register = async (req: Request, res: Response): Promise<void> => {
+  console.log("req.body", req.body);
   try {
     const { name, email, password, role, companySlug } = req.body;
-    if (!name || !email || !password || !role) {
+    if (!name || !email || !password || !role || !companySlug) {
       res.status(400).json({ message: "Missing required fields" });
       return;
     }
@@ -499,7 +500,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       password: hashed,
       role,
       companySlug,
-      status: 1,
+      status: "active",
     });
     res.status(201).json({
       id: user._id,
@@ -511,6 +512,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     });
     return;
   } catch (err: any) {
+    console.log("error", err);
     res.status(500).json({ message: "Registration error", error: err.message });
     return;
   }

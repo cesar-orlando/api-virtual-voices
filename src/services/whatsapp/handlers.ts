@@ -15,37 +15,57 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
   const userPhone = message.fromMe ? message.to : message.from;
 
-  if (userPhone !== '5216441500358@c.us') return;
+  // Permitir que la IA conteste a todos los números, incluyendo 4521311888
 
   try {
-
     const conn = await getDbConnection(company);
 
     const Table = getTableModel(conn);
 
     // Verifica si la tabla existe
-    const table = await Table.findOne({ slug: "clientes" });
+    const table = await Table.findOne({ slug: "prospectos", c_name: company });
 
     if (!table) {
-      const newTable = new Table({ name: "Clientes", slug: "clientes", icon: "👤" });
+      const newTable = new Table({
+        name: "Prospectos",
+        slug: "prospectos",
+        icon: "👤",
+        c_name: company,
+        createdBy: 'whatsapp-bot',
+        fields: [
+          { name: "name", label: "Nombre", type: "text", order: 1 },
+          { name: "number", label: "Número", type: "number", order: 2 },
+          { name: "ia", label: "IA", type: "boolean", order: 3 }
+        ]
+      });
       await newTable.save();
     }
 
     const WhatsappChat = getWhatsappChatModel(conn);
 
     // Verifica si el registro ya existe
-    let existingRecord = await WhatsappChat.findOne({ tableSlug: "clientes", phone: userPhone });
+    let existingRecord = await WhatsappChat.findOne({ tableSlug: "prospectos", phone: userPhone });
 
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
       const Session = getSessionModel(conn);
       const session = await Session.findOne({ name: sessionName });
-      existingRecord = await createNewChatRecord(WhatsappChat, "clientes", userPhone, message, session);
+      existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", userPhone, message, session);
     } else {
       await updateChatRecord(company, existingRecord, "inbound", message.body, "human")
     }
 
     if (!existingRecord || !existingRecord.botActive) return;
+
+    // --- VALIDACIÓN DE IA EN PROSPECTOS ---
+    const Record = getRecordModel(conn);
+    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': userPhone });
+    if (prospecto && prospecto.data && prospecto.data.IA === false) {
+      console.log(`🤖 IA desactivada para ${userPhone}, debe responder un agente.`);
+      // Aquí podrías emitir un evento para el agente humano si lo deseas
+      return;
+    }
+    // --- FIN VALIDACIÓN DE IA ---
 
     await sendAndRecordBotResponse(company, sessionName, client, message, existingRecord, conn);
 

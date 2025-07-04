@@ -23,18 +23,21 @@ export const getAllWhatsappMessages = async (req: Request, res: Response) => {
 };
 
 export const createWhatsappSession = async (req: Request, res: Response) => {
+  console.log("Body recibido en createWhatsappSession:", req.body);
   const { sessionName, c_name, user_id, user_name } = req.body;
   if (!sessionName) {
     res.status(400).json({ message: "sessionName is required" });
     return;
   }
-
+  console.log("Body recibido en createWhatsappSession:", req.body);
   const conn = await getConnectionByCompanySlug(c_name);
-
+  console.log("Conexión obtenida");
   const WhatsappSession = getSessionModel(conn);
+  console.log("Modelo de sesión obtenido");
   const IAConfig = getIaConfigModel(conn);
-
+  console.log("Modelo de IAConfig obtenido");
   const existingSession = await WhatsappSession.findOne({ name: sessionName });
+  console.log("Búsqueda de sesión existente terminada");
 
   if (existingSession) {
     await startWhatsappBot(sessionName, c_name, user_id);
@@ -59,7 +62,8 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
       await newSession.save();
       res.status(201).json({ message: `Session '${sessionName}' started` });
     } catch (error) {
-      res.status(500).json({ message: "Error creating session" });
+      console.error("Error creando sesión:", error);
+      res.status(500).json({ message: "Error creating session", error: error });
     }
   }
 };

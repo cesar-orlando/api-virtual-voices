@@ -13,6 +13,25 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
   if (message.isStatus) return;
 
+  // Validar que no sea un mensaje de grupo
+  if (message.from.endsWith('@g.us')) {
+    console.log(`🚫 Mensaje de grupo ignorado: ${message.from}`);
+    return;
+  }
+
+  // Validar que el mensaje no esté vacío o sea solo espacios
+  if (!message.body || message.body.trim().length === 0) {
+    console.log(`🚫 Mensaje vacío ignorado de: ${message.from}`);
+    return;
+  }
+
+  // Validar que no sea solo emojis o caracteres especiales sin texto real
+  const cleanMessage = message.body.trim();
+  if (cleanMessage.length < 2) {
+    console.log(`🚫 Mensaje muy corto ignorado de: ${message.from} - "${cleanMessage}"`);
+    return;
+  }
+
   const userPhone = message.fromMe ? message.to : message.from;
 
   // Permitir que la IA conteste a todos los números, incluyendo 4521311888

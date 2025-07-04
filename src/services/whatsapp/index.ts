@@ -168,6 +168,37 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       if (io) {
         console.log('Emitiendo QR a:', `whatsapp-qr-${company}-${user_id}`);
         io.emit(`whatsapp-qr-${company}-${user_id}`, qr);
+        // Emitir estado de QR mostrado (sin loading)
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'qr_ready', 
+          session: sessionName, 
+          message: 'Escanea el código QR con WhatsApp' 
+        });
+      }
+    });
+
+    // Evento cuando el usuario escanea el QR
+    whatsappClient.on('loading_screen', async (percent, message) => {
+      console.log(`📱 [${sessionName}] Usuario escaneó QR - Cargando: ${percent}% - ${message}`);
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'qr_scanned', 
+          session: sessionName, 
+          message: `Cargando WhatsApp... ${percent}%`,
+          loadingPercent: percent
+        });
+      }
+    });
+
+    // Evento cuando la autenticación está en progreso
+    whatsappClient.on('authenticated', async () => {
+      console.log(`🔐 [${sessionName}] Usuario autenticado exitosamente`);
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'authenticated', 
+          session: sessionName, 
+          message: 'Inicializando sesión...'
+        });
       }
     });
 
@@ -214,7 +245,18 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       } catch (err) {
         console.error('Error guardando chats masivamente:', err);
       }
+      
+      // Notificar que la sesión está completamente lista DESPUÉS de guardar todo
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'ready', 
+          session: sessionName, 
+          message: 'WhatsApp conectado y listo para usar'
+        });
+      }
+      
       resolve(whatsappClient);
+      
       setTimeout(async () => {
         await updateSessionStatus('connected');
       }, 2000);

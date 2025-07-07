@@ -9,6 +9,8 @@ import {
   COMPANY_LIMITS 
 } from "../types/tool.types";
 import { getAllFunctionTypes, generateCustomTool } from "../config/defaultTools";
+// ... otros imports ...
+import { getDbConnection } from "../config/connectionManager";
 
 // Crear una nueva herramienta
 export const createTool = async (req: Request, res: Response) => {

@@ -3,6 +3,8 @@ import getCompanyModel from "../models/company.model";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { createIAConfig } from "./iaConfig.controller";
 import getIaConfigModel from "../models/iaConfig.model";
+// ... otros imports ...
+import { getDbConnection } from "../config/connectionManager";
 
 export const createCompanyAndDatabase = async (req: Request, res: Response) => {
   try {

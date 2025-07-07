@@ -50,7 +50,9 @@
     "whatsapp-web.js": "^1.28.0"
   },
   "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.1",
     "@types/qrcode": "^1.5.5",
     "@types/qrcode-terminal": "^0.12.2",

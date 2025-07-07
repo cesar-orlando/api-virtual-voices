@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { getCompanyContext } from '../../shared/projectManager';
 import { CompanyContext } from '../../shared/types';
-import { getEnvironmentConfig } from '../../config/environments';
 
 // Extender Request para incluir contexto de empresa
 declare global {
@@ -22,8 +21,9 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
     }
 
     const token = authHeader.substring(7);
-    const config = getEnvironmentConfig();
-    const decoded = jwt.verify(token, config.jwtSecret) as any;
+    // Usar la misma lógica que el sistema legacy
+    const jwtSecret = process.env.JWT_SECRET || "your-secret-key";
+    const decoded = jwt.verify(token, jwtSecret) as any;
     
     const slug = decoded.companySlug || decoded.c_name;
     if (slug) {

@@ -2520,9 +2520,9 @@ swagger-parser@^10.0.3:
     "@apidevtools/swagger-parser" "10.0.3"
 
 swagger-ui-dist@>=5.0.0:
-  version "5.26.1"
-  resolved "https://registry.yarnpkg.com/swagger-ui-dist/-/swagger-ui-dist-5.26.1.tgz#e9ee2f121d3688db7879d785c9e688d1473c72e0"
-  integrity sha512-z8uo1H/D8/PCMVZNgWCctQ2rP/2EkDi96BggBu4JBGXHTdfHj2p08Z2DkorCkW1bXmhfWx9hpzz9NNz5sb4lqw==
+  version "5.26.2"
+  resolved "https://registry.yarnpkg.com/swagger-ui-dist/-/swagger-ui-dist-5.26.2.tgz#85973e4b696f3e6a76dfdad55261458e3ac192d7"
+  integrity sha512-WmMS9iMlHQejNm/Uw5ZTo4e3M2QMmEavRz7WLWVsq7Mlx4PSHJbY+VCrLsAz9wLxyHVgrJdt7N8+SdQLa52Ykg==
   dependencies:
     "@scarf/scarf" "=1.4.0"
 

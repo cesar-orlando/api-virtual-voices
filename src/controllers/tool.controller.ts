@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getDbConnection } from "../config/connectionManager";
+import { getConnectionByCompanySlug } from "../config/connectionManager";
 import getToolModel, { getToolExecutionModel, getToolCategoryModel } from "../models/tool.model";
 import { 
   ITool, 
@@ -22,7 +22,7 @@ export const createTool = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     // Crear herramienta
@@ -69,7 +69,7 @@ export const getTools = async (req: Request, res: Response) => {
   } = req.query;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     // Construir filtros
@@ -111,7 +111,7 @@ export const getToolById = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     const tool = await Tool.findOne({ _id: id, c_name });
@@ -138,7 +138,7 @@ export const updateTool = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(updateData.c_name || req.body.c_name);
+    const conn = await getConnectionByCompanySlug(updateData.c_name || req.body.c_name);
     const Tool = getToolModel(conn);
 
     // Buscar herramienta existente
@@ -172,7 +172,7 @@ export const deleteTool = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     const tool = await Tool.findOneAndUpdate(
@@ -206,7 +206,7 @@ export const toggleToolStatus = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     const tool = await Tool.findOneAndUpdate(
@@ -234,7 +234,7 @@ export const getCategories = async (req: Request, res: Response) => {
   const { c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const ToolCategory = getToolCategoryModel(conn);
 
     // Obtener categorías personalizadas de la empresa
@@ -266,7 +266,7 @@ export const createCategory = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const ToolCategory = getToolCategoryModel(conn);
 
     const newCategory = new ToolCategory({
@@ -301,8 +301,7 @@ export const testTool = async (req: Request, res: Response) => {
   console.log('Body:', req.body);
 
   try {
-    const conn = await getDbConnection(c_name);
-    console.log('DB Connection OK');
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     const tool = await Tool.findOne({ _id: id, c_name });
@@ -472,7 +471,7 @@ export const executeTool = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
     const ToolExecution = getToolExecutionModel(conn);
 
@@ -550,7 +549,7 @@ export const batchExecuteTools = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     const results = [];
@@ -609,7 +608,7 @@ export const getOpenAISchema = async (req: Request, res: Response) => {
   const { c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
 
     // Obtener herramientas activas
@@ -655,7 +654,7 @@ export const getAnalytics = async (req: Request, res: Response) => {
   const { startDate, endDate } = req.query;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const ToolExecution = getToolExecutionModel(conn);
 
     // Construir filtros de fecha
@@ -698,7 +697,7 @@ export const getToolLogs = async (req: Request, res: Response) => {
   const { page = 1, limit = 50 } = req.query;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const ToolExecution = getToolExecutionModel(conn);
 
     const skip = (Number(page) - 1) * Number(limit);

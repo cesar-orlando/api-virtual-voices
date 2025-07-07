@@ -21,6 +21,8 @@ export interface ITable extends Document {
   createdBy: string;   // ID del usuario que creó la tabla
   isActive: boolean;   // Estado activo/inactivo de la tabla
   fields: TableField[]; // Campos dinámicos de la tabla
+  deletedBy?: string;
+  deletedAt?: Date;
 }
 
 // Define el esquema para un campo de tabla
@@ -48,7 +50,9 @@ const TableSchema: Schema = new Schema(
     c_name: { type: String, required: true },
     createdBy: { type: String, required: true },
     isActive: { type: Boolean, default: true },
-    fields: [TableFieldSchema]
+    fields: [TableFieldSchema],
+    deletedBy: { type: String, default: null },
+    deletedAt: { type: Date, default: null }
   },
   {
     timestamps: true, // Agrega createdAt y updatedAt automáticamente

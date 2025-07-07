@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getDbConnection } from "../config/connectionManager";
+import { getConnectionByCompanySlug } from "../config/connectionManager";
 import getTableModel from "../models/table.model";
 import getRecordModel from "../models/record.model";
 import { IMPORT_CONFIG, validateImportSize, generateImportReport } from "../config/importConfig";
@@ -120,7 +120,7 @@ export const createDynamicRecord = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const Record = getRecordModel(conn);
 
@@ -178,7 +178,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
   } = req.query;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -246,7 +246,7 @@ export const getRecordWithTable = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
     
@@ -283,7 +283,7 @@ export const getDynamicRecordById = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     
     const record = await Record.findOne({ _id: id, c_name });
@@ -321,7 +321,7 @@ export const validateRecord = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
 
     // Obtener tabla
@@ -377,7 +377,7 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -434,7 +434,7 @@ export const deleteDynamicRecord = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
 
     const deletedRecord = await Record.findOneAndDelete({ _id: id, c_name });
@@ -459,7 +459,7 @@ export const searchRecords = async (req: Request, res: Response) => {
   const { query, filters, page = 1, limit = 10 } = req.body;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -527,7 +527,7 @@ export const getRecordStats = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -595,7 +595,7 @@ export const getRecordWithStructure = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
     
@@ -640,7 +640,7 @@ export const bulkUpdateRecords = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -727,7 +727,7 @@ export const bulkDeleteRecords = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
 
     const results = [];
@@ -801,7 +801,7 @@ export const importRecords = async (req: Request, res: Response) => {
   console.log(`🚀 Starting import: ${records.length} records for table ${tableSlug}`);
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -948,7 +948,7 @@ export const exportRecords = async (req: Request, res: Response) => {
   const { format = 'json', filters } = req.query;
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -1021,7 +1021,7 @@ export const addNewFieldToAllRecords = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -1081,7 +1081,7 @@ export const deleteFieldsFromAllRecords = async (req: Request, res: Response) =>
   }
 
   try {
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
 
@@ -1152,7 +1152,7 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getDbConnection(""); // Necesitamos obtener c_name del registro
+    const conn = await getConnectionByCompanySlug(""); // Necesitamos obtener c_name del registro
     const Record = getRecordModel(conn);
 
     // Buscar el registro para obtener c_name
@@ -1163,7 +1163,7 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
     }
 
     // Usar la conexión correcta
-    const correctConn = await getDbConnection(record.c_name);
+    const correctConn = await getConnectionByCompanySlug(record.c_name);
     const CorrectRecord = getRecordModel(correctConn);
 
     // Construir objeto de eliminación

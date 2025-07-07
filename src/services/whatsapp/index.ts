@@ -7,6 +7,9 @@ import fs from "fs";
 import path from "path";
 import { getDbConnection } from '../../config/connectionManager';
 import { getSessionModel } from '../../models/whatsappSession.model';
+import getTableModel from '../../models/table.model';
+import getRecordModel from '../../models/record.model';
+import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 
 // Objeto global para almacenar clientes por sesión
 export const clients: Record<string, Client> = {};
@@ -87,6 +90,63 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     }
   }
 
+  // Función para validar si el número es de usuario real (no status, no grupo)
+  function isValidUserNumber(number: string): boolean {
+    return (
+      !!number &&
+      number.endsWith('@c.us') &&
+      !number.startsWith('status@') &&
+      !number.includes('broadcast')
+    );
+  }
+
+  // Extrae solo los dígitos antes de @c.us para el campo number
+  function extractNumberFromWhatsAppId(id: string): number | null {
+    const match = id.match(/^(\d+)@c\.us$/);
+    return match ? Number(match[1]) : null;
+  }
+
+  // Función para guardar prospecto si no existe
+  async function saveProspectIfNotExists(company: string, number: string, name?: string, activateIA?: boolean) {
+    try {
+      if (!isValidUserNumber(number)) {
+        return;
+      }
+      const num = extractNumberFromWhatsAppId(number);
+      if (!num) {
+        return;
+      }
+      const conn = await getDbConnection(company);
+      const Table = getTableModel(conn);
+      const Record = getRecordModel(conn);
+
+      const table = await Table.findOne({ slug: 'prospectos', c_name: company, isActive: true });
+      if (!table) {
+        return;
+      }
+
+      const existing = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': num });
+      if (existing) {
+        return;
+      }
+
+      const newProspect = new Record({
+        tableSlug: 'prospectos',
+        c_name: company,
+        createdBy: 'whatsapp-bot',
+        data: {
+          name: name || '',
+          number: num,
+          ia: activateIA === true // Si se pasa activateIA true, se activa la IA
+        }
+      });
+      await newProspect.save();
+      console.log(`✅ Prospecto guardado: ${num}`);
+    } catch (err) {
+      console.error('Error guardando prospecto:', err);
+    }
+  }
+
   return new Promise<Client>((resolve, reject) => {
     whatsappClient.on('qr', async (qr) => {
       if (qrSent[clientKey]) {
@@ -100,13 +160,94 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
       qrcode.generate(qr, { small: true });
       if (io) {
+        console.log('Emitiendo QR a:', `whatsapp-qr-${company}-${user_id}`);
         io.emit(`whatsapp-qr-${company}-${user_id}`, qr);
+        // Emitir estado de QR mostrado (sin loading)
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'qr_ready', 
+          session: sessionName, 
+          message: 'Escanea el código QR con WhatsApp' 
+        });
+      }
+    });
+
+    // Evento cuando el usuario escanea el QR
+    whatsappClient.on('loading_screen', async (percent, message) => {
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'qr_scanned', 
+          session: sessionName, 
+          message: `Cargando WhatsApp... ${percent}%`,
+          loadingPercent: percent
+        });
+      }
+    });
+
+    // Evento cuando la autenticación está en progreso
+    whatsappClient.on('authenticated', async () => {
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'authenticated', 
+          session: sessionName, 
+          message: 'Inicializando sesión...'
+        });
       }
     });
 
     whatsappClient.on('ready', async () => {
-      console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
+      const chats = await whatsappClient.getChats();
+      // Guardar todos los chats en WhatsappChat y prospectos (con mensajes iniciales si es posible)
+      (async () => {
+        try {
+          const conn = await getDbConnection(company);
+          const WhatsappChat = getWhatsappChatModel(conn);
+          for (const chat of chats) {
+            // Solo chats individuales
+            if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
+            // Guardar en WhatsappChat
+            let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized });
+            if (!chatRecord) {
+              chatRecord = new WhatsappChat({
+                tableSlug: "clientes",
+                phone: chat.id._serialized,
+                name: chat.name || chat.id._serialized,
+                messages: [],
+              });
+              // Intenta obtener los últimos mensajes
+              try {
+                const messages = await chat.fetchMessages({ limit: 5 });
+                for (const msg of messages) {
+                  chatRecord.messages.push({
+                    direction: msg.fromMe ? "outbound" : "inbound",
+                    body: msg.body,
+                    respondedBy: msg.fromMe ? "human" : "user",
+                    createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
+                  });
+                }
+              } catch (err) {
+                console.error('Error obteniendo mensajes iniciales:', err);
+              }
+              await chatRecord.save();
+            }
+            // Guardar en prospectos si no existe, pasando el nombre
+            saveProspectIfNotExists(company, chat.id._serialized, chat.name); // NO await
+          }
+        } catch (err) {
+          console.error('Error guardando chats masivamente:', err);
+        }
+      })(); // Lanzar en background
+      
+      // Notificar que la sesión está completamente lista DESPUÉS de guardar todo
+      if (io) {
+        io.emit(`whatsapp-status-${company}-${user_id}`, { 
+          status: 'ready', 
+          session: sessionName, 
+          message: 'WhatsApp conectado y listo para usar'
+        });
+      }
+      
       resolve(whatsappClient);
+      
       setTimeout(async () => {
         await updateSessionStatus('connected');
       }, 2000);
@@ -134,7 +275,13 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     });
 
     whatsappClient.on('message', async (message) => {
-      console.log(`${company} - ${sessionName} - Mensaje creado en chat ${message.from}:`, message.body);
+      // Log de todos los mensajes recibidos
+      console.log('MENSAJE RECIBIDO:', message.from, message.body);
+      // Guardar prospecto si no existe (solo chats individuales)
+      const number = message.from;
+      await saveProspectIfNotExists(company, number, (message as any).notifyName || number, true); // activa IA
+
+      // Lógica de producción: solo responde la IA (handleIncomingMessage) y guarda la respuesta en WhatsappChat
       await handleIncomingMessage(message, whatsappClient, company, sessionName);
     });
 

@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import getIaConfigModel, { IIaConfig } from "../models/iaConfig.model";
-import { getDbConnection } from "../config/connectionManager";
+import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { generateResponse, openai, preparePrompt } from "../services/openai";
-import getUserModel from "../models/user.model";
+import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
 
 // 🔥 Crear configuración inicial si no existe
@@ -20,7 +20,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       user
     } = req.body;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const IaConfig = getIaConfigModel(conn);
 
@@ -55,7 +55,7 @@ export const getGeneralIAConfig = async (req: Request, res: Response): Promise<v
   try {
     const { c_name } = req.params;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const IaConfig = getIaConfigModel(conn);
     const config = await IaConfig.findOne({type: 'general'});
@@ -75,7 +75,7 @@ export const getAllIAConfigs = async (req: Request, res: Response): Promise<void
   try {
     const { c_name, user_id } = req.params;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const UserConfig = getUserModel(conn);
 
@@ -90,7 +90,7 @@ export const getAllIAConfigs = async (req: Request, res: Response): Promise<void
 
     let configs: IIaConfig[];
 
-    if (user.role !== "Admin") {
+    if (user.role !== "Administrador") {
       let general_configs = await IaConfig.find({type: 'general'});
       let user_configs = await IaConfig.find({ "user.id": user_id });
       configs = general_configs.concat(user_configs);
@@ -110,7 +110,7 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
     const { c_name, user_id } = req.params;
     const updates = req.body;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const IaConfig = getIaConfigModel(conn);
     const UserConfig = getUserModel(conn);
@@ -124,7 +124,7 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
 
     // Si el documento a modificar es de tipo general y usuario no es admin entonces ignorar
     const docToUpdate = await IaConfig.findOne({ _id: updates._id }, {}, { sort: { createdAt: 1 } });
-    if (docToUpdate?.type === "general" && user.role !== "Admin") {
+    if (docToUpdate?.type === "general" && user.role !== "Administrador") {
       console.log("Intento de modificación de IaConfig general por un usuario no admin.",user);
       res.status(403).json({ message: "No se puede modificar el IaConfig general." });
       return;
@@ -153,7 +153,7 @@ export const deleteIAConfig = async (req: Request, res: Response): Promise<void>
   try {
     const { c_name, user_id, config_id } = req.params;
 
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const IaConfig = getIaConfigModel(conn);
     const UserConfig = getUserModel(conn);
@@ -167,7 +167,7 @@ export const deleteIAConfig = async (req: Request, res: Response): Promise<void>
 
     // Si el documento a modificar es de tipo general y usuario no es admin entonces ignorar
     const docToUpdate = await IaConfig.findOne({ _id: config_id }, {}, { sort: { createdAt: 1 } });
-    if (docToUpdate?.type === "general" && user.role !== "Admin") {
+    if (docToUpdate?.type === "general" && user.role !== "Administrador") {
       console.log("Intento de modificación de IaConfig general por un usuario no admin.",user);
       res.status(403).json({ message: "No se puede modificar el IaConfig general." });
       return;
@@ -208,8 +208,7 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
       return null;
     }).filter(Boolean);
 
-
-    const conn = await getDbConnection(c_name);
+    const conn = await getConnectionByCompanySlug(c_name);
 
     const Record = getRecordModel(conn);
     const records = await Record.find({'tableSlug': 'inventario'});

@@ -264,6 +264,4 @@ async function sendAndRecordBotResponse(
   // Actualizar el registro existente con la respuesta de la IA
   existingRecord.botActive = activeBot;
   await updateChatRecord(company, existingRecord, "outbound-api", messageBody, "bot");
-  
-  console.log(`[WhatsappChat] Respuesta de IA guardada: "${messageBody.substring(0, 50)}..."`);
 }

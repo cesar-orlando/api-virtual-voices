@@ -39,6 +39,7 @@ export async function getQuickLearningConnection(): Promise<Connection> {
 export async function getConnectionByCompanySlug(companySlug?: string): Promise<Connection> {
   // Si es Quick Learning, usar su base de datos enterprise externa
   if (companySlug === "quicklearning") {
+    console.log("entra aqui --->", companySlug);
     return getQuickLearningConnection();
   }
   

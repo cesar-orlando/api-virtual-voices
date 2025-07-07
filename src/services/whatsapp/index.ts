@@ -86,7 +86,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     if (existingSession) {
       existingSession.status = status;
       existingSession.save();
-      console.log('updateSessionStatus --- >Emitiendo QR a:', `whatsapp-qr-${company}-${user_id}`);
       io.emit(`whatsapp-status-${company}-${user_id}`, { status, session: sessionName, message: reason });
     }
   }
@@ -108,16 +107,13 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   }
 
   // Función para guardar prospecto si no existe
-  async function saveProspectIfNotExists(company: string, number: string, name?: string) {
-    console.log("entrando a saveProspectIfNotExists", { company, number });
+  async function saveProspectIfNotExists(company: string, number: string, name?: string, activateIA?: boolean) {
     try {
       if (!isValidUserNumber(number)) {
-        console.log("[PROSPECTO] Número no válido:", number);
         return;
       }
       const num = extractNumberFromWhatsAppId(number);
       if (!num) {
-        console.log("[PROSPECTO] No se pudo extraer número:", number);
         return;
       }
       const conn = await getDbConnection(company);
@@ -126,13 +122,11 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
       const table = await Table.findOne({ slug: 'prospectos', c_name: company, isActive: true });
       if (!table) {
-        console.log("[PROSPECTO] Tabla 'prospectos' NO existe o NO está activa para:", company);
         return;
       }
 
       const existing = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': num });
       if (existing) {
-        console.log("[PROSPECTO] Ya existe prospecto para número:", num);
         return;
       }
 
@@ -143,7 +137,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         data: {
           name: name || '',
           number: num,
-          ia: false
+          ia: activateIA === true // Si se pasa activateIA true, se activa la IA
         }
       });
       await newProspect.save();
@@ -179,7 +173,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     // Evento cuando el usuario escanea el QR
     whatsappClient.on('loading_screen', async (percent, message) => {
-      console.log(`📱 [${sessionName}] Usuario escaneó QR - Cargando: ${percent}% - ${message}`);
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
           status: 'qr_scanned', 
@@ -192,7 +185,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     // Evento cuando la autenticación está en progreso
     whatsappClient.on('authenticated', async () => {
-      console.log(`🔐 [${sessionName}] Usuario autenticado exitosamente`);
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
           status: 'authenticated', 
@@ -203,48 +195,47 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     });
 
     whatsappClient.on('ready', async () => {
-      console.log(`✅ WhatsApp [${company}] - [${sessionName}] conectado y listo`);
       const chats = await whatsappClient.getChats();
-      console.log('CHATS DISPONIBLES:', chats.map(c => ({id: c.id._serialized, name: c.name, isGroup: c.isGroup})));
       // Guardar todos los chats en WhatsappChat y prospectos (con mensajes iniciales si es posible)
-      try {
-        const conn = await getDbConnection(company);
-        const WhatsappChat = getWhatsappChatModel(conn);
-        for (const chat of chats) {
-          // Solo chats individuales
-          if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
-          // Guardar en WhatsappChat
-          let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized });
-          if (!chatRecord) {
-            chatRecord = new WhatsappChat({
-              tableSlug: "clientes",
-              phone: chat.id._serialized,
-              name: chat.name || chat.id._serialized,
-              messages: [],
-            });
-            // Intenta obtener los últimos mensajes
-            try {
-              const messages = await chat.fetchMessages({ limit: 5 });
-              for (const msg of messages) {
-                chatRecord.messages.push({
-                  direction: msg.fromMe ? "outbound" : "inbound",
-                  body: msg.body,
-                  respondedBy: msg.fromMe ? "human" : "user",
-                  createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
-                });
+      (async () => {
+        try {
+          const conn = await getDbConnection(company);
+          const WhatsappChat = getWhatsappChatModel(conn);
+          for (const chat of chats) {
+            // Solo chats individuales
+            if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
+            // Guardar en WhatsappChat
+            let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized });
+            if (!chatRecord) {
+              chatRecord = new WhatsappChat({
+                tableSlug: "clientes",
+                phone: chat.id._serialized,
+                name: chat.name || chat.id._serialized,
+                messages: [],
+              });
+              // Intenta obtener los últimos mensajes
+              try {
+                const messages = await chat.fetchMessages({ limit: 5 });
+                for (const msg of messages) {
+                  chatRecord.messages.push({
+                    direction: msg.fromMe ? "outbound" : "inbound",
+                    body: msg.body,
+                    respondedBy: msg.fromMe ? "human" : "user",
+                    createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
+                  });
+                }
+              } catch (err) {
+                console.error('Error obteniendo mensajes iniciales:', err);
               }
-            } catch (err) {
-              console.error('Error obteniendo mensajes iniciales:', err);
+              await chatRecord.save();
             }
-            await chatRecord.save();
+            // Guardar en prospectos si no existe, pasando el nombre
+            saveProspectIfNotExists(company, chat.id._serialized, chat.name); // NO await
           }
-          // Guardar en prospectos si no existe, pasando el nombre
-          await saveProspectIfNotExists(company, chat.id._serialized, chat.name);
+        } catch (err) {
+          console.error('Error guardando chats masivamente:', err);
         }
-        console.log('Todos los chats guardados en WhatsappChat y prospectos.');
-      } catch (err) {
-        console.error('Error guardando chats masivamente:', err);
-      }
+      })(); // Lanzar en background
       
       // Notificar que la sesión está completamente lista DESPUÉS de guardar todo
       if (io) {
@@ -288,32 +279,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       console.log('MENSAJE RECIBIDO:', message.from, message.body);
       // Guardar prospecto si no existe (solo chats individuales)
       const number = message.from;
-      await saveProspectIfNotExists(company, number, (message as any).notifyName || number);
-
-      // GUARDAR MENSAJE EN WhatsappChat (mensaje entrante)
-      try {
-        const conn = await getDbConnection(company);
-        const WhatsappChat = getWhatsappChatModel(conn);
-        let chatRecord = await WhatsappChat.findOne({ phone: message.from });
-        if (!chatRecord) {
-          chatRecord = new WhatsappChat({
-            tableSlug: "prospectos",
-            phone: message.from,
-            name: (message as any).notifyName || message.from,
-            messages: [],
-          });
-        }
-        chatRecord.messages.push({
-          direction: message.fromMe ? "outbound" : "inbound",
-          body: message.body,
-          respondedBy: message.fromMe ? "human" : "user",
-          createdAt: new Date(),
-        });
-        await chatRecord.save();
-        console.log(`[WhatsappChat] Mensaje guardado para ${message.from}`);
-      } catch (err) {
-        console.error('[WhatsappChat] Error guardando mensaje:', err);
-      }
+      await saveProspectIfNotExists(company, number, (message as any).notifyName || number, true); // activa IA
 
       // Lógica de producción: solo responde la IA (handleIncomingMessage) y guarda la respuesta en WhatsappChat
       await handleIncomingMessage(message, whatsappClient, company, sessionName);

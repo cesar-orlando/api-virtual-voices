@@ -30,6 +30,7 @@ export async function preparePrompt(
 // Generar esquemas de herramientas para OpenAI por empresa
 export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSchema[]> {
   try {
+    
     // Verificar cache
     const cached = toolSchemaCache.get(c_name);
     if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
@@ -40,7 +41,7 @@ export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSche
     const conn = await getDbConnection(c_name);
     const Tool = getToolModel(conn);
     const tools = await Tool.find({ c_name, isActive: true }).lean();
-
+    
     // Generar schemas para OpenAI
     const schemas: OpenAIToolSchema[] = tools.map(tool => ({
       type: 'function',
@@ -70,7 +71,7 @@ export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSche
 
     return schemas;
   } catch (error) {
-    console.error('Error getting tools for company:', error);
+    console.error('❌ Error getting tools for company:', error);
     return [];
   }
 }
@@ -124,15 +125,14 @@ export async function generateResponse(
   executedBy?: string
 ): Promise<string|null> {
   try {
+    
     // Obtener herramientas para la empresa
     const tools = c_name ? await getToolsForCompany(c_name) : [];
-
+    
     // LIMPIA el historial para OpenAI - SOLO role y content
     const safeHistoryForOpenAI = chatHistory
       .filter((h: any): h is { role: string, content: string } => !!h && typeof h.content === 'string')
       .map((h: any) => ({ role: h.role, content: h.content }));
-
-    console.log('OpenAI - Enviando:', JSON.stringify(safeHistoryForOpenAI), 'tokens aprox:', safeHistoryForOpenAI.reduce((acc: number, h: any) => acc + h.content.length, 0));
 
     const messages = [
       { role: "system", content: prompt || "Eres un asistente virtual." },
@@ -159,6 +159,7 @@ export async function generateResponse(
     
     // Verificar si OpenAI quiere llamar una función
     if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+      
       const toolResults = [];
       
       // Ejecutar cada función llamada
@@ -193,13 +194,11 @@ export async function generateResponse(
         });
 
         const toolResponse = followUpResponse.choices[0].message.content || "No se pudo generar una respuesta.";
-        console.log(`✅ Tool call respondió: "${toolResponse.substring(0, 100)}..."`);
         return toolResponse;
       }
     }
 
     const finalResponse = choice.message.content || "No se pudo generar una respuesta.";
-    console.log(`✅ OpenAI respondió: "${finalResponse.substring(0, 100)}..."`);
     return finalResponse;
   } catch (error: any) {
     console.error('Error generating response with tools:', error);
@@ -210,8 +209,6 @@ export async function generateResponse(
       const safeHistoryForFallback = chatHistory
         .filter((h: any): h is { role: string, content: string } => !!h && typeof h.content === 'string')
         .map((h: any) => ({ role: h.role, content: h.content }));
-
-      console.log('Fallback - Enviando a OpenAI:', JSON.stringify(safeHistoryForFallback), 'tokens aprox:', safeHistoryForFallback.reduce((acc: number, h: any) => acc + h.content.length, 0));
 
       const response = await openai.chat.completions.create({
         model: "gpt-4",
@@ -225,7 +222,6 @@ export async function generateResponse(
       });
 
       const fallbackResponse = response.choices[0].message.content || "No se pudo generar una respuesta.";
-      console.log(`✅ Fallback respondió: "${fallbackResponse.substring(0, 100)}..."`);
       return fallbackResponse;
     } catch (fallbackError) {
       console.error('Fallback response error:', fallbackError);

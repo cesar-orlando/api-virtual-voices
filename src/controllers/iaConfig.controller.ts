@@ -217,8 +217,10 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
             IAPrompt,
             aiConfig,
             history,
-            records)
-          aiResponse = response || defaultResponse;
+            records,
+            c_name // <-- Se agrega c_name para herramientas
+      )
+      aiResponse = response || defaultResponse;
     } catch (error) {
       console.error("Error al obtener respuesta de OpenAI:", error);
     }

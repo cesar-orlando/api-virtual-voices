@@ -9,7 +9,6 @@ export interface IIaConfig extends Document {
   intents: [];
   dataTemplate: string;
   customPrompt: string;
-  activeTools: string[]; // Array de nombres de tools activas
   createdAt?: Date;
   updatedAt?: Date;
   user: {
@@ -34,7 +33,6 @@ const IaConfigSchema: Schema = new Schema(
     intents: { type: [IAIntentSchema], default: [] },
     dataTemplate: { type: String, default: "{{label}}: {{value}}" },
     customPrompt: { type: String, default: "" },
-    activeTools: { type: [String], default: [] },
     user: {
       id: { type: Types.ObjectId, ref: "User" }, // Referencia al usuario
       name: { type: String }, // Nombre del usuario asociado

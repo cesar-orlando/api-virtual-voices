@@ -9,7 +9,6 @@ import {
   COMPANY_LIMITS 
 } from "../types/tool.types";
 
-
 // Crear una nueva herramienta
 export const createTool = async (req: Request, res: Response) => {
   const { name, displayName, description, category, c_name, createdBy, config, parameters, responseMapping, security } = req.body;
@@ -296,8 +295,6 @@ export const testTool = async (req: Request, res: Response) => {
   const { id, c_name } = req.params;
   const { testParameters } = req.body;
 
-
-
   try {
     const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
@@ -318,6 +315,7 @@ export const testTool = async (req: Request, res: Response) => {
         statusCode: 200,
         executionTime: Date.now() - startTime
       };
+
       res.json({ 
         message: "Tool test completed", 
         result: mockResponse 
@@ -716,4 +714,3 @@ export const getToolLogs = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error fetching tool logs", error });
   }
 };
-

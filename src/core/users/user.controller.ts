@@ -13,8 +13,10 @@ const saltRound = 10;
 
 // Función para obtener JWT secret específico por empresa
 function getJwtSecret(companySlug?: string): string {
-  // Usar la misma lógica que el sistema legacy
-  return process.env.JWT_SECRET || "your-secret-key";
+  if (companySlug === "quicklearning") {
+    return process.env.JWT_SECRET_QUICKLEARNING || process.env.JWT_SECRET || "changeme";
+  }
+  return process.env.JWT_SECRET || "changeme";
 }
 
 // Get all users for a company

@@ -56,4 +56,3 @@ export const getCompany = async (req: Request, res: Response) => {
     return;
   }
 };
-

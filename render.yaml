@@ -9,8 +9,6 @@ services:
         value: production
       - key: MONGO_URI
         sync: false
-      - key: JWT_SECRET
-        sync: false
       - key: RENDER
         value: true
     disk:

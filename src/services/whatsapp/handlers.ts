@@ -11,26 +11,6 @@ import getRecordModel from '../../models/record.model';
 
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
-  // Agrega listeners de log solo una vez por cliente
-  if (!(client as any)._loggingListenersAdded) {
-    client.on('message', (msg: Message) => {
-      console.log(`[WHATSAPP] Mensaje recibido de ${msg.from}: ${msg.body?.slice(0, 100)}`);
-      if ((msg as any).hasMedia) {
-        console.log(`[WHATSAPP] Archivo recibido de ${msg.from}, tipo: ${(msg as any).type}, tamaño: ${(msg as any).mediaKey?.length || 'desconocido'}`);
-      }
-    });
-    client.on('authenticated', () => {
-      console.log('[WHATSAPP] Sesión autenticada');
-    });
-    client.on('disconnected', (reason: any) => {
-      console.log(`[WHATSAPP] Sesión desconectada: ${reason}`);
-    });
-    client.on('auth_failure', (msg: any) => {
-      console.log(`[WHATSAPP] Fallo de autenticación: ${msg}`);
-    });
-    (client as any)._loggingListenersAdded = true;
-  }
-
   if (message.isStatus) return;
 
   // Validar que no sea un mensaje de grupo
@@ -60,13 +40,6 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     const conn = await getDbConnection(company);
 
     const Table = getTableModel(conn);
-    const Session = getSessionModel(conn);
-    const session = await Session.findOne({ name: sessionName });
-
-    if (!session) {
-      console.error(`[WHATSAPP] No se encontró la sesión: ${sessionName}`);
-      return;
-    }
 
     // Verifica si la tabla existe
     const table = await Table.findOne({ slug: "prospectos", c_name: company });
@@ -85,7 +58,6 @@ export async function handleIncomingMessage(message: Message, client: Client, co
         ]
       });
       await newTable.save();
-      console.log(`[WHATSAPP] Tabla "clientes" creada para ${company}`);
     }
 
     const WhatsappChat = getWhatsappChatModel(conn);
@@ -180,7 +152,7 @@ async function createNewChatRecord(
     messages: [
       {
         direction: message.fromMe ? "outbound" : "inbound",
-        body: message.body || '',
+        body: message.body,
         respondedBy: "human",
       },
     ],
@@ -193,13 +165,9 @@ async function updateChatRecord(
   company: string,
   chatRecord: any,
   direction: string,
-  body: string | undefined,
+  body: string,
   respondedBy: string
 ) {
-  if (!body) {
-    console.warn(`[WHATSAPP][updateChatRecord] body está undefined, no se guardará el mensaje.`);
-    return;
-  }
   chatRecord.messages.push({
     direction: direction,
     body: body,
@@ -207,7 +175,6 @@ async function updateChatRecord(
   });
   await chatRecord.save();
   io.emit(`whatsapp-message-${company}`, chatRecord);
-  console.log(`[WHATSAPP][updateChatRecord] Mensaje guardado y emitido al frontend. body:`, body);
 }
 
 async function sendAndRecordBotResponse(
@@ -254,7 +221,7 @@ async function sendAndRecordBotResponse(
     .filter(Boolean);
 
   // Agrega el mensaje actual
-  history.push({ role: "user", content: message.body || '' });
+  history.push({ role: "user", content: message.body });
 
   // LIMPIA el historial para OpenAI - SOLO role y content
   const safeHistoryForOpenAI = history

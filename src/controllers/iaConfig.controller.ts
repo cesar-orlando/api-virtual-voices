@@ -35,7 +35,6 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       objective,
       customPrompt,
       welcomeMessage,
-
       user: {
         id: user.id,
         name: user.name
@@ -212,7 +211,7 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
 
     const Record = getRecordModel(conn);
     const records = await Record.find();
-
+    
     try {
       const response = await generateResponse(
             IAPrompt,

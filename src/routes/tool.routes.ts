@@ -50,6 +50,4 @@ router.get("/openai-schema/:c_name", getOpenAISchema);  // GET /api/tools/openai
 router.get("/analytics/:c_name", getAnalytics);         // GET /api/tools/analytics/:c_name
 router.get("/logs/:c_name/:toolId", getToolLogs);       // GET /api/tools/logs/:c_name/:toolId
 
-
-
 export default router;

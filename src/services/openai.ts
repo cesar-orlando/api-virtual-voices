@@ -20,7 +20,9 @@ export const openai = new OpenAI({
 const toolSchemaCache: Map<string, { schema: OpenAIToolSchema[]; timestamp: number }> = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
-export async function preparePrompt(config: IIaConfig): Promise<string> {
+export async function preparePrompt(
+  config: IIaConfig
+): Promise<string> {
   const prompt = `Al iniciar una conversacion siempre te presentas como: ${config?.name} e incluyes el saludo: ${config?.welcomeMessage}, tu objetivo es el de ${config?.objective}, informacion previa y contexto para despues del saludo inicial: ${config?.customPrompt}`;
   return prompt;
 }
@@ -28,24 +30,15 @@ export async function preparePrompt(config: IIaConfig): Promise<string> {
 // Generar esquemas de herramientas para OpenAI por empresa
 export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSchema[]> {
   try {
-    console.log("🔍 [getToolsForCompany] Buscando tools para empresa:", c_name);
-    
     // Verificar cache
     const cached = toolSchemaCache.get(c_name);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log("📦 [getToolsForCompany] Usando cache para empresa:", c_name, "Tools en cache:", cached.schema.length);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
       return cached.schema;
     }
 
-    console.log("🗄️ [getToolsForCompany] Cache no encontrado o expirado, consultando BD...");
-
     // Obtener herramientas activas de la empresa
     const conn = await getDbConnection(c_name);
-    console.log("🔌 [getToolsForCompany] Conexión BD establecida para empresa:", c_name);
-    
     const Tool = getToolModel(conn);
-    console.log("📋 [getToolsForCompany] Modelo Tool obtenido, consultando...");
-    
     const tools = await Tool.find({ c_name, isActive: true }).lean();
 
     // Generar schemas para OpenAI

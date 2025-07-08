@@ -16,7 +16,6 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       objective,
       customPrompt,
       welcomeMessage,
-      activeTools,
       user
     } = req.body;
 
@@ -36,7 +35,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
       objective,
       customPrompt,
       welcomeMessage,
-      activeTools: activeTools || [],
+
       user: {
         id: user.id,
         name: user.name
@@ -194,6 +193,7 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     const { messages, aiConfig } = req.body;
 
     let IAPrompt;
+    
     if (aiConfig) {
       IAPrompt = await preparePrompt(aiConfig);
     }
@@ -211,23 +211,20 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     const conn = await getConnectionByCompanySlug(c_name);
 
     const Record = getRecordModel(conn);
-    const records = await Record.find({'tableSlug': 'inventario'});
+    const records = await Record.find();
 
     try {
       const response = await generateResponse(
-        IAPrompt,
-        aiConfig,
-        history,
-        records,
-        c_name
-      );
-      console.log('Respuesta de OpenAI:', response);
-      aiResponse = response || defaultResponse;
+            IAPrompt,
+            aiConfig,
+            history,
+            records)
+          aiResponse = response || defaultResponse;
     } catch (error) {
       console.error("Error al obtener respuesta de OpenAI:", error);
     }
 
-    res.status(201).json({ message: aiResponse });
+    res.status(201).json({ message: aiResponse});
 
   } catch (error) {
     console.error("Error al probar IA:", error);

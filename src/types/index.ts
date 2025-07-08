@@ -1,8 +1,10 @@
-export interface Request extends Express.Request {
+import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+
+export interface Request extends ExpressRequest {
     // Add any custom properties to the request object here
 }
 
-export interface Response extends Express.Response {
+export interface Response extends ExpressResponse {
     // Add any custom properties to the response object here
 }
 

@@ -174,11 +174,13 @@ export class QuickLearningOpenAIService {
       chatHistoryMessages.unshift({
         role: "system",
         content: initialContext || "",
+        name: "system"
       });
 
       chatHistoryMessages.push({
         role: "user",
         content: message,
+        name: "user"
       });
 
       console.log(`🤖 Generando respuesta para: ${phoneUser}`);

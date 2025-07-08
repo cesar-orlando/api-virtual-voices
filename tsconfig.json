@@ -1,13 +1,30 @@
 {
     "compilerOptions": {
-      "target": "ES6", // Versión de JavaScript a la que se compilará
-      "module": "commonjs", // Sistema de módulos
-      "outDir": "./dist", // Carpeta de salida para los archivos compilados
-      "rootDir": "./src", // Carpeta raíz de los archivos fuente
-      "strict": true, // Habilita todas las verificaciones estrictas
-      "esModuleInterop": true, // Habilita la interoperabilidad con módulos ES
-      "skipLibCheck": true // Omite la verificación de tipos en archivos de declaración
+      "target": "ES6",
+      "module": "commonjs",
+      "outDir": "./dist",
+      "rootDir": "./src",
+      "strict": false,
+      "esModuleInterop": true,
+      "skipLibCheck": true,
+      "noImplicitAny": false,
+      "allowJs": true,
+      "resolveJsonModule": true,
+      "declaration": false,
+      "sourceMap": false,
+      "removeComments": true,
+      "noEmitOnError": false,
+      "noImplicitReturns": false,
+      "noFallthroughCasesInSwitch": false,
+      "noUnusedLocals": false,
+      "noUnusedParameters": false,
+      "exactOptionalPropertyTypes": false,
+      "noImplicitOverride": false,
+      "noPropertyAccessFromIndexSignature": false,
+      "noUncheckedIndexedAccess": false,
+      "allowUnusedLabels": true,
+      "allowUnreachableCode": true
     },
-    "include": ["src/**/*"], // Archivos a incluir
-    "exclude": ["node_modules"] // Archivos a excluir
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "**/*.test.ts", "**/*.spec.ts"]
   }

@@ -365,7 +365,8 @@ router.get("/prospectos", async (req: Request, res: Response) => {
  */
 router.get("/usuarios", async (req: Request, res: Response) => {
   try {
-    const { tableSlugs, companySlug } = req.query;
+    const { tableSlugs, companySlug, limit = "20", cursor } = req.query;
+    
     if (!tableSlugs) {
       res.status(400).json({ error: "tableSlugs query param is required" });
       return;
@@ -374,17 +375,26 @@ router.get("/usuarios", async (req: Request, res: Response) => {
       res.status(400).json({ error: "companySlug query param is required" });
       return;
     }
+    
+    const limitNum = Math.min(parseInt(limit as string) || 20, 50); // Máximo 50 por request
     const slugs = (tableSlugs as string).split(",").map(s => s.trim()).filter(Boolean);
     const conn = await getConnectionByCompanySlug(companySlug as string);
     const Record = getRecordModel(conn);
-    const QuickLearningChat = getQuickLearningChatModel(conn);
     
-    // Buscar todos los usuarios de las tablas indicadas
+    // Trae los registros sin ordenar
     const records = await Record.find({ tableSlug: { $in: slugs } }).lean();
     
-    // Para cada usuario, buscar el chat y el último mensaje
-    const usuarios = await Promise.all(records.map(async (rec: any) => {
-      // Extraer datos de customFields
+    // Ordena por lastMessageTime (más nuevo arriba) - usando la lógica que funciona
+    const recordsOrdenados = records.sort((a: any, b: any) => {
+      const aField = a.customFields?.find((f: any) => f.key === "lastMessageTime");
+      const bField = b.customFields?.find((f: any) => f.key === "lastMessageTime");
+      const aTime = aField?.value ? new Date(aField.value).getTime() : 0;
+      const bTime = bField?.value ? new Date(bField.value).getTime() : 0;
+      return bTime - aTime; // Más nuevo arriba
+    });
+    
+    // Mapear registros a formato de usuario con toda la información
+    const usuarios = recordsOrdenados.map((rec: any) => {
       const customFields = rec.customFields || [];
       const nameField = customFields.find((field: any) => field.key === 'name');
       const phoneField = customFields.find((field: any) => field.key === 'phone');
@@ -393,37 +403,116 @@ router.get("/usuarios", async (req: Request, res: Response) => {
       
       const name = nameField?.value || '';
       const phone = phoneField?.value || '';
-      
-      let lastMessage = null;
-      if (phone) {
-        const chat = await QuickLearningChat.findOne({ phone }).lean();
-        if (chat && chat.lastMessage) {
-          lastMessage = chat.lastMessage;
-        } else if (lastMessageField?.value) {
-          // Si no hay chat, usar el último mensaje guardado en el registro
-          lastMessage = {
-            body: lastMessageField.value,
-            date: lastMessageTimeField?.value ? new Date(lastMessageField.value) : new Date(),
-            respondedBy: "human"
-          };
-        }
-      }
+      const lastMessage = lastMessageField?.value || '';
+      const lastMessageTime = lastMessageTimeField?.value || null;
       
       return {
         _id: rec._id,
         name,
         phone,
-        lastMessage,
-        tableSlug: rec.tableSlug
+        lastMessage: lastMessage ? {
+          body: lastMessage,
+          date: lastMessageTime ? new Date(lastMessageTime) : new Date(),
+          respondedBy: "user"
+        } : null,
+        lastMessageDate: lastMessageTime ? new Date(lastMessageTime) : null,
+        tableSlug: rec.tableSlug,
+        // Toda la información del registro
+        ...rec,
+        // Campos específicos para fácil acceso
+        customFields: customFields,
+        createdAt: rec.createdAt,
+        updatedAt: rec.updatedAt,
+        // Campos adicionales que puedan existir
+        companyId: rec.companyId,
+        userId: rec.userId,
+        status: rec.status,
+        tags: rec.tags,
+        metadata: rec.metadata
       };
-    }));
+    });
     
-    res.status(200).json(usuarios);
+    // Aplicar paginación con cursor
+    let usuariosFiltrados = usuarios;
+    if (cursor) {
+      const cursorDate = new Date(cursor as string);
+      usuariosFiltrados = usuarios.filter(usuario => {
+        if (!usuario.lastMessageDate) return true; // Usuarios sin mensajes van al final
+        return new Date(usuario.lastMessageDate) < cursorDate;
+      });
+    }
+    
+    // Aplicar límite
+    const usuariosLimitados = usuariosFiltrados.slice(0, limitNum);
+    
+    // Calcular paginación
+    const hasMore = usuariosFiltrados.length > limitNum;
+    const nextCursor = hasMore && usuariosLimitados.length > 0 
+      ? usuariosLimitados[usuariosLimitados.length - 1].lastMessageDate 
+      : null;
+    
+    res.status(200).json({
+      usuarios: usuariosLimitados,
+      pagination: {
+        hasMore,
+        nextCursor,
+        total: usuarios.length,
+        limit: limitNum
+      }
+    });
   } catch (error) {
     console.error("❌ Error obteniendo usuarios de tablas:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// Ruta para obtener estadísticas de usuarios
+router.get("/usuarios/stats", async (req: Request, res: Response) => {
+  try {
+    const { tableSlugs, companySlug } = req.query;
+    
+    if (!tableSlugs) {
+      res.status(400).json({ error: "tableSlugs query param is required" });
+      return;
+    }
+    if (!companySlug) {
+      res.status(400).json({ error: "companySlug query param is required" });
+      return;
+    }
+    
+    const slugs = (tableSlugs as string).split(",").map(s => s.trim()).filter(Boolean);
+    const conn = await getConnectionByCompanySlug(companySlug as string);
+    const Record = getRecordModel(conn);
+    const QuickLearningChat = getQuickLearningChatModel(conn);
+    
+    // Contar total de usuarios
+    const totalUsuarios = await Record.countDocuments({ tableSlug: { $in: slugs } });
+    
+    // Contar usuarios con chats activos (último mensaje en las últimas 24 horas)
+    const hace24Horas = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const chatsActivos = await QuickLearningChat.countDocuments({
+      'lastMessage.date': { $gte: hace24Horas }
+    });
+    
+    // Contar usuarios sin respuesta (último mensaje del usuario hace más de 1 hora)
+    const hace1Hora = new Date(Date.now() - 60 * 60 * 1000);
+    const usuariosSinRespuesta = await QuickLearningChat.countDocuments({
+      'lastMessage.date': { $lt: hace1Hora },
+      'lastMessage.respondedBy': 'user'
+    });
+    
+    res.status(200).json({
+      total: totalUsuarios,
+      activos24h: chatsActivos,
+      sinRespuesta: usuariosSinRespuesta
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo estadísticas:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
 
 /**
  * @swagger

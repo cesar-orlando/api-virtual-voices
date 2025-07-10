@@ -239,6 +239,22 @@ export class TwilioService {
   }
 
   /**
+   * Obtener todos los mensajes (entrantes y salientes)
+   */
+  public async getAllMessages(limit: number = 1000): Promise<any[]> {
+    try {
+      const messages = await this.client.messages.list({
+        limit: limit
+      });
+      
+      return messages;
+    } catch (error) {
+      console.error("❌ Error getting all messages:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Verificar estado del servicio Twilio
    */
   public async checkServiceStatus(): Promise<{ status: string; phoneNumber: string; accountSid: string }> {

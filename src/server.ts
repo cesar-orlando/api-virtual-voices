@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import { connectDB, getAllSessionsFromAllDatabases } from "./config/database";
 import { startWhatsappBot } from "./services/whatsapp";
 import { getEnvironmentConfig } from "./config/environments";
+import { cleanupInactiveConnections } from "./config/connectionManager";
 import fs from 'fs';
 import path from 'path';
 
@@ -59,6 +60,12 @@ async function main() {
           console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`, err);
         });
     }
+    
+    // Monitoreo periódico de conexiones (cada 5 minutos)
+    setInterval(() => {
+      cleanupInactiveConnections();
+    }, 5 * 60 * 1000);
+    
     
   } catch (error) {
     console.error('❌ Error starting server:', error);

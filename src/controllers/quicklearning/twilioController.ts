@@ -61,6 +61,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
     // Obtener conexión a la base de datos
     const conn = await getDbConnection('quicklearning');
     const QuickLearningChat = getQuickLearningChatModel(conn);
+    const Record = getRecordModel(conn);
 
     // Buscar o crear el chat
     let chat = await QuickLearningChat.findOne({ phone: phoneUser });
@@ -127,13 +128,34 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
     });
 
     // Actualizar último mensaje
+    const currentDate = new Date();
     chat.lastMessage = {
       body: messageText,
-      date: new Date(),
+      date: currentDate,
       respondedBy: "human",
     };
 
     await chat.save();
+
+    // Actualizar campo ultimo_mensaje en la tabla de alumnos
+    try {
+      await Record.updateOne(
+        { 
+          tableSlug: "alumnos",
+          "data.telefono": phoneUser,
+          c_name: "quicklearning"
+        },
+        { 
+          $set: { 
+            "data.ultimo_mensaje": currentDate,
+            "data.lastMessage": messageText
+          } 
+        }
+      );
+      console.log(`📝 Campo ultimo_mensaje actualizado en tabla alumnos para: ${phoneUser}`);
+    } catch (error) {
+      console.error(`❌ Error actualizando ultimo_mensaje en tabla alumnos:`, error);
+    }
 
     console.log(`📝 Mensaje guardado: ${messageText.substring(0, 100)}...`);
 
@@ -188,29 +210,53 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
         body: aiResponse,
       });
 
-             if (result.success) {
-         // Agregar respuesta al chat
-         chat.messages.push({
-           direction: "outbound-api",
-           body: aiResponse,
-           respondedBy: "bot",
-           twilioSid: result.messageId,
-           messageType: "text",
-         });
+      if (result.success) {
+        // Agregar respuesta al chat
+        chat.messages.push({
+          direction: "outbound-api",
+          body: aiResponse,
+          respondedBy: "bot",
+          twilioSid: result.messageId,
+          messageType: "text",
+        });
 
-         // Actualizar último mensaje
-         chat.lastMessage = {
-           body: aiResponse,
-           date: new Date(),
-           respondedBy: "bot",
-         };
+        // Actualizar último mensaje
+        const currentDate = new Date();
+        chat.lastMessage = {
+          body: aiResponse,
+          date: currentDate,
+          respondedBy: "bot",
+        };
 
-         await chat.save();
+        await chat.save();
 
-         console.log(`✅ Respuesta enviada a ${phoneUser}`);
-       } else {
-         console.error(`❌ Error enviando respuesta: ${result.error}`);
-       }
+        // Actualizar campo ultimo_mensaje en la tabla de alumnos
+        try {
+          const conn = await getDbConnection('quicklearning');
+          const Record = getRecordModel(conn);
+          
+          await Record.updateOne(
+            { 
+              tableSlug: "alumnos",
+              "data.telefono": phoneUser,
+              c_name: "quicklearning"
+            },
+            { 
+              $set: { 
+                "data.ultimo_mensaje": currentDate,
+                "data.lastMessage": aiResponse
+              } 
+            }
+          );
+          console.log(`📝 Campo ultimo_mensaje actualizado en tabla alumnos (respuesta bot) para: ${phoneUser}`);
+        } catch (error) {
+          console.error(`❌ Error actualizando ultimo_mensaje en tabla alumnos (respuesta bot):`, error);
+        }
+
+        console.log(`✅ Respuesta enviada a ${phoneUser}`);
+      } else {
+        console.error(`❌ Error enviando respuesta: ${result.error}`);
+      }
 
       // Limpiar buffer
       messageBuffers.delete(phoneUser);

@@ -171,7 +171,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
   const { 
     page = 1, 
-    limit = 10, 
+    limit = 5, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
     filters 
@@ -239,12 +239,15 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     }
 
     // Configurar paginación y ordenamiento
+    const skip = (Number(page) - 1) * Number(limit);
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
     // Obtener registros con paginación y solo campos clave
     const records = await Record.find(queryFilter)
       .sort(sort)
+      .skip(skip)
+      .limit(Number(limit))
       .lean();
 
     // Contar total de registros

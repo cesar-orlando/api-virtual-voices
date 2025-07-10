@@ -25,18 +25,22 @@
     "check:user-with-old-model": "cross-env NODE_ENV=production ts-node src/scripts/checkUserWithOldModel.ts",
     "check:user-in-quicklearning-db": "cross-env NODE_ENV=production ts-node src/scripts/checkUserInQuickLearningDb.ts",
     "test:login-controller": "cross-env NODE_ENV=production ts-node src/scripts/testLoginController.ts",
-    "test:twilio-quicklearning": "cross-env NODE_ENV=development ts-node src/scripts/testTwilioQuickLearning.ts"
+    "test:twilio-quicklearning": "cross-env NODE_ENV=development ts-node src/scripts/testTwilioQuickLearning.ts",
+    "test:upload": "cross-env NODE_ENV=development ts-node src/scripts/testUploadEndpoint.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.844.0",
+    "@aws-sdk/s3-request-presigner": "^3.844.0",
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.3",
     "@types/geolib": "^2.0.3",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/mongoose": "^5.11.97",
+    "@types/multer": "^2.0.0",
     "@types/node": "^24.0.1",
     "@types/qrcode": "^1.5.5",
     "@types/qrcode-terminal": "^0.12.2",
@@ -53,6 +57,8 @@
     "geolib": "^3.3.4",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.2",
+    "multer": "^2.0.1",
+    "multer-s3": "^3.0.1",
     "openai": "^5.1.1",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
@@ -63,6 +69,7 @@
     "whatsapp-web.js": "^1.28.0"
   },
   "devDependencies": {
+    "@types/multer-s3": "^3.0.3",
     "cross-env": "^7.0.3",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",

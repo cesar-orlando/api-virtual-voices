@@ -213,9 +213,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               if (value === 'true') filterValue = true;
               else if (value === 'false') filterValue = false;
               break;
-              // Puedes agregar más casos según tus tipos
             default:
-              filterValue = String(value).charAt(0).toUpperCase() + String(value).slice(1);
+              filterValue = { $regex: `^${value}$`, $options: 'i' };
               break;
           }
         }

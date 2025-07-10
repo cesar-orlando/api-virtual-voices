@@ -192,6 +192,37 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     // Construir filtros de consulta
     const queryFilter: any = { tableSlug, c_name };
 
+    // Procesar filtros directos de query
+    for (const [key, value] of Object.entries(req.query)) {
+      if (
+        !['page', 'limit', 'sortBy', 'sortOrder', 'filters'].includes(key) &&
+        value !== undefined &&
+        value !== null &&
+        value !== ''
+      ) {
+        // Buscar el tipo de campo en la tabla
+        const fieldDef = table.fields.find((f: any) => f.name === key);
+        let filterValue: any = value;
+        if (fieldDef) {
+          switch (fieldDef.type) {
+            case 'number':
+            case 'currency':
+              filterValue = Number(value);
+              break;
+            case 'boolean':
+              if (value === 'true') filterValue = true;
+              else if (value === 'false') filterValue = false;
+              break;
+              // Puedes agregar más casos según tus tipos
+            default:
+              filterValue = String(value).charAt(0).toUpperCase() + String(value).slice(1);
+              break;
+          }
+        }
+        queryFilter[`data.${key}`] = filterValue;
+      }
+    }
+
     // Aplicar filtros dinámicos si se proporcionan
     if (filters && typeof filters === 'string') {
       try {
@@ -208,15 +239,12 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     }
 
     // Configurar paginación y ordenamiento
-    const skip = (Number(page) - 1) * Number(limit);
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Obtener registros con paginación
+    // Obtener registros con paginación y solo campos clave
     const records = await Record.find(queryFilter)
       .sort(sort)
-      .skip(skip)
-      .limit(Number(limit))
       .lean();
 
     // Contar total de registros
@@ -229,11 +257,6 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
         limit: Number(limit),
         total,
         pages: Math.ceil(total / Number(limit))
-      },
-      table: {
-        name: table.name,
-        slug: table.slug,
-        fields: table.fields
       }
     });
   } catch (error) {

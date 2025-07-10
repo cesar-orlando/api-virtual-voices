@@ -174,7 +174,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     limit = 5, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
-    filters 
+    filters,
+    characteristics
   } = req.query;
 
   try {
@@ -195,7 +196,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     // Procesar filtros directos de query
     for (const [key, value] of Object.entries(req.query)) {
       if (
-        !['page', 'limit', 'sortBy', 'sortOrder', 'filters'].includes(key) &&
+        !['page', 'limit', 'sortBy', 'sortOrder', 'filters', 'characteristics'].includes(key) &&
         value !== undefined &&
         value !== null &&
         value !== ''
@@ -242,8 +243,22 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Obtener registros con paginación y solo campos clave
-    const records = await Record.find(queryFilter)
+    // Si characteristics=true, mostrar toda la información (sin proyección)
+    // Si characteristics no está presente o es false, mostrar solo ciertos campos
+    let projection = undefined;
+    if (!characteristics || String(characteristics) === "false") {
+      projection = {
+        "data.titulo": 1,
+        "data.precio": 1,
+        "data.direccion": 1,
+        "data.ciudad": 1,
+        "createdAt": 1,
+        "updatedAt": 1
+      };
+    }
+
+    // Obtener registros con o sin proyección
+    const records = await Record.find(queryFilter, projection)
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))

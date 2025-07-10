@@ -135,7 +135,18 @@ export async function generateResponse(
       .map((h: any) => ({ role: h.role, content: h.content }));
 
     const messages = [
-      { role: "system", content: prompt || "Eres un asistente virtual." },
+      { 
+        role: "system", 
+        content: `${prompt || "Eres un asistente virtual."}
+
+IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
+1. SOLO responde con información que se te haya proporcionado explícitamente
+2. NUNCA inventes, asumas o especules sobre información que no tengas
+3. Si no tienes la información solicitada, di claramente "No tengo esa información disponible"
+4. Sé específico y preciso en tus respuestas
+5. No uses información de entrenamiento general, solo la información del contexto actual
+6. Si hay ambigüedad, pide aclaración en lugar de asumir`
+      },
       // Solo enviar información básica del prospecto, no toda la BD
       { role: "system", content: `Información del prospecto: ${records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto'}`},
       ...safeHistoryForOpenAI
@@ -145,7 +156,10 @@ export async function generateResponse(
     const requestConfig: any = {
       model: "gpt-4",
       messages,
-      temperature: 0.3,
+      temperature: 0.1, // Temperatura más baja para mayor precisión
+      top_p: 0.1, // Top-p más bajo para respuestas más determinísticas
+      frequency_penalty: 0.5, // Penalizar repetición
+      presence_penalty: 0.5, // Penalizar temas nuevos no relevantes
     };
 
     if (tools.length > 0) {
@@ -190,7 +204,10 @@ export async function generateResponse(
         const followUpResponse = await openai.chat.completions.create({
           model: "gpt-4",
           messages: followUpMessages,
-          temperature: 0.3,
+          temperature: 0.1, // Temperatura más baja para mayor precisión
+          top_p: 0.1, // Top-p más bajo para respuestas más determinísticas
+          frequency_penalty: 0.5, // Penalizar repetición
+          presence_penalty: 0.5, // Penalizar temas nuevos no relevantes
         });
 
         const toolResponse = followUpResponse.choices[0].message.content || "No se pudo generar una respuesta.";
@@ -213,12 +230,26 @@ export async function generateResponse(
       const response = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
-          { role: "system", content: prompt || "Eres un asistente virtual." },
+          { 
+            role: "system", 
+            content: `${prompt || "Eres un asistente virtual."}
+
+IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
+1. SOLO responde con información que se te haya proporcionado explícitamente
+2. NUNCA inventes, asumas o especules sobre información que no tengas
+3. Si no tienes la información solicitada, di claramente "No tengo esa información disponible"
+4. Sé específico y preciso en tus respuestas
+5. No uses información de entrenamiento general, solo la información del contexto actual
+6. Si hay ambigüedad, pide aclaración en lugar de asumir`
+          },
           // Solo enviar información básica del prospecto, no toda la BD
           { role: "system", content: `Información del prospecto: ${records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto'}`},
           ...safeHistoryForFallback
         ],
-        temperature: 0.3,
+        temperature: 0.1, // Temperatura más baja para mayor precisión
+        top_p: 0.1, // Top-p más bajo para respuestas más determinísticas
+        frequency_penalty: 0.5, // Penalizar repetición
+        presence_penalty: 0.5, // Penalizar temas nuevos no relevantes
       });
 
       const fallbackResponse = response.choices[0].message.content || "No se pudo generar una respuesta.";

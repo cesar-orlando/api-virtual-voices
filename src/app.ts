@@ -6,6 +6,7 @@ import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import toolRoutes from "./routes/tool.routes";
+import uploadRoutes from "./routes/upload.routes";
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -90,6 +91,9 @@ app.use("/api/ia-configs", iaConfigRoutes);
 
 // Rutas para herramientas dinámicas
 app.use("/api/tools", toolRoutes);
+
+// Rutas para subida de archivos
+app.use("/api/upload", uploadRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);

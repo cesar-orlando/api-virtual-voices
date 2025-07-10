@@ -13,11 +13,40 @@ export async function connectDB() {
     // Validar configuración
     validateEnvironmentConfig(config);
     
+    // Opciones de conexión mejoradas para MongoDB Atlas
+    const connectionOptions = {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      bufferCommands: false,
+      ssl: true,
+      tls: true,
+      tlsAllowInvalidCertificates: false,
+      tlsAllowInvalidHostnames: false,
+      retryWrites: true,
+      w: 'majority' as const,
+      heartbeatFrequencyMS: 10000,
+      maxIdleTimeMS: 30000,
+    };
+    
     // Conectar a la base de datos principal
-    await mongoose.connect(config.mongoUri);
+    await mongoose.connect(config.mongoUri, connectionOptions);
     console.log("✅ Connected to MongoDB");
     console.log(`🗄️  Database: ${config.mongoUri}`);
     console.log(`🌍 Environment: ${config.name.toUpperCase()}`);
+    
+    // Manejar eventos de conexión
+    mongoose.connection.on('error', (error) => {
+      console.error('❌ MongoDB connection error:', error);
+    });
+    
+    mongoose.connection.on('disconnected', () => {
+      console.warn('⚠️ MongoDB disconnected');
+    });
+    
+    mongoose.connection.on('reconnected', () => {
+      console.log('✅ MongoDB reconnected');
+    });
     
   } catch (error) {
     console.error("❌ Error connecting to MongoDB:", error);

@@ -345,23 +345,6 @@ router.get("/prospectos", async (req: Request, res: Response) => {
  *               type: array
  *               items:
  *                 type: object
- *                 properties:
- *                   _id:
- *                     type: string
- *                   name:
- *                     type: string
- *                   phone:
- *                     type: string
- *                   lastMessage:
- *                     type: object
- *                     properties:
- *                       body:
- *                         type: string
- *                       date:
- *                         type: string
- *                         format: date-time
- *                   tableSlug:
- *                     type: string
  */
 router.get("/usuarios", async (req: Request, res: Response) => {
   try {
@@ -381,62 +364,82 @@ router.get("/usuarios", async (req: Request, res: Response) => {
     const conn = await getConnectionByCompanySlug(companySlug as string);
     const Record = getRecordModel(conn);
     
-    // Trae los registros sin ordenar
-    const records = await Record.find({ tableSlug: { $in: slugs } }).lean();
+    // Obtener registros de las tablas especificadas (sin filtro de c_name)
+    const records = await Record.find({ 
+      tableSlug: { $in: slugs }
+    }).lean();
     
-    // Ordena por lastMessageTime (más nuevo arriba) - usando la lógica que funciona
-    const recordsOrdenados = records.sort((a: any, b: any) => {
-      const aField = a.customFields?.find((f: any) => f.key === "lastMessageTime");
-      const bField = b.customFields?.find((f: any) => f.key === "lastMessageTime");
-      const aTime = aField?.value ? new Date(aField.value).getTime() : 0;
-      const bTime = bField?.value ? new Date(bField.value).getTime() : 0;
-      return bTime - aTime; // Más nuevo arriba
-    });
-    
-    // Mapear registros a formato de usuario con toda la información
-    const usuarios = recordsOrdenados.map((rec: any) => {
-      const customFields = rec.customFields || [];
-      const nameField = customFields.find((field: any) => field.key === 'name');
-      const phoneField = customFields.find((field: any) => field.key === 'phone');
-      const lastMessageField = customFields.find((field: any) => field.key === 'lastMessage');
-      const lastMessageTimeField = customFields.find((field: any) => field.key === 'lastMessageTime');
+    // Mapear registros a la estructura esperada por el frontend
+    const usuariosMapeados = records.map((record: any) => {
+      // Extraer datos del registro
+      const data = record.data || {};
       
-      const name = nameField?.value || '';
-      const phone = phoneField?.value || '';
-      const lastMessage = lastMessageField?.value || '';
-      const lastMessageTime = lastMessageTimeField?.value || null;
+      // Determinar el nombre del usuario
+      const name = data.nombre || data.name || 'Sin nombre';
+      
+      // Determinar el teléfono
+      const phone = data.telefono || data.phone || '';
+      
+      // Determinar el último mensaje y la fecha
+      let lastMessage = null;
+      let lastMessageDate = null;
+      if (data.ultimo_mensaje) {
+        if (data.lastMessageDate) {
+          lastMessageDate = new Date(data.lastMessageDate);
+        } else if (data.ultimo_mensaje instanceof Date || (typeof data.ultimo_mensaje === 'string' && !isNaN(Date.parse(data.ultimo_mensaje)))) {
+          lastMessageDate = new Date(data.ultimo_mensaje);
+        }
+        // Si ultimo_mensaje es una fecha, buscar el mensaje real
+        if (data.ultimo_mensaje instanceof Date || typeof data.ultimo_mensaje === 'string' && !isNaN(Date.parse(data.ultimo_mensaje))) {
+          lastMessage = {
+            body: data.lastMessage || 'Sin mensaje',
+            date: lastMessageDate,
+            respondedBy: 'user'
+          };
+        } else {
+          // Si es un string, asumir que es el mensaje
+          lastMessage = {
+            body: data.ultimo_mensaje,
+            date: lastMessageDate || new Date(),
+            respondedBy: 'user'
+          };
+        }
+      }
       
       return {
-        _id: rec._id,
+        _id: record._id,
         name,
         phone,
-        lastMessage: lastMessage ? {
-          body: lastMessage,
-          date: lastMessageTime ? new Date(lastMessageTime) : new Date(),
-          respondedBy: "user"
-        } : null,
-        lastMessageDate: lastMessageTime ? new Date(lastMessageTime) : null,
-        tableSlug: rec.tableSlug,
-        // Toda la información del registro
-        ...rec,
-        // Campos específicos para fácil acceso
-        customFields: customFields,
-        createdAt: rec.createdAt,
-        updatedAt: rec.updatedAt,
-        // Campos adicionales que puedan existir
-        companyId: rec.companyId,
-        userId: rec.userId,
-        status: rec.status,
-        tags: rec.tags,
-        metadata: rec.metadata
+        tableSlug: record.tableSlug,
+        lastMessage,
+        lastMessageDate,
+        // Campos adicionales según la tabla
+        ...(record.tableSlug === 'alumnos' && {
+          curso: data.curso || null,
+          ciudad: data.ciudad || null,
+          asesor: data.asesor || null
+        }),
+        ...(record.tableSlug === 'prospectos' && {
+          medio: data.medio || null,
+          clasificacion: data.clasificacion || null
+        }),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt
       };
     });
     
+    // Ordenar por lastMessageDate (más reciente primero)
+    const usuariosOrdenados = usuariosMapeados.sort((a: any, b: any) => {
+      const aTime = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+      const bTime = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+      return bTime - aTime;
+    });
+    
     // Aplicar paginación con cursor
-    let usuariosFiltrados = usuarios;
+    let usuariosFiltrados = usuariosOrdenados;
     if (cursor) {
       const cursorDate = new Date(cursor as string);
-      usuariosFiltrados = usuarios.filter(usuario => {
+      usuariosFiltrados = usuariosOrdenados.filter(usuario => {
         if (!usuario.lastMessageDate) return true; // Usuarios sin mensajes van al final
         return new Date(usuario.lastMessageDate) < cursorDate;
       });
@@ -448,7 +451,7 @@ router.get("/usuarios", async (req: Request, res: Response) => {
     // Calcular paginación
     const hasMore = usuariosFiltrados.length > limitNum;
     const nextCursor = hasMore && usuariosLimitados.length > 0 
-      ? usuariosLimitados[usuariosLimitados.length - 1].lastMessageDate 
+      ? usuariosLimitados[usuariosLimitados.length - 1].lastMessageDate?.toISOString()
       : null;
     
     res.status(200).json({
@@ -456,7 +459,7 @@ router.get("/usuarios", async (req: Request, res: Response) => {
       pagination: {
         hasMore,
         nextCursor,
-        total: usuarios.length,
+        total: records.length,
         limit: limitNum
       }
     });
@@ -512,92 +515,5 @@ router.get("/usuarios/stats", async (req: Request, res: Response) => {
   }
 });
 
-
-
-/**
- * @swagger
- * /api/quicklearning/twilio/chat:
- *   get:
- *     summary: Obtener historial de mensajes de un chat por teléfono (Quick Learning)
- *     tags: [Twilio Quick Learning]
- *     parameters:
- *       - in: query
- *         name: phone
- *         required: true
- *         schema:
- *           type: string
- *         description: Número de teléfono del usuario (ej: 5214521311888)
- *       - in: query
- *         name: companySlug
- *         schema:
- *           type: string
- *         required: true
- *         description: Slug de la empresa (ej: quicklearning)
- *     responses:
- *       200:
- *         description: Historial de mensajes del chat
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   direction:
- *                     type: string
- *                     enum: [inbound, outbound-api]
- *                     description: Dirección del mensaje (entrante o saliente)
- *                   body:
- *                     type: string
- *                     description: Contenido del mensaje
- *                   respondedBy:
- *                     type: string
- *                     enum: [bot, human, asesor]
- *                     description: Quién respondió el mensaje
- *                   dateCreated:
- *                     type: string
- *                     format: date-time
- *                     description: Fecha de creación del mensaje
- *                   _id:
- *                     type: string
- *                     description: ID del mensaje
- *         examples:
- *           ejemplo:
- *             value:
- *               - direction: inbound
- *                 body: "hola!"
- *                 respondedBy: human
- *                 _id: "68242156534d273327baaf80"
- *                 dateCreated: "2025-05-14T04:51:34.266Z"
- *               - direction: outbound-api
- *                 body: "Inglés en Quick Learning, ¡Hablas o Hablas! Soy NatalIA, ¿Cómo te puedo ayudar hoy?"
- *                 respondedBy: bot
- *                 _id: "68242158534d273327baaf86"
- *                 dateCreated: "2025-05-14T04:51:36.979Z"
- *       404:
- *         description: Chat no encontrado
- *       500:
- *         description: Error interno del servidor
- */
-router.get("/chat", async (req: Request, res: Response) => {
-  try {
-    const { phone, companySlug } = req.query;
-    if (!phone) {
-      res.status(400).json({ error: "phone query param is required" });
-      return;
-    }
-    if (!companySlug) {
-      res.status(400).json({ error: "companySlug query param is required" });
-      return;
-    }
-    // Asignar phone a params para reutilizar getChatHistory
-    req.params.phone = phone as string;
-    // Llamar directamente a getChatHistory
-    return getChatHistory(req, res);
-  } catch (error) {
-    console.error("❌ Error obteniendo historial de chat:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
 
 export default router;

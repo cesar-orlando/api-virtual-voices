@@ -214,7 +214,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               else if (value === 'false') filterValue = false;
               break;
             default:
-              filterValue = { $regex: `^\\s*${value}\\s*$`, $options: 'i' };
+              filterValue = { $regex: `.*${value}.*`, $options: 'i' };
               break;
           }
         }

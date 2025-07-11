@@ -174,8 +174,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     limit = 5, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
-    filters,
-    characteristics
+    filters
   } = req.query;
 
   try {
@@ -215,7 +214,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               else if (value === 'false') filterValue = false;
               break;
             default:
-              filterValue = { $regex: `^${value}$`, $options: 'i' };
+              filterValue = { $regex: `^\\s*${value}\\s*$`, $options: 'i' };
               break;
           }
         }
@@ -243,22 +242,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Si characteristics=true, mostrar toda la información (sin proyección)
-    // Si characteristics no está presente o es false, mostrar solo ciertos campos
-    let projection = undefined;
-    if (!characteristics || String(characteristics) === "false") {
-      projection = {
-        "data.titulo": 1,
-        "data.precio": 1,
-        "data.direccion": 1,
-        "data.ciudad": 1,
-        "createdAt": 1,
-        "updatedAt": 1
-      };
-    }
-
     // Obtener registros con o sin proyección
-    const records = await Record.find(queryFilter, projection)
+    const records = await Record.find(queryFilter)
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))

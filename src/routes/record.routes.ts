@@ -17,6 +17,7 @@ import {
   addNewFieldToAllRecords,
   deleteFieldsFromAllRecords,
   deleteFieldsFromRecord,
+  getDynamicRecordsBot,
 } from "../controllers/record.controller";
 
 const router = Router();
@@ -41,6 +42,7 @@ router.post("/delete-fields", deleteFieldsFromAllRecords);
 router.get("/:c_name/:id/with-structure", getRecordWithStructure);
 router.get("/:c_name/:id/with-table", getRecordWithTable);
 router.get("/table/:c_name/:tableSlug", getDynamicRecords);
+router.get("/bot/table/:c_name/:tableSlug", getDynamicRecordsBot);
 router.get("/:c_name/:id", getDynamicRecordById);
 router.post("/", createDynamicRecord);
 router.put("/:id", updateDynamicRecord);

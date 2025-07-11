@@ -131,6 +131,8 @@ export class ToolExecutor {
         url += (url.includes('?') ? '&' : '?') + searchParams.toString();
       }
 
+      console.log(`Executing tool: ${tool.name} (${config.method}) - URL: ${url}`);
+
       // Construir headers
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',

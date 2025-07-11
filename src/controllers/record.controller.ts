@@ -719,10 +719,34 @@ export const getRecordStats = async (req: Request, res: Response) => {
       }
     ]);
 
+    // Totales por campana
+    const campanaStats = await Record.aggregate([
+      { $match: { tableSlug, c_name } },
+      { $group: { _id: "$data.campana", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Totales por medio
+    const medioStats = await Record.aggregate([
+      { $match: { tableSlug, c_name } },
+      { $group: { _id: "$data.medio", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Totales por ciudad
+    const ciudadStats = await Record.aggregate([
+      { $match: { tableSlug, c_name } },
+      { $group: { _id: "$data.ciudad", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
     res.json({
       totalRecords,
       recentRecords,
       dailyStats,
+      campanaStats,
+      medioStats,
+      ciudadStats,
       table: {
         name: table.name,
         slug: table.slug,

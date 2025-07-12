@@ -170,10 +170,10 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
   const { 
     page = 1, 
-    limit = 5, 
+    limit = 10, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
-    filters,
+    filters
   } = req.query;
 
   try {
@@ -194,7 +194,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     // Procesar filtros directos de query
     for (const [key, value] of Object.entries(req.query)) {
       if (
-        !['page', 'limit', 'sortBy', 'sortOrder', 'filters', 'characteristics'].includes(key) &&
+        !['page', 'limit', 'sortBy', 'sortOrder', 'filters'].includes(key) &&
         value !== undefined &&
         value !== null &&
         value !== ''
@@ -213,7 +213,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               else if (value === 'false') filterValue = false;
               break;
             default:
-              filterValue = { $regex: `^${value}$`, $options: 'i' };
+              filterValue = { $regex: `.*${value}.*`, $options: 'i' };
               break;
           }
         }

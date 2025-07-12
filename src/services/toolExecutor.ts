@@ -2,6 +2,7 @@ import { getDbConnection } from "../config/connectionManager";
 import getToolModel, { getToolExecutionModel } from "../models/tool.model";
 import { IToolDocument } from "../models/tool.model";
 import { ToolExecutionRequest } from "../types/tool.types";
+import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
 
 // Rate limiting cache (en producción usar Redis)
 const rateLimitCache: Map<string, { count: number; resetTime: number }> = new Map();
@@ -195,6 +196,11 @@ export class ToolExecutor {
       // Aplicar mapeo de respuesta si está configurado
       if (tool.responseMapping) {
         responseData = this.applyResponseMapping(responseData, tool.responseMapping, response.ok);
+      }
+
+      // Aplicar fuzzy search si hay un query en los parámetros y los datos son candidatos
+      if (parameters.query && typeof parameters.query === 'string') {
+        responseData = applyFuzzySearchToToolResult(responseData, parameters.query);
       }
 
       // Verificar si fue exitoso

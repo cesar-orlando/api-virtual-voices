@@ -20,6 +20,331 @@ export const openai = new OpenAI({
 const toolSchemaCache: Map<string, { schema: OpenAIToolSchema[]; timestamp: number }> = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
 
+// Constantes para manejo de tokens
+const MAX_TOKENS = 8192;
+const RESERVED_TOKENS = 1000; // Tokens reservados para respuesta
+const MAX_PROMPT_TOKENS = 2000; // Máximo tokens para el prompt del sistema
+const MAX_HISTORY_TOKENS = 4000; // Máximo tokens para el historial
+
+// Función para estimar tokens (aproximación: 1 token ≈ 4 caracteres)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// Función para crear un prompt conciso cuando el original es muy largo
+function createConcisePrompt(originalPrompt: string): string {
+  const estimatedTokens = estimateTokens(originalPrompt);
+  
+  // Si el prompt es menor a 1500 tokens, mantenerlo completo
+  if (estimatedTokens <= 1500) {
+    return originalPrompt;
+  }
+  
+  // Si es muy largo, crear una versión concisa
+  console.log(`⚠️ Prompt muy largo (${estimatedTokens} tokens), creando versión concisa...`);
+  
+  // Extraer elementos clave del prompt
+  const lines = originalPrompt.split('\n');
+  const keyElements = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('🎯') || trimmed.startsWith('🚀') || trimmed.startsWith('📋') || 
+        trimmed.startsWith('1️⃣') || trimmed.startsWith('2️⃣') || trimmed.startsWith('3️⃣') ||
+        trimmed.startsWith('4️⃣') || trimmed.startsWith('5️⃣') || trimmed.startsWith('6️⃣') ||
+        trimmed.startsWith('7️⃣') || trimmed.startsWith('🔁') || trimmed.startsWith('📈') ||
+        trimmed.startsWith('⚡')) {
+      keyElements.push(trimmed);
+    }
+  }
+  
+  // Crear versión concisa
+  const concisePrompt = `Eres Alejandro, asesor inmobiliario experto del Grupo Milkasa. Tu objetivo es incrementar ventas adoptando técnicas de venta efectivas.
+
+${keyElements.slice(0, 5).join('\n')}
+
+REGLAS CLAVE:
+- Siempre amigable y optimista
+- Usa el nombre del cliente
+- Busca cerrar citas con entusiasmo
+- Ofrece ayuda adicional cuando sea necesario
+
+Si el prompt original era muy largo, esta es una versión optimizada que mantiene los elementos esenciales.`;
+  
+  return concisePrompt;
+}
+
+// Función para truncar texto a un número máximo de tokens
+function truncateToTokens(text: string, maxTokens: number): string {
+  const estimatedTokens = estimateTokens(text);
+  if (estimatedTokens <= maxTokens) return text;
+  
+  // Calcular caracteres aproximados para el número de tokens
+  const maxChars = maxTokens * 4;
+  return text.substring(0, maxChars) + "...";
+}
+
+// Función para extraer información persistente del cliente
+function extractClientInfo(history: any[]): { name?: string, preferences?: string, budget?: string, location?: string } {
+  const cleanHistory = history.filter((h: any) => h && typeof h.content === 'string' && h.content.trim().length > 0);
+  const clientInfo: any = {};
+  
+  for (const msg of cleanHistory) {
+    const content = msg.content.toLowerCase();
+    
+    // Extraer nombre del cliente
+    if (!clientInfo.name && (content.includes('me llamo') || content.includes('soy') || content.includes('nombre'))) {
+      const nameMatch = msg.content.match(/(?:me llamo|soy|nombre)[\s:]*([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+)/i);
+      if (nameMatch) {
+        clientInfo.name = nameMatch[1].trim();
+      }
+    }
+    
+    // Extraer preferencias de propiedad
+    if (!clientInfo.preferences && (content.includes('casa') || content.includes('departamento') || content.includes('renta') || content.includes('compra'))) {
+      if (content.includes('renta')) clientInfo.preferences = 'renta';
+      else if (content.includes('compra')) clientInfo.preferences = 'compra';
+      else if (content.includes('casa')) clientInfo.preferences = 'casa';
+      else if (content.includes('departamento')) clientInfo.preferences = 'departamento';
+    }
+    
+    // Extraer presupuesto
+    if (!clientInfo.budget && (content.includes('presupuesto') || content.includes('precio') || content.includes('$') || content.includes('pesos'))) {
+      const budgetMatch = msg.content.match(/(?:presupuesto|precio)[\s:]*([$]?\s*\d+[\d,]*\s*(?:pesos|mxn|mil|millones)?)/i);
+      if (budgetMatch) {
+        clientInfo.budget = budgetMatch[1].trim();
+      }
+    }
+    
+    // Extraer ubicación
+    if (!clientInfo.location && (content.includes('zona') || content.includes('ubicación') || content.includes('colonia') || content.includes('ciudad'))) {
+      const locationMatch = msg.content.match(/(?:zona|ubicación|colonia|ciudad)[\s:]*([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+)/i);
+      if (locationMatch) {
+        clientInfo.location = locationMatch[1].trim();
+      }
+    }
+  }
+  
+  return clientInfo;
+}
+
+// Función para crear un resumen de contexto de la conversación
+function createConversationSummary(history: any[]): string {
+  const cleanHistory = history.filter((h: any) => h && typeof h.content === 'string' && h.content.trim().length > 0);
+  
+  if (cleanHistory.length <= 10) {
+    return ""; // No necesitamos resumen si hay pocos mensajes
+  }
+  
+  // Extraer información clave de los primeros mensajes
+  const earlyMessages = cleanHistory.slice(0, 5);
+  const keyInfo = [];
+  
+  for (const msg of earlyMessages) {
+    const content = msg.content.toLowerCase();
+    
+    // Buscar información del cliente
+    if (content.includes('nombre') || content.includes('llamo') || content.includes('soy')) {
+      keyInfo.push(`Cliente mencionó: ${msg.content.substring(0, 100)}...`);
+    }
+    
+    // Buscar preferencias de propiedad
+    if (content.includes('casa') || content.includes('departamento') || content.includes('renta') || content.includes('compra')) {
+      keyInfo.push(`Interés en: ${msg.content.substring(0, 100)}...`);
+    }
+    
+    // Buscar presupuesto
+    if (content.includes('presupuesto') || content.includes('precio') || content.includes('$') || content.includes('pesos')) {
+      keyInfo.push(`Presupuesto: ${msg.content.substring(0, 100)}...`);
+    }
+    
+    // Buscar ubicación
+    if (content.includes('zona') || content.includes('ubicación') || content.includes('colonia') || content.includes('ciudad')) {
+      keyInfo.push(`Ubicación: ${msg.content.substring(0, 100)}...`);
+    }
+  }
+  
+  if (keyInfo.length > 0) {
+    return `CONTEXTO PREVIO DE LA CONVERSACIÓN:\n${keyInfo.slice(0, 3).join('\n')}\n\n`;
+  }
+  
+  return "";
+}
+
+// Función para truncar historial de chat de manera inteligente
+function truncateChatHistory(history: any[], maxTokens: number): { messages: any[], summary: string } {
+  let totalTokens = 0;
+  const truncatedHistory = [];
+  
+  // Limpiar historial de mensajes inválidos
+  const cleanHistory = history.filter((h: any) => h && typeof h.content === 'string' && h.content.trim().length > 0);
+  
+  // Si el historial es muy largo, crear resumen y mantener mensajes estratégicos
+  if (cleanHistory.length > 15) {
+    console.log(`📝 Historial muy largo (${cleanHistory.length} mensajes), aplicando estrategia inteligente...`);
+    
+    // Crear resumen de contexto
+    const summary = createConversationSummary(cleanHistory);
+    const summaryTokens = estimateTokens(summary);
+    
+    // Mantener primeros 3 mensajes (contexto inicial)
+    const firstMessages = cleanHistory.slice(0, 3);
+    const firstMessagesTokens = firstMessages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+    
+    // Mantener últimos 8 mensajes (conversación reciente)
+    const lastMessages = cleanHistory.slice(-8);
+    const lastMessagesTokens = lastMessages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+    
+    // Calcular tokens disponibles para mensajes intermedios
+    const availableTokens = maxTokens - summaryTokens - firstMessagesTokens - lastMessagesTokens;
+    
+    if (availableTokens > 200) {
+      // Si hay espacio, agregar algunos mensajes intermedios importantes
+      const middleMessages = cleanHistory.slice(3, -8);
+      const selectedMiddle = [];
+      let middleTokens = 0;
+      
+      for (const msg of middleMessages) {
+        const msgTokens = estimateTokens(msg.content);
+        if (middleTokens + msgTokens <= availableTokens / 2) {
+          selectedMiddle.push(msg);
+          middleTokens += msgTokens;
+        } else {
+          break;
+        }
+      }
+      
+      const allMessages = [...firstMessages, ...selectedMiddle, ...lastMessages];
+      const allTokens = summaryTokens + allMessages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+      
+      if (allTokens <= maxTokens) {
+        return { 
+          messages: allMessages.map(msg => ({ role: msg.role, content: msg.content })),
+          summary 
+        };
+      }
+    }
+    
+    // Si no hay espacio suficiente, solo primeros y últimos
+    const strategicMessages = [...firstMessages, ...lastMessages];
+    const strategicTokens = summaryTokens + strategicMessages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+    
+    if (strategicTokens <= maxTokens) {
+      return { 
+        messages: strategicMessages.map(msg => ({ role: msg.role, content: msg.content })),
+        summary 
+      };
+    }
+  }
+  
+  // Para historiales más cortos, usar el método original
+  for (let i = cleanHistory.length - 1; i >= 0; i--) {
+    const message = cleanHistory[i];
+    const messageTokens = estimateTokens(message.content);
+    
+    if (totalTokens + messageTokens <= maxTokens) {
+      truncatedHistory.unshift({ role: message.role, content: message.content });
+      totalTokens += messageTokens;
+    } else {
+      // Si no cabe el mensaje completo, truncar el contenido
+      const remainingTokens = maxTokens - totalTokens;
+      if (remainingTokens > 50) { // Mínimo 50 tokens para ser útil
+        const truncatedContent = truncateToTokens(message.content, remainingTokens);
+        truncatedHistory.unshift({ role: message.role, content: truncatedContent });
+      }
+      break;
+    }
+  }
+  
+  return { messages: truncatedHistory, summary: "" };
+}
+
+// Función para validar y optimizar mensajes antes de enviar a OpenAI
+function optimizeMessagesForTokens(
+  systemPrompt: string,
+  chatHistory: any[],
+  tools: OpenAIToolSchema[] = [],
+  records: IRecord[] = []
+): { messages: any[], totalTokens: number } {
+  
+  // Estimar tokens de herramientas
+  const toolsTokens = tools.length > 0 ? estimateTokens(JSON.stringify(tools)) : 0;
+  
+  // Calcular tokens disponibles para prompt e historial
+  const availableTokens = MAX_TOKENS - RESERVED_TOKENS - toolsTokens;
+  
+  // Crear prompt del sistema optimizado
+  const prospectInfo = records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto';
+  
+  // Extraer información persistente del cliente
+  const clientInfo = extractClientInfo(chatHistory);
+  const clientInfoText = Object.keys(clientInfo).length > 0 
+    ? `\nINFORMACIÓN DEL CLIENTE:\n${Object.entries(clientInfo).map(([key, value]) => `- ${key}: ${value}`).join('\n')}`
+    : '';
+  
+  // Crear prompt conciso si el original es muy largo
+  const optimizedSystemPrompt = createConcisePrompt(systemPrompt);
+  
+  const fullSystemPrompt = `${optimizedSystemPrompt}
+
+IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
+1. SOLO responde con información que se te haya proporcionado explícitamente
+2. NUNCA inventes, asumas o especules sobre información que no tengas
+3. Si no tienes la información solicitada, di claramente "No tengo esa información disponible"
+4. Sé específico y preciso en tus respuestas
+5. No uses información de entrenamiento general, solo la información del contexto actual
+6. Si hay ambigüedad, pide aclaración en lugar de asumir
+
+Información del prospecto: ${prospectInfo}${clientInfoText}`;
+  
+  // Truncar prompt del sistema si es muy largo
+  const truncatedSystemPrompt = truncateToTokens(fullSystemPrompt, MAX_PROMPT_TOKENS);
+  const systemPromptTokens = estimateTokens(truncatedSystemPrompt);
+  
+  // Calcular tokens disponibles para historial
+  const availableHistoryTokens = availableTokens - systemPromptTokens;
+  
+  // Truncar historial si es necesario
+  const { messages: optimizedHistory, summary } = truncateChatHistory(chatHistory, availableHistoryTokens);
+  
+  // Construir mensajes optimizados con resumen si existe
+  const systemContent = summary ? `${truncatedSystemPrompt}\n\n${summary}` : truncatedSystemPrompt;
+  const messages = [
+    { role: "system", content: systemContent },
+    ...optimizedHistory
+  ];
+  
+  const totalTokens = estimateTokens(systemContent) + 
+    optimizedHistory.reduce((sum, msg) => sum + estimateTokens(msg.content), 0) + 
+    toolsTokens;
+  
+  // Validar que no exceda el límite
+  if (totalTokens > MAX_TOKENS) {
+    console.warn(`⚠️ Tokens exceden límite: ${totalTokens}/${MAX_TOKENS}. Aplicando optimización adicional...`);
+    
+    // Si aún excede, truncar más el historial
+    const excessTokens = totalTokens - MAX_TOKENS;
+    const additionalHistoryTokens = availableHistoryTokens - excessTokens;
+    
+    if (additionalHistoryTokens > 100) {
+      const { messages: furtherOptimizedHistory, summary: fallbackSummary } = truncateChatHistory(chatHistory, additionalHistoryTokens);
+      const fallbackSystemContent = fallbackSummary ? `${truncatedSystemPrompt}\n\n${fallbackSummary}` : truncatedSystemPrompt;
+      const finalMessages = [
+        { role: "system", content: fallbackSystemContent },
+        ...furtherOptimizedHistory
+      ];
+      
+      const finalTokens = estimateTokens(fallbackSystemContent) + 
+        furtherOptimizedHistory.reduce((sum, msg) => sum + estimateTokens(msg.content), 0) + 
+        toolsTokens;
+      
+      return { messages: finalMessages, totalTokens: finalTokens };
+    }
+  }
+  
+  return { messages, totalTokens };
+}
+
 export async function preparePrompt(
   config: IIaConfig
 ): Promise<string> {
@@ -129,28 +454,17 @@ export async function generateResponse(
     // Obtener herramientas para la empresa
     const tools = c_name ? await getToolsForCompany(c_name) : [];
     
-    // LIMPIA el historial para OpenAI - SOLO role y content
-    const safeHistoryForOpenAI = chatHistory
-      .filter((h: any): h is { role: string, content: string } => !!h && typeof h.content === 'string')
-      .map((h: any) => ({ role: h.role, content: h.content }));
+    // Optimizar mensajes para tokens
+    const { messages, totalTokens } = optimizeMessagesForTokens(
+      prompt || "Eres un asistente virtual.",
+      chatHistory,
+      tools,
+      records
+    );
 
-    const messages = [
-      { 
-        role: "system", 
-        content: `${prompt || "Eres un asistente virtual."}
-
-IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
-1. SOLO responde con información que se te haya proporcionado explícitamente
-2. NUNCA inventes, asumas o especules sobre información que no tengas
-3. Si no tienes la información solicitada, di claramente "No tengo esa información disponible"
-4. Sé específico y preciso en tus respuestas
-5. No uses información de entrenamiento general, solo la información del contexto actual
-6. Si hay ambigüedad, pide aclaración en lugar de asumir`
-      },
-      // Solo enviar información básica del prospecto, no toda la BD
-      { role: "system", content: `Información del prospecto: ${records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto'}`},
-      ...safeHistoryForOpenAI
-    ];
+    // Log para monitorear uso de tokens
+    console.log(`🔍 Tokens estimados: ${totalTokens}/${MAX_TOKENS} (${Math.round(totalTokens/MAX_TOKENS*100)}%)`);
+    console.log(`📝 Mensajes optimizados: ${messages.length} mensajes`);
 
     // Configurar request con herramientas si están disponibles
     const requestConfig: any = {
@@ -222,30 +536,19 @@ IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
     
     // Fallback a respuesta sin herramientas - LIMPIO Y SEGURO
     try {
-      // LIMPIA el historial para el fallback también
-      const safeHistoryForFallback = chatHistory
-        .filter((h: any): h is { role: string, content: string } => !!h && typeof h.content === 'string')
-        .map((h: any) => ({ role: h.role, content: h.content }));
+      // Optimizar mensajes para tokens
+      const { messages, totalTokens } = optimizeMessagesForTokens(
+        prompt || "Eres un asistente virtual.",
+        chatHistory,
+        [], // No tools for fallback
+        records
+      );
+
+      console.log(`🔄 Fallback - Tokens estimados: ${totalTokens}/${MAX_TOKENS} (${Math.round(totalTokens/MAX_TOKENS*100)}%)`);
 
       const response = await openai.chat.completions.create({
         model: "gpt-4",
-        messages: [
-          { 
-            role: "system", 
-            content: `${prompt || "Eres un asistente virtual."}
-
-IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
-1. SOLO responde con información que se te haya proporcionado explícitamente
-2. NUNCA inventes, asumas o especules sobre información que no tengas
-3. Si no tienes la información solicitada, di claramente "No tengo esa información disponible"
-4. Sé específico y preciso en tus respuestas
-5. No uses información de entrenamiento general, solo la información del contexto actual
-6. Si hay ambigüedad, pide aclaración en lugar de asumir`
-          },
-          // Solo enviar información básica del prospecto, no toda la BD
-          { role: "system", content: `Información del prospecto: ${records.length > 0 ? 'Cliente registrado' : 'Nuevo prospecto'}`},
-          ...safeHistoryForFallback
-        ],
+        messages: messages,
         temperature: 0.1, // Temperatura más baja para mayor precisión
         top_p: 0.1, // Top-p más bajo para respuestas más determinísticas
         frequency_penalty: 0.5, // Penalizar repetición
@@ -256,7 +559,30 @@ IMPORTANTE - REGLAS ESTRICTAS DE PRECISIÓN:
       return fallbackResponse;
     } catch (fallbackError) {
       console.error('Fallback response error:', fallbackError);
-      return "Lo siento, estoy experimentando dificultades técnicas. Por favor, intenta nuevamente.";
+      
+      // Fallback final garantizado - respuesta mínima pero útil
+      try {
+        const clientInfo = extractClientInfo(chatHistory);
+        const clientName = clientInfo.name || 'Cliente';
+        
+        const minimalPrompt = `Eres Alejandro, asesor inmobiliario del Grupo Milkasa. El cliente se llama ${clientName}. 
+        Responde de manera amigable y profesional. Si no tienes contexto suficiente, pide amablemente más información.`;
+        
+        const response = await openai.chat.completions.create({
+          model: "gpt-4",
+          messages: [
+            { role: "system", content: minimalPrompt },
+            { role: "user", content: "Continúa la conversación de manera natural." }
+          ],
+          temperature: 0.7,
+          max_tokens: 150
+        });
+        
+        return response.choices[0].message.content || "Hola, ¿en qué puedo ayudarte hoy?";
+      } catch (finalError) {
+        console.error('Final fallback error:', finalError);
+        return "Hola, soy Alejandro de Grupo Milkasa. ¿En qué puedo ayudarte hoy?";
+      }
     }
   }
 }

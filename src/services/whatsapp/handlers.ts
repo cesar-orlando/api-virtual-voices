@@ -77,15 +77,15 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
     } else {
-      await updateChatRecord(company, existingRecord, "inbound", message.body, "human")
+      await updateChatRecord(company, existingRecord, "inbound", message, "human")
     }
 
     if (!existingRecord || !existingRecord.botActive) return;
 
     // --- VALIDACIÓN DE IA EN PROSPECTOS ---
     const Record = getRecordModel(conn);
-    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': userPhone });
-    if (prospecto && prospecto.data && prospecto.data.IA === false) {
+    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': Number(cleanUserPhone) });
+    if (prospecto && prospecto.data && prospecto.data.ia === false) {
       console.log(`🤖 IA desactivada para ${userPhone}, debe responder un agente.`);
       // Aquí podrías emitir un evento para el agente humano si lo deseas
       return;
@@ -151,6 +151,7 @@ async function createNewChatRecord(
     },
     messages: [
       {
+        msgId: message.id.id, // o message.id.id
         direction: message.fromMe ? "outbound" : "inbound",
         body: message.body,
         respondedBy: "human",
@@ -165,12 +166,13 @@ async function updateChatRecord(
   company: string,
   chatRecord: any,
   direction: string,
-  body: string,
+  message: Message | string,
   respondedBy: string
 ) {
   chatRecord.messages.push({
+    msgId: typeof message === 'string' ? '' : message.id.id, // o message.id.id
     direction: direction,
-    body: body,
+    body: typeof message === 'string' ? message : message.body,
     respondedBy: respondedBy,
   });
   await chatRecord.save();
@@ -255,13 +257,9 @@ async function sendAndRecordBotResponse(
   } catch (sendError) {
     console.error("Error enviando mensaje:", sendError);
     // Si falla el envío, crear un objeto mock para continuar
-    msg = { body: aiResponse };
+    msg = aiResponse;
   }
-
-  // Asegurar que msg.body existe
-  const messageBody = msg?.body || aiResponse;
-  
   // Actualizar el registro existente con la respuesta de la IA
   existingRecord.botActive = activeBot;
-  await updateChatRecord(company, existingRecord, "outbound-api", messageBody, "bot");
+  await updateChatRecord(company, existingRecord, "outbound-api", msg, "bot");
 }

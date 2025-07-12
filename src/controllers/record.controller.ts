@@ -166,12 +166,11 @@ export const createDynamicRecord = async (req: Request, res: Response) => {
   }
 };
 
-// Obtener todos los registros de una tabla
 export const getDynamicRecords = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
   const { 
     page = 1, 
-    limit = 5, 
+    limit = 10, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
     filters
@@ -195,7 +194,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     // Procesar filtros directos de query
     for (const [key, value] of Object.entries(req.query)) {
       if (
-        !['page', 'limit', 'sortBy', 'sortOrder', 'filters', 'characteristics'].includes(key) &&
+        !['page', 'limit', 'sortBy', 'sortOrder', 'filters'].includes(key) &&
         value !== undefined &&
         value !== null &&
         value !== ''
@@ -251,6 +250,126 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
     // Contar total de registros
     const total = await Record.countDocuments(queryFilter);
+
+    res.json({
+      records,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching dynamic records", error });
+  }
+};
+
+// Obtener todos los registros de una tabla
+export const getDynamicRecordsBot = async (req: Request, res: Response) => {
+  const { tableSlug, c_name } = req.params;
+  const { 
+    page = 1, 
+    limit = 5, 
+    sortBy = 'createdAt', 
+    sortOrder = 'desc',
+    filters,
+    characteristics
+  } = req.query;
+
+  try {
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Record = getRecordModel(conn);
+    const Table = getTableModel(conn);
+
+    // Validar que la tabla existe
+    const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
+    if (!table) {
+      res.status(404).json({ message: "Table not found or inactive" });
+      return;
+    }
+
+    // Construir filtros de consulta
+    const queryFilter: any = { tableSlug, c_name };
+
+    // Procesar filtros directos de query
+    for (const [key, value] of Object.entries(req.query)) {
+      if (
+        !['page', 'limit', 'sortBy', 'sortOrder', 'filters', 'characteristics'].includes(key) &&
+        value !== undefined &&
+        value !== null &&
+        value !== ''
+      ) {
+        // Buscar el tipo de campo en la tabla
+        const fieldDef = table.fields.find((f: any) => f.name === key);
+        let filterValue: any = value;
+        if (fieldDef) {
+          switch (fieldDef.type) {
+            case 'number':
+            case 'currency':
+              filterValue = Number(value);
+              break;
+            case 'boolean':
+              if (value === 'true') filterValue = true;
+              else if (value === 'false') filterValue = false;
+              break;
+            default:
+              filterValue = { $regex: `^${value}$`, $options: 'i' };
+              break;
+          }
+        }
+        queryFilter[`data.${key}`] = filterValue;
+      }
+    }
+
+    // Aplicar filtros dinámicos si se proporcionan
+    if (filters && typeof filters === 'string') {
+      try {
+        const parsedFilters = JSON.parse(filters);
+        for (const [fieldName, value] of Object.entries(parsedFilters)) {
+          if (value !== undefined && value !== null && value !== '') {
+            queryFilter[`data.${fieldName}`] = value;
+          }
+        }
+      } catch (error) {
+        res.status(400).json({ message: "Invalid filters format" });
+        return;
+      }
+    }
+
+    // Configurar paginación y ordenamiento
+    const skip = (Number(page) - 1) * Number(limit);
+    const sort: any = {};
+    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
+
+    // Si characteristics=true, mostrar toda la información (sin proyección)
+    // Si characteristics no está presente o es false, mostrar solo ciertos campos
+    let projection = undefined;
+    if (!characteristics || String(characteristics) === "false") {
+      projection = {};
+      Object.keys(queryFilter).forEach(key => {
+        if (key.startsWith('data.')) {
+          projection[key] = 1; // Incluir solo campos de datos
+        }
+      });
+      table.fields.slice(0, 3).forEach((f: any) => {
+      projection[`data.${f.name}`] = 1;
+      });
+      projection["createdAt"] = 1;
+      projection["updatedAt"] = 1;
+    }
+
+    // Obtener registros con o sin proyección
+    const records = await Record.find(queryFilter, projection)
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    // Contar total de registros
+    const total = await Record.countDocuments(queryFilter);
+
+    console.log(queryFilter);
 
     res.json({
       records,
@@ -600,10 +719,34 @@ export const getRecordStats = async (req: Request, res: Response) => {
       }
     ]);
 
+    // Totales por campana
+    const campanaStats = await Record.aggregate([
+      { $match: { tableSlug, c_name } },
+      { $group: { _id: "$data.campana", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Totales por medio
+    const medioStats = await Record.aggregate([
+      { $match: { tableSlug, c_name } },
+      { $group: { _id: "$data.medio", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Totales por ciudad
+    const ciudadStats = await Record.aggregate([
+      { $match: { tableSlug, c_name } },
+      { $group: { _id: "$data.ciudad", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
     res.json({
       totalRecords,
       recentRecords,
       dailyStats,
+      campanaStats,
+      medioStats,
+      ciudadStats,
       table: {
         name: table.name,
         slug: table.slug,

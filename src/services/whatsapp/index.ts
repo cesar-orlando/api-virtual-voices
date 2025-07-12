@@ -196,16 +196,38 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     whatsappClient.on('ready', async () => {
       const chats = await whatsappClient.getChats();
-      // Guardar todos los chats en WhatsappChat y prospectos (con mensajes iniciales si es posible)
+
+      const fetchLimit = 50;
+      const conn = await getDbConnection(company);
+      const WhatsappChat = getWhatsappChatModel(conn);
+
+      const saveMessagesToRecord = (record: any, messages: any[]) => {
+        for (const msg of messages) {
+          const alreadyExists = record.messages.some((m: any) => m.msgId === msg.id.id);
+          if (alreadyExists) continue;
+
+          record.messages.push({
+            msgId: msg.id.id,
+            direction: msg.fromMe ? "outbound" : "inbound",
+            body: msg.body,
+            respondedBy: msg.fromMe ? "human" : "user",
+            createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
+          });
+        }
+
+        record.messages.sort(
+          (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      };
+
       (async () => {
         try {
-          const conn = await getDbConnection(company);
-          const WhatsappChat = getWhatsappChatModel(conn);
           for (const chat of chats) {
-            // Solo chats individuales
             if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
-            // Guardar en WhatsappChat
+
             let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized });
+            const messages = await chat.fetchMessages({ limit: fetchLimit });
+
             if (!chatRecord) {
               chatRecord = new WhatsappChat({
                 tableSlug: "clientes",
@@ -213,46 +235,37 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
                 name: chat.name || chat.id._serialized,
                 messages: [],
               });
-              // Intenta obtener los últimos mensajes
-              try {
-                const messages = await chat.fetchMessages({ limit: 5 });
-                for (const msg of messages) {
-                  chatRecord.messages.push({
-                    direction: msg.fromMe ? "outbound" : "inbound",
-                    body: msg.body,
-                    respondedBy: msg.fromMe ? "human" : "user",
-                    createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
-                  });
-                }
-              } catch (err) {
-                console.error('Error obteniendo mensajes iniciales:', err);
-              }
-              await chatRecord.save();
             }
-            // Guardar en prospectos si no existe, pasando el nombre
-            saveProspectIfNotExists(company, chat.id._serialized, chat.name); // NO await
+
+            saveMessagesToRecord(chatRecord, messages);
+            await chatRecord.save();
+
+            // NO await: Guardar prospecto si no existe
+            saveProspectIfNotExists(company, chat.id._serialized, chat.name);
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);
         }
       })(); // Lanzar en background
-      
+
       // Notificar que la sesión está completamente lista DESPUÉS de guardar todo
       if (io) {
-        io.emit(`whatsapp-status-${company}-${user_id}`, { 
-          status: 'ready', 
-          session: sessionName, 
-          message: 'WhatsApp conectado y listo para usar'
+        io.emit(`whatsapp-status-${company}-${user_id}`, {
+          status: 'ready',
+          session: sessionName,
+          message: 'WhatsApp conectado y listo para usar',
         });
       }
-      
+
       resolve(whatsappClient);
-      
+
       setTimeout(async () => {
         await updateSessionStatus('connected');
       }, 2000);
+
       delete qrSent[clientKey];
     });
+
 
     whatsappClient.on('auth_failure', async (msg) => {
       console.log(`❌ Fallo de autenticación en la sesión ${company}:${sessionName} :`, msg);

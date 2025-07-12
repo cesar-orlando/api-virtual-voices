@@ -10,6 +10,7 @@ const whatsappMessage: Schema = new Schema(
         default: Date.now,
       },
     respondedBy: { type: String, required: true },
+    msgId: { type: String, required: true }, // ID del mensaje
   },
   { _id: true } // Se generará un _id para cada campo
 );

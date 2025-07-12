@@ -64,6 +64,19 @@ const validateUniqueFieldOrders = (fields: any[]): { isValid: boolean; error?: s
   return { isValid: true };
 };
 
+// Función para generar slug a partir de un label
+function slugify(text: string): string {
+  return text
+    .toString()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
+    .toLowerCase()
+    .replace(/\s+/g, "_") // Replace spaces with _
+    .replace(/[^\w\-]+/g, "") // Remove all non-word chars
+    .replace(/\_\_+/g, "_") // Replace multiple _ with single _
+    .replace(/^_+/, "") // Trim _ from start
+    .replace(/_+$/, ""); // Trim _ from end
+}
+
 // Crear una nueva tabla
 export const createTable = async (req: Request, res: Response): Promise<void> => {
   const { name, slug, icon, c_name, createdBy, fields, isActive = true } = req.body;
@@ -290,6 +303,46 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
         res.status(400).json({ message: orderValidation.error });
         return;
       }
+
+      // --- ACTUALIZAR RECORDS SI HAY RENOMBRES DE CAMPOS O CAMBIO DE LABEL ---
+      const oldFields = currentTable.fields || [];
+      const newFields = fieldsWithOrders;
+      const renames = [];
+      for (const oldField of oldFields) {
+        // Buscar campo nuevo con mismo orden (o alguna otra lógica de emparejamiento)
+        const newField = newFields.find(f => f.order === oldField.order);
+        if (newField) {
+          // Si cambió el label, genera un nuevo name y actualiza el campo
+          if (oldField.label !== newField.label) {
+            const generatedName = slugify(newField.label);
+            renames.push({ oldKey: oldField.name, newKey: generatedName });
+            newField.name = generatedName; // Actualiza el name en el array de fields
+          } else if (oldField.name !== newField.name) {
+            // Si solo cambió el name manualmente
+            renames.push({ oldKey: oldField.name, newKey: newField.name });
+          }
+        }
+      }
+      if (renames.length > 0) {
+        const Record = getRecordModel(conn);
+        const records = await Record.find({ tableSlug: currentTable.slug });
+        for (const record of records) {
+          let updated = false;
+          for (const { oldKey, newKey } of renames) {
+            if (record.data && record.data[oldKey] !== undefined) {
+              console.log(`[DEBUG] Actualizando registro ${record._id}: renombrando ${oldKey} a ${newKey}`);
+              record.data[newKey] = record.data[oldKey];
+              delete record.data[oldKey];
+              updated = true;
+            }
+          }
+          if (updated) {
+            record.markModified('data');
+            await record.save();
+          }
+        }
+      }
+      // --- FIN ACTUALIZACIÓN DE RECORDS ---
 
       // TODO: Validar que no se eliminen campos con datos existentes
       // Esto requeriría consultar la colección de datos de la tabla

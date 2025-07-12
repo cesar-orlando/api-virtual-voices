@@ -13,6 +13,17 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
   if (message.isStatus) return;
 
+  let statusText: string | undefined = undefined;
+
+  if (message.hasQuotedMsg) {
+    const quoted = await message.getQuotedMessage();
+    // Check if the quoted message is from you
+    if (quoted.fromMe) {
+      statusText = quoted.body;
+      // Puedes guardar statusText para usarlo después
+    }
+  }
+
   // Validar que no sea un mensaje de grupo
   if (message.from.endsWith('@g.us')) {
     console.log(`🚫 Mensaje de grupo ignorado: ${message.from}`);
@@ -116,6 +127,10 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     // Agrega el mensaje actual
     history.push({ role: "user", content: message.body });
+
+    if (statusText) {
+      history.push({ role: "system", content: `El usuario está respondiendo a este status: "${statusText}"` });
+    }
 
     // Justo antes de llamar a OpenAI para generar la respuesta:
     const safeHistoryForOpenAI = history

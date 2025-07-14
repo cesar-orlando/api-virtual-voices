@@ -170,7 +170,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
   const { 
     page = 1, 
-    limit = 10, 
+    limit = 100, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
     filters
@@ -270,7 +270,7 @@ export const getDynamicRecordsBot = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
   const { 
     page = 1, 
-    limit = 5, 
+    limit = 100, 
     sortBy = 'createdAt', 
     sortOrder = 'desc',
     filters,

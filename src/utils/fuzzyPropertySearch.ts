@@ -167,33 +167,53 @@ export function extractPropertyArray(data: any): any[] {
   return [];
 }
 
-// Aplicar fuzzy search de manera genérica a cualquier tool que devuelva datos de propiedades
+function normalize(str: string): string {
+  return (str || '').normalize('NFD').replace(/[0-\u036f]/g, '').toLowerCase();
+}
+
+function registroCoincide(registro: any, query: string): boolean {
+  const q = normalize(query);
+  return Object.values(registro).some(val => {
+    if (typeof val === 'string') return normalize(val).includes(q);
+    if (Array.isArray(val)) return val.some(v => typeof v === 'string' && normalize(v).includes(q));
+    if (typeof val === 'object' && val !== null) return registroCoincide(val, query);
+    return false;
+  });
+}
+
+function obtenerValoresUnicos(registros: any[]): Record<string, string[]> {
+  const valores: Record<string, Set<string>> = {};
+  registros.forEach(registro => {
+    Object.entries(registro).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        if (!valores[key]) valores[key] = new Set();
+        valores[key].add(value);
+      }
+    });
+  });
+  const result: Record<string, string[]> = {};
+  Object.keys(valores).forEach(key => result[key] = Array.from(valores[key]));
+  return result;
+}
+
 export function applyFuzzySearchToToolResult(data: any, query?: string): any {
-  if (!query || !isFuzzySearchCandidate(data)) {
-    return data;
-  }
-  
-  const propertyArray = extractPropertyArray(data);
-  if (propertyArray.length === 0) {
-    return data;
-  }
-  
-  // Aplicar fuzzy search
-  const searchResults = fuzzyPropertySearch({ query, propiedades: propertyArray as Propiedad[] });
-  
-  // Reemplazar el array original con los resultados filtrados
+  if (!query) return data;
+  // Si es un array de registros
   if (Array.isArray(data)) {
-    return searchResults;
+    const filtrados = data.filter(r => registroCoincide(r, query));
+    if (filtrados.length > 0) return filtrados;
+    return { message: "No se encontraron coincidencias. Sugerencias:", sugerencias: obtenerValoresUnicos(data) };
   }
-  
-  // Si es un objeto, encontrar y reemplazar el array correspondiente
-  const dataKeys = Object.keys(data);
-  for (const key of dataKeys) {
-    if (Array.isArray(data[key]) && isFuzzySearchCandidate(data[key])) {
-      data[key] = searchResults;
-      break;
+  // Si es un objeto con un array de registros (por ejemplo, { records: [...] })
+  if (typeof data === 'object' && data !== null) {
+    const keys = Object.keys(data);
+    for (const key of keys) {
+      if (Array.isArray(data[key])) {
+        const filtrados = data[key].filter((r: any) => registroCoincide(r.data || r, query));
+        if (filtrados.length > 0) return { ...data, [key]: filtrados };
+        return { ...data, message: "No se encontraron coincidencias. Sugerencias:", sugerencias: obtenerValoresUnicos(data[key].map((r: any) => r.data || r)) };
+      }
     }
   }
-  
   return data;
 } 

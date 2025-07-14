@@ -4,6 +4,7 @@ import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { generateResponse, openai, preparePrompt } from "../services/openai";
 import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
+import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
 
 // 🔥 Crear configuración inicial si no existe
 export const createIAConfig = async (req: Request, res: Response): Promise<void> => {
@@ -192,7 +193,6 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     const { messages, aiConfig } = req.body;
 
     let IAPrompt;
-    
     if (aiConfig) {
       IAPrompt = await preparePrompt(aiConfig);
     }
@@ -208,24 +208,33 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     }).filter(Boolean);
 
     const conn = await getConnectionByCompanySlug(c_name);
-
     const Record = getRecordModel(conn);
-    const records = await Record.find();
-    
+    let records = await Record.find();
+
+    // Si el último mensaje contiene un link, filtra los registros relevantes
+    const lastMsg = messages && messages.length > 0 ? messages[messages.length - 1].text : '';
+    const links = (lastMsg.match(/https?:\/\/[^\s]+/g) || []);
+    if (links.length > 0) {
+      records = records.filter(r => {
+        const data = r.data || r;
+        return Object.values(data).some(v => typeof v === 'string' && links.some(link => v.includes(link.split('/').pop() || '')));
+      });
+    }
+
     try {
       const response = await generateResponse(
-            IAPrompt,
-            aiConfig,
-            history,
-            records,
-            c_name // <-- Se agrega c_name para herramientas
-      )
+        IAPrompt,
+        aiConfig,
+        history,
+        records,
+        c_name // <-- Se agrega c_name para herramientas
+      );
       aiResponse = response || defaultResponse;
     } catch (error) {
       console.error("Error al obtener respuesta de OpenAI:", error);
     }
 
-    res.status(201).json({ message: aiResponse});
+    res.status(201).json({ message: aiResponse });
 
   } catch (error) {
     console.error("Error al probar IA:", error);

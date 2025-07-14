@@ -281,7 +281,7 @@ router.get("/chats/:phone/history", getChatHistory);
  *         schema:
  *           type: string
  *         required: true
- *         description: Slug de la empresa (ej: quicklearning, test)
+ *         description: Slug de la empresa (ej quicklearning, test)
  *     responses:
  *       200:
  *         description: Lista de prospectos
@@ -329,13 +329,13 @@ router.get("/prospectos", async (req: Request, res: Response) => {
  *         schema:
  *           type: string
  *         required: true
- *         description: Lista de slugs de tablas separadas por comas (ej: prospectos,clientes,sin_contestar)
+ *         description: Lista de slugs de tablas separadas por comas (ej prospectos,clientes,sin_contestar)
  *       - in: query
  *         name: companySlug
  *         schema:
  *           type: string
  *         required: true
- *         description: Slug de la empresa (ej: quicklearning, test)
+ *         description: Slug de la empresa (ej quicklearning, test)
  *     responses:
  *       200:
  *         description: Lista de usuarios de las tablas indicadas

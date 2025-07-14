@@ -18,6 +18,7 @@ import {
   deleteFieldsFromAllRecords,
   deleteFieldsFromRecord,
   getDynamicRecordsBot,
+  searchPropiedadesGrupokg,
 } from "../controllers/record.controller";
 
 const router = Router();
@@ -33,6 +34,7 @@ router.get("/:c_name/:tableSlug/export", exportRecords);
 
 // Búsqueda
 router.post("/:c_name/:tableSlug/search", searchRecords);
+router.get('/search/grupokg/propiedades', searchPropiedadesGrupokg);
 
 // Campos
 router.post("/add-field", addNewFieldToAllRecords);

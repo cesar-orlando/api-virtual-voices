@@ -1367,3 +1367,128 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error deleting fields from record", error });
   }
 };
+
+export async function searchPropiedadesGrupokg(req: Request, res: Response): Promise<any> {
+  try {
+    // Solo permitir para grupokg
+    const c_name = 'grupokg';
+    const tableSlug = 'propiedades';
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Record = getRecordModel(conn);
+
+    // Extraer todos los filtros posibles del query
+    const { 
+      zona, 
+      precioMin, 
+      precioMax, 
+      renta_venta_inversion, 
+      titulo,
+      colonia,
+      recamaras,
+      banos,
+      estacionamiento,
+      mts_de_terreno,
+      metros_de_construccion,
+      disponibilidad,
+      aceptan_creditos,
+      mascotas,
+      limit = 50
+    } = req.query;
+
+    // Construir filtro base
+    const filter: any = {
+      tableSlug,
+      c_name
+    };
+
+    // Aplicar filtros exactos según el JSON real
+    if (zona) {
+      filter['data.zona'] = { $regex: zona as string, $options: 'i' };
+    }
+    
+    if (precioMin) {
+      filter['data.precio'] = { 
+        $gte: Number(precioMin),
+        ...(filter['data.precio'] || {})
+      };
+    }
+    
+    if (precioMax) {
+      filter['data.precio'] = { 
+        $lte: Number(precioMax),
+        ...(filter['data.precio'] || {})
+      };
+    }
+    
+    if (renta_venta_inversion) {
+      filter['data.renta_venta_inversión '] = { $regex: renta_venta_inversion as string, $options: 'i' };
+    }
+    
+    if (titulo) {
+      filter['data.titulo'] = { $regex: titulo as string, $options: 'i' };
+    }
+    
+    if (colonia) {
+      filter['data.colonia'] = { $regex: colonia as string, $options: 'i' };
+    }
+    
+    if (recamaras) {
+      filter['data.recamaras'] = recamaras as string;
+    }
+    
+    if (banos) {
+      filter['data.banos'] = Number(banos);
+    }
+    
+    if (estacionamiento) {
+      filter['data.estacionamiento'] = estacionamiento as string;
+    }
+    
+    if (mts_de_terreno) {
+      filter['data.mts_de_terreno'] = { $gte: Number(mts_de_terreno) };
+    }
+    
+    if (metros_de_construccion) {
+      filter['data.metros_de_construccion '] = { $gte: Number(metros_de_construccion) };
+    }
+    
+    if (disponibilidad) {
+      filter['data.disponibilidad'] = { $regex: disponibilidad as string, $options: 'i' };
+    }
+    
+    if (aceptan_creditos) {
+      filter['data.aceptan_creditos '] = { $regex: aceptan_creditos as string, $options: 'i' };
+    }
+    
+    if (mascotas) {
+      filter['data.mascotas'] = { $regex: mascotas as string, $options: 'i' };
+    }
+
+    // Ejecutar búsqueda
+    const records = await Record.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .lean();
+
+    // Formato exacto como el JSON que enviaste
+    const response = {
+      records,
+      pagination: {
+        page: 1,
+        limit: records.length,
+        total: records.length,
+        pages: 1
+      }
+    };
+
+    console.log(`Búsqueda grupokg propiedades: ${records.length} resultados encontrados`);
+    return res.json(response);
+    
+  } catch (error) {
+    console.error('Error en searchPropiedadesGrupokg:', error);
+    return res.status(500).json({ 
+      error: 'Error interno en búsqueda de propiedades',
+      details: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+}

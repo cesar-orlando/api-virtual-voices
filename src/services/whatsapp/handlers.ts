@@ -8,10 +8,22 @@ import { io } from '../../server';
 import { Connection, Model, Types } from 'mongoose';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
+import { Request, Response } from 'express';
 
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
   if (message.isStatus) return;
+
+  let statusText: string | undefined = undefined;
+
+  if (message.hasQuotedMsg) {
+    const quoted = await message.getQuotedMessage();
+    // Check if the quoted message is from you
+    if (quoted.fromMe) {
+      statusText = quoted.body;
+      // Puedes guardar statusText para usarlo después
+    }
+  }
 
   // Validar que no sea un mensaje de grupo
   if (message.from.endsWith('@g.us')) {
@@ -116,6 +128,10 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     // Agrega el mensaje actual
     history.push({ role: "user", content: message.body });
+
+    if (statusText) {
+      history.push({ role: "system", content: `El usuario está respondiendo a este status: "${statusText}"` });
+    }
 
     // Justo antes de llamar a OpenAI para generar la respuesta:
     const safeHistoryForOpenAI = history
@@ -262,4 +278,50 @@ async function sendAndRecordBotResponse(
   // Actualizar el registro existente con la respuesta de la IA
   existingRecord.botActive = activeBot;
   await updateChatRecord(company, existingRecord, "outbound-api", msg, "bot");
+}
+
+export async function enviarFichaTecnica(req: Request, res: Response): Promise<any> {
+  try {
+    const { propertyId, phoneNumber, company, sessionName } = req.body;
+    console.log('===> [enviarFichaTecnica] Request recibida:', { propertyId, phoneNumber, company, sessionName });
+
+    if (company !== 'grupokg') {
+      console.log('===> [enviarFichaTecnica] Empresa no permitida:', company);
+      return res.status(403).json({ success: false, message: 'Solo disponible para grupokg' });
+    }
+    if (!propertyId || !phoneNumber) {
+      console.log('===> [enviarFichaTecnica] Faltan parámetros:', { propertyId, phoneNumber });
+      return res.status(400).json({ success: false, message: 'propertyId y phoneNumber son requeridos' });
+    }
+
+    // Obtener la propiedad
+    const conn = await getDbConnection(company);
+    const Record = getRecordModel(conn);
+    const propiedad = await Record.findById(propertyId);
+    if (!propiedad || !propiedad.data.link_ficha_tecnica) {
+      console.log('===> [enviarFichaTecnica] No se encontró la propiedad o el link:', { propertyId });
+      return res.status(404).json({ success: false, message: 'No se encontró el link de la ficha técnica' });
+    }
+    const link = propiedad.data.link_ficha_tecnica;
+    const mensaje = `¡Gracias por tu interés! Aquí tienes la ficha técnica de la propiedad: ${link}`;
+
+    // Enviar mensaje por WhatsApp Web
+    // Buscar el cliente de WhatsApp por sessionName
+    const { clients } = require('./index');
+    const clientKey = `${company}:${sessionName}`;
+    const client = clients[clientKey];
+    if (!client) {
+      console.log('===> [enviarFichaTecnica] No se encontró la sesión de WhatsApp activa:', clientKey);
+      return res.status(500).json({ success: false, message: 'No se encontró la sesión de WhatsApp activa' });
+    }
+
+    console.log(`===> [enviarFichaTecnica] Enviando mensaje a ${phoneNumber}@c.us: ${mensaje}`);
+    await client.sendMessage(`${phoneNumber}@c.us`, mensaje);
+    console.log('===> [enviarFichaTecnica] Mensaje enviado correctamente.');
+
+    return res.json({ success: true, message: 'Ficha técnica enviada exitosamente', link });
+  } catch (error) {
+    console.error('===> [enviarFichaTecnica] Error enviando ficha técnica:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al enviar ficha técnica' });
+  }
 }

@@ -2,6 +2,23 @@ import { getDbConnection } from "../config/connectionManager";
 import getToolModel, { getToolExecutionModel } from "../models/tool.model";
 import { IToolDocument } from "../models/tool.model";
 import { ToolExecutionRequest } from "../types/tool.types";
+import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
+import advancedRecordFilter from "../utils/advancedRecordFilter";
+
+// NOTA IMPORTANTE:
+// El fuzzy search aquí SOLO se aplica como un filtro básico sobre los resultados de la herramienta (por ejemplo, una API externa),
+// usando el parámetro 'query' si está presente. 
+// NO maneja lógica de negocio, contexto conversacional, ni extracción de links o keywords avanzados.
+//
+// TODA la lógica avanzada de filtrado, extracción de links, keywords, contexto de conversación, y selección de records relevantes
+// DEBE implementarse en el endpoint principal del chatbot (por ejemplo, 'testIA'), donde se tiene acceso al historial de mensajes,
+// contexto del usuario y lógica específica del negocio.
+//
+// En resumen:
+// - toolExecutor.ts: Filtro básico (fuzzy) sobre resultados de herramientas individuales.
+// - Endpoint de chat (testIA): Lógica avanzada de filtrado, contexto, extracción de links, keywords, y manejo de conversación.
+//
+// Así se evita duplicar lógica y se mantiene el código claro y mantenible.
 
 // Rate limiting cache (en producción usar Redis)
 const rateLimitCache: Map<string, { count: number; resetTime: number }> = new Map();
@@ -37,9 +54,20 @@ export class ToolExecutor {
       let executionResult;
 
       try {
-        executionResult = await this.executeHttpRequest(tool, parameters || {});
-        
-        // Guardar log de ejecución exitosa
+        // LOG 1: Parámetros recibidos
+        console.log('[TOOL EXECUTOR] Parámetros recibidos:', parameters);
+
+        // 1. Ejecutar request HTTP a la URL base (sin filtros)
+        executionResult = await this.executeHttpRequest(tool, {}); // No pasar parámetros para evitar filtros en la URL
+
+        // LOG 2: Cantidad de registros obtenidos
+        if (Array.isArray(executionResult.data)) {
+          console.log(`[TOOL EXECUTOR] Registros obtenidos de la tool: ${executionResult.data.length}`);
+        } else {
+          console.log('[TOOL EXECUTOR] Tipo de datos obtenidos:', typeof executionResult.data);
+        }
+
+        // 2. Guardar log de ejecución exitosa
         const execution = new ToolExecution({
           toolId: tool._id,
           toolName: tool.name,
@@ -54,6 +82,47 @@ export class ToolExecutor {
           executedBy
         });
         await execution.save();
+
+        // 3. Si hay parámetros, combinarlos en un string para fuzzy search
+        let fuzzyQuery = '';
+        if (parameters && typeof parameters === 'object' && Object.keys(parameters).length > 0) {
+          fuzzyQuery = Object.values(parameters).filter(Boolean).join(' ');
+        }
+        // LOG 3: String de fuzzyQuery generado
+        console.log('[TOOL EXECUTOR] fuzzyQuery generado:', fuzzyQuery);
+
+        // 4. Aplicar fuzzy search si hay query
+        if (fuzzyQuery) {
+          let recordsArray = executionResult.data;
+          let wrapperKey = null;
+          // Si data es un objeto, intenta extraer el array de los campos comunes
+          if (executionResult.data && typeof executionResult.data === 'object' && !Array.isArray(executionResult.data)) {
+            const possibleKeys = ['data', 'records', 'result', 'items', 'list'];
+            for (const key of possibleKeys) {
+              if (Array.isArray(executionResult.data[key])) {
+                recordsArray = executionResult.data[key];
+                wrapperKey = key;
+                break;
+              }
+            }
+          }
+          const beforeCount = Array.isArray(recordsArray) ? recordsArray.length : 0;
+          const filtered = advancedRecordFilter(recordsArray, fuzzyQuery);
+          // LOG 4: Resultados después del fuzzy search
+          if (Array.isArray(filtered)) {
+            console.log(`[TOOL EXECUTOR] Resultados después del fuzzy: ${filtered.length} (de ${beforeCount})`);
+          } else if (filtered && filtered.sugerencias) {
+            console.log(`[TOOL EXECUTOR] No hubo match, sugerencias: ${filtered.sugerencias.length} (de ${beforeCount})`);
+          } else {
+            console.log('[TOOL EXECUTOR] Resultado después del fuzzy:', typeof filtered);
+          }
+          // Si había un wrapper, vuelve a poner el resultado en el mismo campo
+          if (wrapperKey) {
+            executionResult.data[wrapperKey] = filtered;
+          } else {
+            executionResult.data = filtered;
+          }
+        }
 
         return {
           success: true,
@@ -195,6 +264,11 @@ export class ToolExecutor {
       // Aplicar mapeo de respuesta si está configurado
       if (tool.responseMapping) {
         responseData = this.applyResponseMapping(responseData, tool.responseMapping, response.ok);
+      }
+
+      // Aplicar fuzzy search si hay un query en los parámetros y los datos son candidatos
+      if (parameters.query && typeof parameters.query === 'string') {
+        responseData = applyFuzzySearchToToolResult(responseData, parameters.query);
       }
 
       // Verificar si fue exitoso

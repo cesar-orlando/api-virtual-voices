@@ -12,6 +12,8 @@ import {
   getChatMessages,
 } from "../controllers/whatsapp.controller";
 
+import { enviarFichaTecnica } from '../services/whatsapp/handlers';
+
 const router = Router();
 
 router.get("/messages/:c_name/:phone", getChatMessages);
@@ -24,5 +26,6 @@ router.put("/session/:c_name", updateWhatsappSession);
 router.post("/session/:c_name/:sessionId", sendWhatsappMessage);
 router.delete("/session/:c_name/:sessionId", deleteWhatsappSession);
 router.post("/messageAll/:c_name/:sessionId", MessageToAll);
+router.post('/enviar-ficha-tecnica', enviarFichaTecnica);
 
 export default router;

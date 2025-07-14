@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import getToolModel, { getToolExecutionModel, getToolCategoryModel } from "../models/tool.model";
+import { ToolExecutor } from "../services/toolExecutor";
 import { 
   ITool, 
   ToolExecutionRequest, 
@@ -462,71 +463,23 @@ export const executeTool = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getConnectionByCompanySlug(c_name);
-    const Tool = getToolModel(conn);
-    const ToolExecution = getToolExecutionModel(conn);
+    // Usar el ToolExecutor real
+    const result = await ToolExecutor.execute({
+      toolName,
+      parameters: parameters || {},
+      c_name,
+      executedBy
+    });
 
-    // Buscar herramienta
-    const tool = await Tool.findOne({ name: toolName, c_name, isActive: true });
-    if (!tool) {
-      res.status(404).json({ message: "Tool not found or inactive" });
-      return;
-    }
-
-    const startTime = Date.now();
-    let executionResult;
-
-    try {
-      // Aquí iría la lógica real de ejecución de herramientas
-      // Por ahora, mock response
-      executionResult = {
-        success: true,
-        data: { message: "Tool executed successfully", parameters },
-        statusCode: 200,
-        executionTime: Date.now() - startTime
-      };
-
-      // Guardar log de ejecución
-      const execution = new ToolExecution({
-        toolId: tool._id,
-        toolName: tool.name,
-        c_name,
-        parameters: parameters || {},
-        response: executionResult,
-        executedBy
-      });
-      await execution.save();
-
-      res.json({ 
-        message: "Tool executed successfully", 
-        result: executionResult 
-      });
-    } catch (execError: any) {
-      executionResult = {
-        success: false,
-        error: execError.message,
-        statusCode: 500,
-        executionTime: Date.now() - startTime
-      };
-
-      // Guardar log de error
-      const execution = new ToolExecution({
-        toolId: tool._id,
-        toolName: tool.name,
-        c_name,
-        parameters: parameters || {},
-        response: executionResult,
-        executedBy
-      });
-      await execution.save();
-
-      res.status(500).json({ 
-        message: "Tool execution failed", 
-        result: executionResult 
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ message: "Error executing tool", error });
+    res.json({ 
+      message: "Tool executed successfully", 
+      result 
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      message: "Tool execution failed", 
+      error: error.message 
+    });
   }
 };
 
@@ -540,57 +493,22 @@ export const batchExecuteTools = async (req: Request, res: Response) => {
   }
 
   try {
-    const conn = await getConnectionByCompanySlug(c_name);
-    const Tool = getToolModel(conn);
-
-    const results = [];
-
-    for (const toolExec of tools) {
-      try {
-        // Buscar herramienta
-        const tool = await Tool.findOne({ 
-          name: toolExec.toolName, 
-          c_name, 
-          isActive: true 
-        });
-
-        if (!tool) {
-          results.push({
-            toolName: toolExec.toolName,
-            success: false,
-            error: "Tool not found or inactive"
-          });
-          continue;
-        }
-
-        // Ejecutar herramienta (mock por ahora)
-        const startTime = Date.now();
-        const executionResult = {
-          success: true,
-          data: { message: "Tool executed successfully", parameters: toolExec.parameters },
-          statusCode: 200,
-          executionTime: Date.now() - startTime
-        };
-
-        results.push({
-          toolName: toolExec.toolName,
-          ...executionResult
-        });
-      } catch (error: any) {
-        results.push({
-          toolName: toolExec.toolName,
-          success: false,
-          error: error.message
-        });
-      }
-    }
+    // Usar el ToolExecutor real para batch execution
+    const batchRequests = tools.map(tool => ({
+      toolName: tool.toolName,
+      parameters: tool.parameters || {}
+    }));
+    const results = await ToolExecutor.batchExecute(batchRequests, c_name, executedBy);
 
     res.json({ 
       message: "Batch execution completed", 
       results 
     });
-  } catch (error) {
-    res.status(500).json({ message: "Error in batch execution", error });
+  } catch (error: any) {
+    res.status(500).json({ 
+      message: "Error in batch execution", 
+      error: error.message 
+    });
   }
 };
 

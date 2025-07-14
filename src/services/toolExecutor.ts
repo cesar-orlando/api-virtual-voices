@@ -107,7 +107,7 @@ export class ToolExecutor {
             }
           }
           const beforeCount = Array.isArray(recordsArray) ? recordsArray.length : 0;
-          const filtered = advancedRecordFilter(recordsArray, fuzzyQuery);
+          const filtered = advancedRecordFilter(recordsArray, fuzzyQuery, parameters);
           // LOG 4: Resultados después del fuzzy search
           if (Array.isArray(filtered)) {
             console.log(`[TOOL EXECUTOR] Resultados después del fuzzy: ${filtered.length} (de ${beforeCount})`);

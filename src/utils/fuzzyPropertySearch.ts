@@ -56,6 +56,7 @@ export function fuzzyPropertySearch({ query, propiedades }: FuzzySearchOptions) 
     .replace(/(\d+)\s*rec[aá]maras?/gi, '')
     .replace(/de|por|en|a|la|el|una|un/gi, '')
     .trim();
+  
   // Si el query limpio queda vacío y hay candidatas, devolver la mejor
   if (queryLimpio.length === 0 && candidatas.length > 0) {
     return { match: candidatas[0], score: 0 };
@@ -168,18 +169,40 @@ export function extractPropertyArray(data: any): any[] {
 }
 
 function normalize(str: string): string {
-  return (str || '').normalize('NFD').replace(/[0-\u036f]/g, '').toLowerCase();
+  return (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 function registroCoincide(registro: any, query: string): boolean {
-  const q = normalize(query);
-  return Object.values(registro).some(val => {
-    if (typeof val === 'string') return normalize(val).includes(q);
-    if (Array.isArray(val)) return val.some(v => typeof v === 'string' && normalize(v).includes(q));
-    if (typeof val === 'object' && val !== null) return registroCoincide(val, query);
-    return false;
+  const normalizedQuery = query.split(' ').map(term => normalize(term));  // Normalize all query terms
+
+  // Iterate over all the values in the registro
+  return normalizedQuery.every(queryTerm => {
+    // Check if each query term is found in at least one value from the registro
+    return Object.values(registro).some(val => {
+      // If the field is a string, check if the normalized query term is included in the normalized field value
+      if (typeof val === 'string') {
+        return normalize(val).includes(queryTerm);
+      }
+
+      // If the field is an array, check each item in the array
+      if (Array.isArray(val)) {
+        return val.some(v => typeof v === 'string' && normalize(v).includes(queryTerm));
+      }
+
+      // If the field is a nested object, recursively check its values
+      if (typeof val === 'object' && val !== null) {
+        return registroCoincide(val, queryTerm);
+      }
+
+      return false;
+    });
   });
 }
+
 
 function obtenerValoresUnicos(registros: any[]): Record<string, string[]> {
   const valores: Record<string, Set<string>> = {};

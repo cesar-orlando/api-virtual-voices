@@ -1401,65 +1401,63 @@ export async function searchPropiedadesGrupokg(req: Request, res: Response): Pro
       c_name
     };
 
-    // Aplicar filtros exactos según el JSON real
-    if (zona) {
-      filter['data.zona'] = { $regex: zona as string, $options: 'i' };
+    // Búsqueda flexible: si solo hay un parámetro de búsqueda principal, busca en los tres campos
+    const searchTerm = colonia || zona || titulo;
+    const searchParams = [colonia, zona, titulo].filter(Boolean);
+    if (searchParams.length === 1 && searchTerm) {
+      filter.$or = [
+        { 'data.colonia': { $regex: searchTerm, $options: 'i' } },
+        { 'data.zona': { $regex: searchTerm, $options: 'i' } },
+        { 'data.titulo': { $regex: searchTerm, $options: 'i' } }
+      ];
+    } else {
+      if (zona) {
+        filter['data.zona'] = { $regex: zona as string, $options: 'i' };
+      }
+      if (titulo) {
+        filter['data.titulo'] = { $regex: titulo as string, $options: 'i' };
+      }
+      if (colonia) {
+        filter['data.colonia'] = { $regex: colonia as string, $options: 'i' };
+      }
     }
-    
+
     if (precioMin) {
       filter['data.precio'] = { 
         $gte: Number(precioMin),
         ...(filter['data.precio'] || {})
       };
     }
-    
     if (precioMax) {
       filter['data.precio'] = { 
         $lte: Number(precioMax),
         ...(filter['data.precio'] || {})
       };
     }
-    
     if (renta_venta_inversion) {
       filter['data.renta_venta_inversión '] = { $regex: renta_venta_inversion as string, $options: 'i' };
     }
-    
-    if (titulo) {
-      filter['data.titulo'] = { $regex: titulo as string, $options: 'i' };
-    }
-    
-    if (colonia) {
-      filter['data.colonia'] = { $regex: colonia as string, $options: 'i' };
-    }
-    
     if (recamaras) {
       filter['data.recamaras'] = recamaras as string;
     }
-    
     if (banos) {
       filter['data.banos'] = Number(banos);
     }
-    
     if (estacionamiento) {
       filter['data.estacionamiento'] = estacionamiento as string;
     }
-    
     if (mts_de_terreno) {
       filter['data.mts_de_terreno'] = { $gte: Number(mts_de_terreno) };
     }
-    
     if (metros_de_construccion) {
       filter['data.metros_de_construccion '] = { $gte: Number(metros_de_construccion) };
     }
-    
     if (disponibilidad) {
       filter['data.disponibilidad'] = { $regex: disponibilidad as string, $options: 'i' };
     }
-    
     if (aceptan_creditos) {
       filter['data.aceptan_creditos '] = { $regex: aceptan_creditos as string, $options: 'i' };
     }
-    
     if (mascotas) {
       filter['data.mascotas'] = { $regex: mascotas as string, $options: 'i' };
     }

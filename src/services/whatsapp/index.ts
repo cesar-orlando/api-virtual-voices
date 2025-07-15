@@ -172,7 +172,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         delete qrSent[clientKey];
         await cleanUpResources('User didnt scan QR');
         await updateSessionStatus('disconnected', 'User didnt scan QR');
-        reject(new Error('User didnt scan QR'));
+        reject(console.error(`User didnt scan QR for ${clientKey}`));
         return;
       }
       qrSent[clientKey] = true;
@@ -293,6 +293,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);
+        } finally {
+          console.log(`✅ Sesión ${clientKey} inicializada y chats guardados`);
         }
       })(); // Lanzar en background
 
@@ -322,17 +324,18 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       setTimeout(async () => {
         await updateSessionStatus('error', 'Auth Failure');
       }, 2000);
-      reject(new Error('Auth failure'));
+      reject(console.error('Auth failure'));
     });
 
     whatsappClient.on('disconnected', async (reason) => {
       console.log(`❌ Sesión ${company}:${sessionName} desconectada :`, reason);
+      whatsappClient.initialize();
       delete qrSent[clientKey];
-      await cleanUpResources('disconnected');
+      /*await cleanUpResources('disconnected');
       setTimeout(async () => {
         await updateSessionStatus('disconnected', reason);
       }, 2000);
-      reject(new Error('Disconnected'));
+      reject(console.error('Disconnected'));*/
     });
 
     whatsappClient.on('message', async (message) => {

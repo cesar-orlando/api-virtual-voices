@@ -336,6 +336,19 @@ router.get("/prospectos", async (req: Request, res: Response) => {
  *           type: string
  *         required: true
  *         description: Slug de la empresa (ej quicklearning, test)
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [Asesor, Administrador, Gerente, Supervisor]
+ *         required: true
+ *         description: Rol del usuario para filtrar por asesor
+ *       - in: query
+ *         name: asesorId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID del asesor para filtrar por rol
  *     responses:
  *       200:
  *         description: Lista de usuarios de las tablas indicadas
@@ -348,7 +361,7 @@ router.get("/prospectos", async (req: Request, res: Response) => {
  */
 router.get("/usuarios", async (req: Request, res: Response) => {
   try {
-    const { tableSlugs, companySlug, limit = "20", cursor } = req.query;
+    const { tableSlugs, companySlug, limit = "20", cursor, role, asesorId } = req.query;
     
     if (!tableSlugs) {
       res.status(400).json({ error: "tableSlugs query param is required" });
@@ -358,30 +371,51 @@ router.get("/usuarios", async (req: Request, res: Response) => {
       res.status(400).json({ error: "companySlug query param is required" });
       return;
     }
+    if (!role) {
+      res.status(400).json({ error: "role query param is required" });
+      return;
+    }
     
     const limitNum = Math.min(parseInt(limit as string) || 20, 50); // Máximo 50 por request
     const slugs = (tableSlugs as string).split(",").map(s => s.trim()).filter(Boolean);
     const conn = await getConnectionByCompanySlug(companySlug as string);
     const Record = getRecordModel(conn);
-    
-    // Obtener registros de las tablas especificadas (sin filtro de c_name)
-    const records = await Record.find({ 
+
+    // Obtener registros de las tablas especificadas
+    let records = await Record.find({ 
       tableSlug: { $in: slugs }
     }).lean();
-    
-    // Mapear registros a la estructura esperada por el frontend
+
+    // Filtrar por asesor si el rol es Asesor
+    if (role === "Asesor") {
+      if (!asesorId) {
+        res.status(400).json({ error: "asesorId query param is required for Asesor role" });
+        return;
+      }
+      records = records.filter((record: any) => {
+        let asesor = record.data && record.data.asesor;
+      
+        // Si es un string que parece JSON, intenta parsear
+        if (typeof asesor === "string" && asesor.trim().startsWith("{")) {
+          try {
+            asesor = JSON.parse(asesor);
+          } catch (e) {
+            // Si no se puede parsear, ignora
+          }
+        }
+      
+        if (!asesor) return false;
+        if (typeof asesor === "string") return asesor === asesorId;
+        if (typeof asesor === "object" && asesor._id) return asesor._id === asesorId;
+        return false;
+      });
+    }
+
+    // Mapear registros para retornar solo el data, pero mantener lastMessageDate para ordenamiento
     const usuariosMapeados = records.map((record: any) => {
-      // Extraer datos del registro
       const data = record.data || {};
       
-      // Determinar el nombre del usuario
-      const name = data.nombre || data.name || 'Sin nombre';
-      
-      // Determinar el teléfono
-      const phone = data.telefono || data.phone || '';
-      
-      // Determinar el último mensaje y la fecha
-      let lastMessage = null;
+      // Determinar el último mensaje y la fecha para ordenamiento
       let lastMessageDate = null;
       if (data.ultimo_mensaje) {
         if (data.lastMessageDate) {
@@ -389,40 +423,13 @@ router.get("/usuarios", async (req: Request, res: Response) => {
         } else if (data.ultimo_mensaje instanceof Date || (typeof data.ultimo_mensaje === 'string' && !isNaN(Date.parse(data.ultimo_mensaje)))) {
           lastMessageDate = new Date(data.ultimo_mensaje);
         }
-        // Si ultimo_mensaje es una fecha, buscar el mensaje real
-        if (data.ultimo_mensaje instanceof Date || typeof data.ultimo_mensaje === 'string' && !isNaN(Date.parse(data.ultimo_mensaje))) {
-          lastMessage = {
-            body: data.lastMessage || 'Sin mensaje',
-            date: lastMessageDate,
-            respondedBy: 'user'
-          };
-        } else {
-          // Si es un string, asumir que es el mensaje
-          lastMessage = {
-            body: data.ultimo_mensaje,
-            date: lastMessageDate || new Date(),
-            respondedBy: 'user'
-          };
-        }
       }
       
       return {
-        _id: record._id,
-        name,
-        phone,
+        data: data,
+        lastMessageDate: lastMessageDate, // Solo para ordenamiento interno
         tableSlug: record.tableSlug,
-        lastMessage,
-        lastMessageDate,
-        // Campos adicionales según la tabla
-        ...(record.tableSlug === 'alumnos' && {
-          curso: data.curso || null,
-          ciudad: data.ciudad || null,
-          asesor: data.asesor || null
-        }),
-        ...(record.tableSlug === 'prospectos' && {
-          medio: data.medio || null,
-          clasificacion: data.clasificacion || null
-        }),
+        _id: record._id,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt
       };
@@ -454,8 +461,11 @@ router.get("/usuarios", async (req: Request, res: Response) => {
       ? usuariosLimitados[usuariosLimitados.length - 1].lastMessageDate?.toISOString()
       : null;
     
+    // Limpiar resultado para retornar solo el data
+    const usuariosFinales = usuariosLimitados.map(usuario => usuario);
+    
     res.status(200).json({
-      usuarios: usuariosLimitados,
+      usuarios: usuariosFinales,
       pagination: {
         hasMore,
         nextCursor,

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getDbConnection } from "../../config/connectionManager";
+import { executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getRecordModel from "../../models/record.model";
 import getUserModel from "../../core/users/user.model";
 import geolib from "geolib";
@@ -99,48 +99,49 @@ export const get_start_dates = async (requestedDate: string | null = null, isGen
  */
 export const register_user_name = async (full_name: string, WaId: string): Promise<string> => {
   try {
-    // Obtener conexión a la base de datos de Quick Learning
-    const conn = await getDbConnection('quicklearning');
-    const User = getUserModel(conn);
-    const DynamicRecord = getRecordModel(conn);
+    // Usar reconexión mejorada para operaciones de base de datos
+    return await executeQuickLearningWithReconnection(async (conn) => {
+      const User = getUserModel(conn);
+      const DynamicRecord = getRecordModel(conn);
 
-    // Obtener todos los usuarios disponibles
-    const users = await User.find();
-    if (users.length === 0) {
-      throw new Error("No hay usuarios disponibles para asignar.");
-    }
-
-    // Seleccionar un usuario aleatorio
-    const agentIndex = Math.floor(Math.random() * users.length);
-    const agent = users[agentIndex];
-
-    // Actualizar el cliente en la tabla de prospectos
-    const updatedCustomer = await DynamicRecord.findOneAndUpdate(
-      {
-        tableSlug: "prospectos",
-        "data.phone": WaId,
-      },
-      {
-        $set: {
-          "data.name": full_name,
-          "data.status": "Interesado",
-          "data.classification": "Prospecto",
-          "data.user": JSON.stringify({ name: agent.name, _id: agent._id }),
-          "data.ai": false,
-        },
-      },
-      {
-        new: true,
+      // Obtener todos los usuarios disponibles
+      const users = await User.find();
+      if (users.length === 0) {
+        throw new Error("No hay usuarios disponibles para asignar.");
       }
-    );
 
-    if (!updatedCustomer) {
-      throw new Error("No se encontró el cliente en la tabla de prospectos.");
-    }
+      // Seleccionar un usuario aleatorio
+      const agentIndex = Math.floor(Math.random() * users.length);
+      const agent = users[agentIndex];
 
-    console.log("✅ Cliente actualizado exitosamente:", updatedCustomer._id);
+      // Actualizar el cliente en la tabla de prospectos
+      const updatedCustomer = await DynamicRecord.findOneAndUpdate(
+        {
+          tableSlug: "prospectos",
+          "data.phone": WaId,
+        },
+        {
+          $set: {
+            "data.name": full_name,
+            "data.status": "Interesado",
+            "data.classification": "Prospecto",
+            "data.user": JSON.stringify({ name: agent.name, _id: agent._id }),
+            "data.ai": false,
+          },
+        },
+        {
+          new: true,
+        }
+      );
 
-    return `¡Gracias, ${full_name}! Ahora que tengo tu nombre, puedo continuar con el proceso de inscripción. ¿Me puedes proporcionar tu número de contacto?`;
+      if (!updatedCustomer) {
+        throw new Error("No se encontró el cliente en la tabla de prospectos.");
+      }
+
+      console.log("✅ Cliente actualizado exitosamente:", updatedCustomer._id);
+
+      return `¡Gracias, ${full_name}! Ahora que tengo tu nombre, puedo continuar con el proceso de inscripción. ¿Me puedes proporcionar tu número de contacto?`;
+    });
   } catch (error) {
     console.error("❌ Error al registrar el nombre del usuario:", error);
     return "Hubo un problema al registrar tu nombre. Por favor, inténtalo de nuevo más tarde.";
@@ -152,57 +153,58 @@ export const register_user_name = async (full_name: string, WaId: string): Promi
  */
 export const submit_student_complaint = async (issueDetails: string, WaId: string): Promise<string> => {
   try {
-    // Obtener conexión a la base de datos de Quick Learning
-    const conn = await getDbConnection('quicklearning');
-    const User = getUserModel(conn);
-    const DynamicRecord = getRecordModel(conn);
+    // Usar reconexión mejorada para operaciones de base de datos
+    return await executeQuickLearningWithReconnection(async (conn) => {
+      const User = getUserModel(conn);
+      const DynamicRecord = getRecordModel(conn);
 
-    // Obtener todos los usuarios disponibles
-    const users = await User.find();
-    if (users.length === 0) {
-      throw new Error("No hay usuarios disponibles para asignar.");
-    }
+      // Obtener todos los usuarios disponibles
+      const users = await User.find();
+      if (users.length === 0) {
+        throw new Error("No hay usuarios disponibles para asignar.");
+      }
 
-    // Seleccionar un usuario aleatorio
-    const agentIndex = Math.floor(Math.random() * users.length);
-    const agent = users[agentIndex];
+      // Seleccionar un usuario aleatorio
+      const agentIndex = Math.floor(Math.random() * users.length);
+      const agent = users[agentIndex];
 
-    // Buscar al cliente en la tabla de prospectos
-    const customer = await DynamicRecord.findOne({
-      tableSlug: "prospectos",
-      "data.phone": WaId,
+      // Buscar al cliente en la tabla de prospectos
+      const customer = await DynamicRecord.findOne({
+        tableSlug: "prospectos",
+        "data.phone": WaId,
+      });
+
+      if (!customer) {
+        throw new Error("No se encontró el cliente en la tabla de prospectos.");
+      }
+
+      // Crear un nuevo registro en la tabla de problemas
+      const newProblem = new DynamicRecord({
+        tableSlug: "problemas",
+        c_name: "quicklearning",
+        createdBy: "system",
+        data: {
+          ...customer.data,
+          issueDetails: issueDetails,
+          status: "Queja",
+          classification: "Urgente",
+          user: JSON.stringify({ name: agent.name, _id: agent._id }),
+          ai: false,
+        },
+      });
+
+      await newProblem.save();
+
+      // Eliminar al cliente de la tabla de prospectos
+      await DynamicRecord.deleteOne({
+        tableSlug: "prospectos",
+        "data.phone": WaId,
+      });
+
+      console.log("✅ Cliente movido a la tabla de problemas y eliminado de prospectos.");
+
+      return `⚠️ *Lamentamos escuchar esto.* Queremos ayudarte lo más rápido posible. Para dar seguimiento a tu reporte, por favor envíanos la siguiente información:\n\n📝 *Nombre completo*\n🏫 *Sucursal donde estás inscrito*\n📚 *Curso que estás tomando*\n⏰ *Horario en el que asistes*\n📢 *Detalles del problema:* "${issueDetails}"\n🎫 *Número de alumno*\n\nCon esta información, nuestro equipo podrá revisar tu caso y darte una solución lo antes posible. ¡Estamos para ayudarte! 😊`;
     });
-
-    if (!customer) {
-      throw new Error("No se encontró el cliente en la tabla de prospectos.");
-    }
-
-    // Crear un nuevo registro en la tabla de problemas
-    const newProblem = new DynamicRecord({
-      tableSlug: "problemas",
-      c_name: "quicklearning",
-      createdBy: "system",
-      data: {
-        ...customer.data,
-        issueDetails: issueDetails,
-        status: "Queja",
-        classification: "Urgente",
-        user: JSON.stringify({ name: agent.name, _id: agent._id }),
-        ai: false,
-      },
-    });
-
-    await newProblem.save();
-
-    // Eliminar al cliente de la tabla de prospectos
-    await DynamicRecord.deleteOne({
-      tableSlug: "prospectos",
-      "data.phone": WaId,
-    });
-
-    console.log("✅ Cliente movido a la tabla de problemas y eliminado de prospectos.");
-
-    return `⚠️ *Lamentamos escuchar esto.* Queremos ayudarte lo más rápido posible. Para dar seguimiento a tu reporte, por favor envíanos la siguiente información:\n\n📝 *Nombre completo*\n🏫 *Sucursal donde estás inscrito*\n📚 *Curso que estás tomando*\n⏰ *Horario en el que asistes*\n📢 *Detalles del problema:* "${issueDetails}"\n🎫 *Número de alumno*\n\nCon esta información, nuestro equipo podrá revisar tu caso y darte una solución lo antes posible. ¡Estamos para ayudarte! 😊`;
   } catch (error) {
     console.error("❌ Error al registrar la queja del cliente:", error);
     return "Hubo un problema al registrar tu queja. Por favor, inténtalo de nuevo más tarde.";
@@ -214,64 +216,65 @@ export const submit_student_complaint = async (issueDetails: string, WaId: strin
  */
 export const suggest_branch_or_virtual_course = async (city: string, WaId: string): Promise<string> => {
   try {
-    // Obtener conexión a la base de datos de Quick Learning
-    const conn = await getDbConnection('quicklearning');
-    const DynamicRecord = getRecordModel(conn);
-    const User = getUserModel(conn);
+    // Usar reconexión mejorada para operaciones de base de datos
+    return await executeQuickLearningWithReconnection(async (conn) => {
+      const DynamicRecord = getRecordModel(conn);
+      const User = getUserModel(conn);
 
-    // Obtener las sedes activas desde la tabla "sedes"
-    const branches = await DynamicRecord.find({
-      tableSlug: "sedes",
-      "data.status": "activo",
-    });
+      // Obtener las sedes activas desde la tabla "sedes"
+      const branches = await DynamicRecord.find({
+        tableSlug: "sedes",
+        "data.status": "activo",
+      });
 
-    if (!branches || branches.length === 0) {
-      throw new Error("No se encontraron sedes activas.");
-    }
+      if (!branches || branches.length === 0) {
+        throw new Error("No se encontraron sedes activas.");
+      }
 
-    const normalizedCity = city.trim().toLowerCase();
+      const normalizedCity = city.trim().toLowerCase();
 
-    const foundBranch = branches.find((branch: any) => {
-      const address = branch.data.direccion;
-      return address && address.toLowerCase().includes(normalizedCity);
-    });
+      const foundBranch = branches.find((branch: any) => {
+        const address = branch.data.direccion;
+        return address && address.toLowerCase().includes(normalizedCity);
+      });
 
-    if (foundBranch) {
-      const name = foundBranch.data.nombre || "Sucursal sin nombre";
-      const address = foundBranch.data.direccion || "Dirección no disponible";
-      const mapLink = foundBranch.data.googlelink || "Sin enlace de ubicación";
+      if (foundBranch) {
+        const name = foundBranch.data.nombre || "Sucursal sin nombre";
+        const address = foundBranch.data.direccion || "Dirección no disponible";
+        const mapLink = foundBranch.data.googlelink || "Sin enlace de ubicación";
 
-      return `📍 ¡Excelente! Tenemos una sucursal en tu ciudad:\n\n🏫 *${name}*\n📍 Dirección: ${address}\n🌐 Google Maps: ${mapLink}\n\nContamos con tres modalidades:\n1. Presencial\n2. Virtual (videollamada en vivo)\n3. Online (plataforma autogestionada)\n\n¿Cuál prefieres?`;
-    } else {
-      // No se encontró sucursal, se responde con opciones virtuales
-      const users = await User.find();
-      if (!users.length) throw new Error("No hay usuarios disponibles para asignar.");
+        return `📍 ¡Excelente! Tenemos una sucursal en tu ciudad:\n\n🏫 *${name}*\n📍 Dirección: ${address}\n🌐 Google Maps: ${mapLink}\n\nContamos con tres modalidades:\n1. Presencial\n2. Virtual (videollamada en vivo)\n3. Online (plataforma autogestionada)\n\n¿Cuál prefieres?`;
+      } else {
+        // No se encontró sucursal, se responde con opciones virtuales
+        const users = await User.find();
+        if (!users.length) throw new Error("No hay usuarios disponibles para asignar.");
 
-      const randomUser = users[Math.floor(Math.random() * users.length)];
+        const randomUser = users[Math.floor(Math.random() * users.length)];
 
-      await DynamicRecord.findOneAndUpdate(
-        {
-          tableSlug: "prospectos",
-          "data.phone": WaId,
-        },
-        {
-          $set: {
-            "data.classification": "Prospecto",
-            "data.status": "Interesado",
-            "data.user": JSON.stringify({
-              name: randomUser.name,
-              _id: randomUser._id,
-            }),
-            "data.ai": true,
+        await DynamicRecord.findOneAndUpdate(
+          {
+            tableSlug: "prospectos",
+            "data.phone": WaId,
           },
-        },
-        {
-          new: true,
-        }
-      );
+          {
+            $set: {
+              "data.classification": "Prospecto",
+              "data.status": "Interesado",
+              "data.user": JSON.stringify({
+                name: randomUser.name,
+                _id: randomUser._id,
+              }),
+              "data.ai": true,
+            },
+          },
+          {
+            new: true,
+          }
+        );
 
-      return `🤖 ¡Qué padre, ${city} es un lugar hermoso! Actualmente no tenemos una sucursal presencial ahí, pero no te preocupes...\n\n🎯 Tenemos dos opciones para ti:\n1. **Virtual** – Clases en vivo por videollamada.\n2. **Online** – Plataforma que puedes usar a tu ritmo.\n\n¿Te gustaría que te cuente más?`;
-    }
+        return `🤖 ¡Qué padre, ${city} es un lugar hermoso! Actualmente no tenemos una sucursal presencial ahí, pero no te preocupes...\n\n🎯 Tenemos dos opciones para ti:\n1. **Virtual** – Clases en vivo por videollamada.\n2. **Online** – Plataforma que puedes usar a tu ritmo.\n\n¿Te gustaría que te cuente más?`;
+      }
+    });
   } catch (error) {
     console.error("Error al obtener sedes:", error);
     return "No pude verificar las sedes en este momento. ¿Me puedes decir tu ciudad para ayudarte?";
@@ -364,10 +367,10 @@ const geocodeAddress = async (address: string) => {
  */
 export const suggest_nearby_branch = async (params: any, WaId: string): Promise<string> => {
   try {
-    // Obtener conexión a la base de datos de Quick Learning
-    const conn = await getDbConnection('quicklearning');
-    const DynamicRecord = getRecordModel(conn);
-    const User = getUserModel(conn);
+    // Usar reconexión mejorada para operaciones de base de datos
+    return await executeQuickLearningWithReconnection(async (conn) => {
+      const DynamicRecord = getRecordModel(conn);
+      const User = getUserModel(conn);
 
     const branches = await DynamicRecord.find({
       tableSlug: "sedes",
@@ -444,7 +447,6 @@ export const suggest_nearby_branch = async (params: any, WaId: string): Promise<
         {
           $set: {
             "data.classification": "Prospecto",
-            "data.status": "Interesado",
             "data.user": JSON.stringify({
               name: randomUser.name,
               _id: randomUser._id,
@@ -458,7 +460,7 @@ export const suggest_nearby_branch = async (params: any, WaId: string): Promise<
       );
 
       return `😕 En esa ubicación no encontré una sucursal presencial, pero *no te preocupes*. Tenemos cursos *virtuales* y *online* igual de efectivos que puedes tomar desde cualquier parte.\n\n🎯 Con clases en vivo, sesiones con maestros certificados y acceso 24/7, ¡vas a avanzar rapidísimo! ¿Quieres que te dé los detalles para inscribirte?`;
-    }
+    }});
   } catch (error) {
     console.error("Error al obtener sucursales cercanas:", error);
     return "No pude verificar las sucursales en este momento. ¿Puedes decirme tu ciudad o dirección?";

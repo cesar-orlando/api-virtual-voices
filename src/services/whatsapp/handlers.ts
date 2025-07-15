@@ -158,9 +158,6 @@ async function handleDelayedResponse(
   conn: Connection
 ) {
   const DELAY_MS = 15000; // 15 seconds
-  
-  // Always record the incoming message first
-  await updateChatRecord(company, existingRecord, "inbound", message, "human");
 
   // Check if there's already a pending response for this user
   const existingPending = pendingResponses.get(userPhone);

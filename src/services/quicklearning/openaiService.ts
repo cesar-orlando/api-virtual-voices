@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { getEnvironmentConfig } from "../../config/environments";
-import { getDbConnection } from "../../config/connectionManager";
+import { executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
 import { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat";
 import {
@@ -147,15 +147,14 @@ export class QuickLearningOpenAIService {
    */
   public async generateResponse(message: string, phoneUser: string): Promise<string> {
     try {
-      // Obtener conexión a la base de datos de Quick Learning
-      const conn = await getDbConnection('quicklearning');
-      const QuickLearningChat = getQuickLearningChatModel(conn);
-
       // Obtener el contexto inicial del sistema
       const initialContext = await this.generateSystemPrompt();
 
-      // Obtener historial de mensajes del usuario
-      const chatHistory = await QuickLearningChat.findOne({ phone: phoneUser });
+      // Obtener historial de mensajes del usuario usando reconexión mejorada
+      const chatHistory = await executeQuickLearningWithReconnection(async (conn) => {
+        const QuickLearningChat = getQuickLearningChatModel(conn);
+        return await QuickLearningChat.findOne({ phone: phoneUser });
+      });
 
       let chatHistoryMessages = chatHistory?.messages.map((message) => {
         return {

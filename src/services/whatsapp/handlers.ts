@@ -123,6 +123,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       const Session = getSessionModel(conn);
       const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
+    } else {
+      await updateChatRecord(company, existingRecord, "inbound", message, "human");
     }
     // Don't update chat record here - let the delay system handle it
 

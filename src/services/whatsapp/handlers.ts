@@ -10,6 +10,41 @@ import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import { Request, Response } from 'express';
 
+// Store pending timeouts for each user
+const pendingResponses = new Map<string, {
+  timeout: NodeJS.Timeout;
+  messages: Message[];
+  client: Client;
+  company: string;
+  sessionName: string;
+  existingRecord: any;
+  conn: Connection;
+}>();
+
+// Function to check WhatsApp client health
+async function checkClientHealth(client: Client): Promise<{ healthy: boolean; state: string; error?: string }> {
+  try {
+    if (!client) {
+      return { healthy: false, state: 'NULL', error: 'Cliente no inicializado' };
+    }
+
+    const state = await client.getState();
+    const isConnected = state === 'CONNECTED';
+    
+    return {
+      healthy: isConnected,
+      state: state,
+      error: isConnected ? undefined : `Estado no válido: ${state}`
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      state: 'ERROR',
+      error: error.message
+    };
+  }
+}
+
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
   if (message.isStatus) return;
@@ -88,9 +123,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       const Session = getSessionModel(conn);
       const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
-    } else {
-      await updateChatRecord(company, existingRecord, "inbound", message, "human")
     }
+    // Don't update chat record here - let the delay system handle it
 
     if (!existingRecord || !existingRecord.botActive) return;
 
@@ -104,46 +138,101 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     }
     // --- FIN VALIDACIÓN DE IA ---
 
-    if (existingRecord && existingRecord.phone === '5214521311888@c.us') {
-      console.log('Historial de mensajes para 4521311888:', (existingRecord.messages || []).length);
-      console.log('Últimos mensajes:', (existingRecord.messages));
-    }
-
-    // Limita el historial a los últimos 15 mensajes para evitar errores de tokens
-    const MAX_MSG_LENGTH = 1000;
-    const history = (existingRecord.messages || [])
-      .slice(-15)
-      .map((msg: any) => {
-        let content = typeof msg.body === 'string' ? msg.body : '';
-        if (content.length > MAX_MSG_LENGTH) content = content.slice(0, MAX_MSG_LENGTH);
-        if (msg.direction === "inbound") return { role: "user", content };
-        if (msg.direction === "outbound-api" || msg.respondedBy === "bot") return { role: "assistant", content };
-        return null;
-      })
-      .filter(Boolean);
-    console.log('history length:', history.length);
-    console.log('history sample:', history);
-    const safeHistory = history.filter((h): h is { role: string, content: string } => !!h && typeof h.content === 'string');
-    console.log('history total chars:', safeHistory.reduce((acc, h) => acc + (h.content.length), 0));
-
-    // Agrega el mensaje actual
-    history.push({ role: "user", content: message.body });
-
-    if (statusText) {
-      history.push({ role: "system", content: `El usuario está respondiendo a este status: "${statusText}"` });
-    }
-
-    // Justo antes de llamar a OpenAI para generar la respuesta:
-    const safeHistoryForOpenAI = history
-      .filter((h): h is { role: string, content: string } => !!h && typeof h.content === 'string')
-      .map(h => ({ role: h.role, content: h.content }));
-    console.log('Enviando a OpenAI:', JSON.stringify(safeHistoryForOpenAI), 'tokens aprox:', safeHistoryForOpenAI.reduce((acc, h) => acc + h.content.length, 0));
-
-    await sendAndRecordBotResponse(company, sessionName, client, message, existingRecord, conn);
+    // Implement 15-second delay to collect multiple messages
+    await handleDelayedResponse(userPhone, message, client, company, sessionName, existingRecord, conn);
 
   } catch (error) {
     console.error('Error al manejar el mensaje entrante:', error);
   }
+}
+
+async function handleDelayedResponse(
+  userPhone: string,
+  message: Message,
+  client: Client,
+  company: string,
+  sessionName: string,
+  existingRecord: any,
+  conn: Connection
+) {
+  const DELAY_MS = 15000; // 15 seconds
+  
+  // Always record the incoming message first
+  await updateChatRecord(company, existingRecord, "inbound", message, "human");
+
+  // Check if there's already a pending response for this user
+  const existingPending = pendingResponses.get(userPhone);
+  
+  if (existingPending) {
+    // Clear the existing timeout
+    clearTimeout(existingPending.timeout);
+    
+    // Add this message to the collection
+    existingPending.messages.push(message);
+    console.log(`📝 Agregando mensaje a la cola para ${userPhone}. Total: ${existingPending.messages.length} mensajes`);
+    
+    // Update the existing record reference to the latest state
+    existingPending.existingRecord = existingRecord;
+  } else {
+    // First message from this user, start the delay
+    console.log(`⏰ Iniciando delay de 15s para ${userPhone}`);
+    
+    // Store the pending response data
+    pendingResponses.set(userPhone, {
+      timeout: setTimeout(() => {}, DELAY_MS), // Will be replaced immediately
+      messages: [message],
+      client,
+      company,
+      sessionName,
+      existingRecord,
+      conn
+    });
+  }
+  
+  // Set new timeout
+  const pendingData = pendingResponses.get(userPhone)!;
+  
+  pendingData.timeout = setTimeout(async () => {
+    try {
+      console.log(`🚀 Procesando respuesta para ${userPhone} después de ${DELAY_MS/1000}s. Mensajes: ${pendingData.messages.length}`);
+      
+      // Process all accumulated messages
+      await processAccumulatedMessages(userPhone, pendingData);
+      
+      // Clean up
+      pendingResponses.delete(userPhone);
+    } catch (error) {
+      console.error(`❌ Error procesando mensajes acumulados para ${userPhone}:`, error);
+      pendingResponses.delete(userPhone);
+    }
+  }, DELAY_MS);
+}
+
+async function processAccumulatedMessages(userPhone: string, pendingData: {
+  messages: Message[];
+  client: Client;
+  company: string;
+  sessionName: string;
+  existingRecord: any;
+  conn: Connection;
+}) {
+  const { messages, client, company, sessionName, existingRecord, conn } = pendingData;
+  
+  // Get the latest record state from the stored reference (already updated with all messages)
+  const latestRecord = existingRecord;
+  
+  if (!latestRecord) {
+    console.error(`No se encontró el registro para ${userPhone}`);
+    return;
+  }
+  
+  // Use the last message for the response context
+  const lastMessage = messages[messages.length - 1];
+  
+  console.log(`📊 Generando respuesta consolidada para ${messages.length} mensajes de ${userPhone}`);
+  
+  // Generate and send response using the latest record state - this should only be called ONCE
+  await sendAndRecordBotResponse(company, sessionName, client, lastMessage, latestRecord, conn);
 }
 
 async function createNewChatRecord(
@@ -167,7 +256,7 @@ async function createNewChatRecord(
     },
     messages: [
       {
-        msgId: message.id.id, // o message.id.id
+        msgId: message.id?.id || '', // Safe access with fallback
         direction: message.fromMe ? "outbound" : "inbound",
         body: message.body,
         respondedBy: "human",
@@ -185,14 +274,32 @@ async function updateChatRecord(
   message: Message | string,
   respondedBy: string
 ) {
+  const messageId = typeof message === 'string' ? '' : message.id?.id;
+  const messageBody = typeof message === 'string' ? message : message.body;
+  
+  // Check for duplicate messages to prevent multiple recordings
+  if (messageId && chatRecord.messages) {
+    const existingMessage = chatRecord.messages.find((msg: any) => msg.msgId === messageId);
+    if (existingMessage) {
+      console.log(`⚠️  Mensaje duplicado detectado, omitiendo: ${messageId}`);
+      return;
+    }
+  }
+  
   chatRecord.messages.push({
-    msgId: typeof message === 'string' ? '' : message.id.id, // o message.id.id
+    msgId: messageId,
     direction: direction,
-    body: typeof message === 'string' ? message : message.body,
+    body: messageBody,
     respondedBy: respondedBy,
+    createdAt: new Date(),
   });
-  await chatRecord.save();
-  io.emit(`whatsapp-message-${company}`, chatRecord);
+  
+  try {
+    await chatRecord.save();
+    io.emit(`whatsapp-message-${company}`, chatRecord);
+  } catch (saveError) {
+    console.error("❌ Error guardando mensaje:", saveError);
+  }
 }
 
 async function sendAndRecordBotResponse(
@@ -238,19 +345,12 @@ async function sendAndRecordBotResponse(
     })
     .filter(Boolean);
 
-  // Agrega el mensaje actual
-  history.push({ role: "user", content: message.body });
-
   // LIMPIA el historial para OpenAI - SOLO role y content
   const safeHistoryForOpenAI = history
     .filter((h): h is { role: string, content: string } => !!h && typeof h.content === 'string')
     .map(h => ({ role: h.role, content: h.content }));
 
-  console.log("history ---->", safeHistoryForOpenAI);
-  console.log("Total caracteres:", safeHistoryForOpenAI.reduce((acc, h) => acc + h.content.length, 0));
-
   try {
-    console.log(`🤖 Generando respuesta para ${message.from}...`);
     const response = await generateResponse(
       IAPrompt,
       config,
@@ -258,39 +358,97 @@ async function sendAndRecordBotResponse(
       records,
       company) // Agregar c_name para las herramientas
     aiResponse = response || defaultResponse;
-    console.log(`🤖 Respuesta generada: "${aiResponse.substring(0, 100)}..."`);
   } catch (error) {
     console.error("Error al obtener respuesta de OpenAI:", error);
     aiResponse = defaultResponse;
-    console.log(`🤖 Usando respuesta por defecto: "${aiResponse}"`);
   }
 
   // Enviar mensaje y obtener respuesta
-  let msg;
+  let msg: any = null;
+  let messageSentSuccessfully = false;
+  
   try {
-    msg = await client.sendMessage(message.from, aiResponse);
+    // Validate client connection before sending
+    if (!client || typeof client.sendMessage !== 'function') {
+      throw new Error('Cliente de WhatsApp no disponible o desconectado');
+    }
+
+    // Check if client is authenticated and ready
+    const clientState = await client.getState().catch(() => 'UNKNOWN');
+    if (clientState !== 'CONNECTED') {
+      throw new Error(`Cliente WhatsApp no conectado. Estado: ${clientState}`);
+    }
+
+    // Validate phone number format - more flexible regex
+    const phoneRegex = /^[\d+]+@c\.us$/;
+    if (!phoneRegex.test(message.from)) {
+      console.warn(`⚠️  Formato de teléfono inválido: ${message.from}`);
+      // Try to fix common format issues
+      const cleanPhone = message.from.replace(/[^\d]/g, '');
+      if (cleanPhone.length >= 10) {
+        message.from = `${cleanPhone}@c.us`;
+      }
+    }
+
+    // Check if the chat exists before sending
+    try {
+      const chat = await client.getChatById(message.from);
+      if (!chat) {
+        throw new Error(`Chat no encontrado para ${message.from}`);
+      }
+    } catch (chatError) {
+      console.warn(`⚠️  No se pudo verificar el chat: ${chatError.message}`);
+      // Continue anyway, might still work
+    }
+    
+    // Add timeout to prevent hanging
+    const sendPromise = client.sendMessage(message.from, aiResponse);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout enviando mensaje')), 30000)
+    );
+    
+    msg = await Promise.race([sendPromise, timeoutPromise]);
+    messageSentSuccessfully = true;
     console.log(`✅ Mensaje enviado exitosamente a ${message.from}`);
+    
   } catch (sendError) {
-    console.error("Error enviando mensaje:", sendError);
-    // Si falla el envío, crear un objeto mock para continuar
-    msg = aiResponse;
+    console.error("❌ Error enviando mensaje:", sendError);
+    
+    // More specific error handling
+    if (sendError.message.includes('serialize')) {
+      console.error("🔌 Error de conexión WhatsApp Web - Chat puede haber sido eliminado o bloqueado");
+    } else if (sendError.message.includes('Timeout')) {
+      console.error("⏰ Timeout enviando mensaje - WhatsApp Web puede estar lento");
+    } else if (sendError.message.includes('not found') || sendError.message.includes('Chat not found')) {
+      console.error("📞 Chat no encontrado - Usuario puede haber bloqueado o eliminado la conversación");
+    } else if (sendError.message.includes('CONNECTED')) {
+      console.error("🔗 Cliente WhatsApp no está conectado - Revisar sesión");
+    } else {
+      console.error("🚨 Error desconocido:", sendError.message);
+    }
+    
+    console.log(`🚫 No se guardará mensaje mock en BD debido a error de envío`);
+    return; // Exit early, don't save failed messages
   }
-  // Actualizar el registro existente con la respuesta de la IA
-  existingRecord.botActive = activeBot;
-  await updateChatRecord(company, existingRecord, "outbound-api", msg, "bot");
+  
+  // Only save to database if message was sent successfully
+  if (messageSentSuccessfully && msg && msg.id) {
+    // Actualizar el registro existente con la respuesta de la IA
+    existingRecord.botActive = activeBot;
+    await updateChatRecord(company, existingRecord, "outbound-api", msg, "bot");
+  } else if (messageSentSuccessfully && !msg) {
+    console.warn(`⚠️  Mensaje enviado pero objeto msg es null - no se guardará en BD`);
+  }
 }
 
 export async function enviarFichaTecnica(req: Request, res: Response): Promise<any> {
   try {
     const { propertyId, phoneNumber, company, sessionName } = req.body;
-    console.log('===> [enviarFichaTecnica] Request recibida:', { propertyId, phoneNumber, company, sessionName });
 
     if (company !== 'grupokg') {
-      console.log('===> [enviarFichaTecnica] Empresa no permitida:', company);
       return res.status(403).json({ success: false, message: 'Solo disponible para grupokg' });
     }
     if (!propertyId || !phoneNumber) {
-      console.log('===> [enviarFichaTecnica] Faltan parámetros:', { propertyId, phoneNumber });
       return res.status(400).json({ success: false, message: 'propertyId y phoneNumber son requeridos' });
     }
 
@@ -299,26 +457,20 @@ export async function enviarFichaTecnica(req: Request, res: Response): Promise<a
     const Record = getRecordModel(conn);
     const propiedad = await Record.findById(propertyId);
     if (!propiedad || !propiedad.data.link_ficha_tecnica) {
-      console.log('===> [enviarFichaTecnica] No se encontró la propiedad o el link:', { propertyId });
       return res.status(404).json({ success: false, message: 'No se encontró el link de la ficha técnica' });
     }
     const link = propiedad.data.link_ficha_tecnica;
     const mensaje = `¡Gracias por tu interés! Aquí tienes la ficha técnica de la propiedad: ${link}`;
 
     // Enviar mensaje por WhatsApp Web
-    // Buscar el cliente de WhatsApp por sessionName
     const { clients } = require('./index');
     const clientKey = `${company}:${sessionName}`;
     const client = clients[clientKey];
     if (!client) {
-      console.log('===> [enviarFichaTecnica] No se encontró la sesión de WhatsApp activa:', clientKey);
       return res.status(500).json({ success: false, message: 'No se encontró la sesión de WhatsApp activa' });
     }
 
-    console.log(`===> [enviarFichaTecnica] Enviando mensaje a ${phoneNumber}@c.us: ${mensaje}`);
     await client.sendMessage(`${phoneNumber}@c.us`, mensaje);
-    console.log('===> [enviarFichaTecnica] Mensaje enviado correctamente.');
-
     return res.json({ success: true, message: 'Ficha técnica enviada exitosamente', link });
   } catch (error) {
     console.error('===> [enviarFichaTecnica] Error enviando ficha técnica:', error);

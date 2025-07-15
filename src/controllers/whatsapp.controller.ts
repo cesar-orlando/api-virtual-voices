@@ -360,12 +360,13 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
       });
     }
 
-    clients[`${c_name}:${session.name}`].sendMessage(phone, message);
+    const msg = clients[`${c_name}:${session.name}`].sendMessage(phone, message);
 
     chatRecord.messages.push({
       direction: "outbound",
       body: message,
       respondedBy: "human",
+      msgId: (await msg).id.id
     });
 
     await chatRecord.save();

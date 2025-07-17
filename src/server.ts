@@ -23,6 +23,9 @@ export const io = new Server(server, {
   }
 });
 
+// Hacer io disponible globalmente para las notificaciones
+(global as any).io = io;
+
 // Crear directorio .wwebjs_auth si no existe
 const getAuthDir = () => {
   if (process.env.RENDER === 'true') {

@@ -132,7 +132,7 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     // --- VALIDACIÓN DE IA EN PROSPECTOS ---
     const Record = getRecordModel(conn);
-    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': Number(cleanUserPhone) });
+    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': { $in: [cleanUserPhone, Number(cleanUserPhone)] } });
     if (prospecto && prospecto.data && prospecto.data.ia === false) {
       console.log(`🤖 IA desactivada para ${userPhone}, debe responder un agente.`);
       // Aquí podrías emitir un evento para el agente humano si lo deseas

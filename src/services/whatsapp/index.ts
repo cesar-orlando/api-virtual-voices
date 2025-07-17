@@ -331,11 +331,11 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       console.log(`❌ Sesión ${company}:${sessionName} desconectada :`, reason);
       whatsappClient.initialize();
       delete qrSent[clientKey];
-      /*await cleanUpResources('disconnected');
+      await cleanUpResources('disconnected');
       setTimeout(async () => {
         await updateSessionStatus('disconnected', reason);
       }, 2000);
-      reject(console.error('Disconnected'));*/
+      reject(console.error('Disconnected'));
     });
 
     whatsappClient.on('message', async (message) => {

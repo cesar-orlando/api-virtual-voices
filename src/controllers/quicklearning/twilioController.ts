@@ -9,12 +9,47 @@ import axios from "axios";
 import FormData from "form-data";
 import { getEnvironmentConfig } from "../../config/environments";
 import getUserModel from "../../core/users/user.model";
+import { Server as SocketIOServer } from "socket.io";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
 
 // Buffer de mensajes para agrupar mensajes rápidos
 const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Timeout }>();
+
+/**
+ * Emitir notificación por socket cuando llega un mensaje nuevo
+ */
+function emitNewMessageNotification(phone: string, messageData: any) {
+  try {
+    // Obtener la instancia de socket.io desde la app
+    const io = (global as any).io as SocketIOServer;
+    if (!io) {
+      console.log("⚠️ Socket.io no está disponible para notificaciones");
+      return;
+    }
+
+    // Emitir evento a todos los clientes conectados
+    io.emit("nuevo_mensaje_whatsapp", {
+      type: "nuevo_mensaje",
+      phone: phone,
+      message: {
+        body: messageData.body,
+        direction: messageData.direction,
+        respondedBy: messageData.respondedBy,
+        messageType: messageData.messageType,
+        twilioSid: messageData.twilioSid
+      },
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`📡 Notificación emitida para chat: ${phone}`);
+  } catch (error) {
+    console.error("❌ Error emitiendo notificación por socket:", error);
+  }
+}
+
+
 
 /**
  * Webhook de Twilio para recibir mensajes
@@ -119,18 +154,20 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       }
 
       // Agregar mensaje al chat
-      chat.messages.push({
-        direction: "inbound",
+      const newMessage = {
+        direction: "inbound" as const,
         body: messageText,
-        respondedBy: "human",
+        respondedBy: "human" as const,
         twilioSid: MessageSid,
         mediaUrl: mediaUrls,
-        messageType: messageType as any,
+        messageType: messageType as "text" | "image" | "audio" | "video" | "location" | "document",
         metadata: {
           lat: Latitude ? parseFloat(Latitude) : undefined,
           lng: Longitude ? parseFloat(Longitude) : undefined,
         },
-      });
+      };
+
+      chat.messages.push(newMessage);
 
       // Actualizar último mensaje
       const currentDate = new Date();
@@ -141,6 +178,9 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       };
 
       await chat.save();
+
+      // Emitir notificación por socket para mensaje nuevo
+      emitNewMessageNotification(phoneUser, newMessage);
 
       // Actualizar ultimo_mensaje y lastMessageDate en la tabla correcta si el usuario ya existe
       const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
@@ -219,13 +259,15 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           const Record = getRecordModel(conn);
 
           // Agregar respuesta al chat
-          chat.messages.push({
-            direction: "outbound-api",
+          const botMessage = {
+            direction: "outbound-api" as const,
             body: aiResponse,
-            respondedBy: "bot",
+            respondedBy: "bot" as const,
             twilioSid: result.messageId,
-            messageType: "text",
-          });
+            messageType: "text" as const,
+          };
+
+          chat.messages.push(botMessage);
 
           // Actualizar último mensaje
           const currentDate = new Date();
@@ -236,6 +278,9 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           };
 
           await chat.save();
+
+          // Emitir notificación por socket para respuesta del bot
+          emitNewMessageNotification(phoneUser, botMessage);
 
           // Actualizar campo ultimo_mensaje en la tabla de alumnos
           try {
@@ -300,18 +345,18 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       if (asesores.length > 0) {
         const idx = Math.floor(Math.random() * asesores.length);
         const asesorData = asesores[idx];
-        asesorRandom = {
+        asesorRandom = JSON.stringify({
           name: asesorData.name,
           _id: asesorData._id.toString(),
           email: asesorData.email
-        };
+        });
       }
       // Si sigue siendo null, asigna el asesor por defecto
       if (!asesorRandom) {
-        asesorRandom = {
+        asesorRandom = JSON.stringify({
           name: "Luisa Nohemi Jiménez Gutiérrez",
           _id: "68217a92960180b66cfe6da7"
-        };
+        });
       }
 
       // Crear nuevo cliente en tabla prospectos con la estructura correcta
@@ -443,19 +488,23 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         });
       }
       const currentDate = new Date();
-      chat.messages.push({
-        direction: "outbound-api",
+      const asesorMessage = {
+        direction: "outbound-api" as const,
         body: message,
-        respondedBy: "asesor",
+        respondedBy: "asesor" as const,
         twilioSid: result.messageId,
-        messageType: "text",
-      });
+        messageType: "text" as const,
+      };
+      chat.messages.push(asesorMessage);
       chat.lastMessage = {
         body: message,
         date: currentDate,
         respondedBy: "asesor",
       };
       await chat.save();
+
+      // Emitir notificación por socket para mensaje del asesor
+      emitNewMessageNotification(phone, asesorMessage);
 
       res.status(200).json({
         success: true,
@@ -523,19 +572,23 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         });
       }
       const currentDate = new Date();
-      chat.messages.push({
-        direction: "outbound-api",
+      const templateAsesorMessage = {
+        direction: "outbound-api" as const,
         body: templateBody,
-        respondedBy: "asesor",
+        respondedBy: "asesor" as const,
         twilioSid: result.messageId,
-        messageType: "text",
-      });
+        messageType: "text" as const,
+      };
+      chat.messages.push(templateAsesorMessage);
       chat.lastMessage = {
         body: templateBody,
         date: currentDate,
         respondedBy: "asesor",
       };
       await chat.save();
+
+      // Emitir notificación por socket para mensaje de template del asesor
+      emitNewMessageNotification(phone, templateAsesorMessage);
 
       res.status(200).json({
         success: true,

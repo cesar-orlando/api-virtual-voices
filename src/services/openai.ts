@@ -564,13 +564,20 @@ export async function generateResponse(
       return fallbackResponse;
     } catch (fallbackError) {
       console.error('Fallback response error:', fallbackError);
+
+      // Regex para extraer la primera oración del prompt original
+      const initialPromptMatch = prompt.match(/^.*?[\.\?]/);
+
+      // Extraer el nombre y grupo usando regex
+      const nameMatch = initialPromptMatch[0].match(/\b(soy|eres)\s([A-Za-zÁ-ÿ\s]+)/);
+      const groupMatch = initialPromptMatch[0].match(/(?:de|asistente de)\s(.+)$/);
       
       // Fallback final garantizado - respuesta mínima pero útil
       try {
         const clientInfo = extractClientInfo(chatHistory);
         const clientName = clientInfo.name || 'Cliente';
-        
-        const minimalPrompt = `Eres Alejandro, asesor inmobiliario del Grupo Milkasa. El cliente se llama ${clientName}. 
+
+        const minimalPrompt = `Eres ${nameMatch[2]}, asesor de ${groupMatch[1]}. El cliente se llama ${clientName}.
         Responde de manera amigable y profesional. Si no tienes contexto suficiente, pide amablemente más información.`;
         
         const response = await openai.chat.completions.create({
@@ -586,7 +593,7 @@ export async function generateResponse(
         return response.choices[0].message.content || "Hola, ¿en qué puedo ayudarte hoy?";
       } catch (finalError) {
         console.error('Final fallback error:', finalError);
-        return "Hola, soy Alejandro de Grupo Milkasa. ¿En qué puedo ayudarte hoy?";
+        return `Hola, soy ${nameMatch[2]} de ${groupMatch[1]}. ¿En qué puedo ayudarte hoy?`;
       }
     }
   }

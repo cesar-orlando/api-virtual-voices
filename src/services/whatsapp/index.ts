@@ -293,9 +293,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);
-        } finally {
-          console.log(`✅ Sesión ${clientKey} inicializada y chats guardados`);
-        }
+        } 
       })(); // Lanzar en background
 
       // Notificar que la sesión está completamente lista DESPUÉS de guardar todo
@@ -306,6 +304,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           message: 'WhatsApp conectado y listo para usar',
         });
       }
+
+      console.log(`✅ Sesión ${clientKey} inicializada y chats guardados`);
 
       resolve(whatsappClient);
 
@@ -338,11 +338,11 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       reject(console.error('Disconnected'));
     });
 
-    whatsappClient.on('message', async (message) => {
+    whatsappClient.on('message_create', async (message) => {
       try {
         // Log de todos los mensajes recibidos
-        console.log('MENSAJE RECIBIDO:', message.from, message.body);
-        
+        console.log(`MENSAJE ${message.fromMe ? 'ENVIADO' : 'RECIBIDO'}:`, message.from, message.body);
+
         // Validar que el mensaje sea válido
         if (!message || !message.from) {
           console.warn('Mensaje inválido recibido, saltando...');

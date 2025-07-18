@@ -57,10 +57,16 @@ function createConcisePrompt(originalPrompt: string): string {
       keyElements.push(trimmed);
     }
   }
-  
-  // Crear versión concisa
-  const concisePrompt = `Eres Alejandro, asesor inmobiliario experto del Grupo Milkasa. Tu objetivo es incrementar ventas adoptando técnicas de venta efectivas.
 
+  // Regex para extraer la primera oración del prompt original
+  const initialPromptMatch = originalPrompt.match(/^.*?[\.\?]/);
+
+  // Extraer el nombre y grupo usando regex
+  const nameMatch = initialPromptMatch[0].match(/\b(soy|eres)\s([A-Za-zÁ-ÿ\s]+)/);
+  const groupMatch = initialPromptMatch[0].match(/(?:de|asistente de)\s(.+)$/);
+
+  // Crear versión concisa
+  const concisePrompt = `Eres ${nameMatch[2]}, asesor experto de ${groupMatch[1]}. Tu objetivo es incrementar ventas adoptando técnicas de venta efectivas.
 ${keyElements.slice(0, 5).join('\n')}
 
 REGLAS CLAVE:
@@ -70,7 +76,6 @@ REGLAS CLAVE:
 - Ofrece ayuda adicional cuando sea necesario
 
 Si el prompt original era muy largo, esta es una versión optimizada que mantiene los elementos esenciales.`;
-  
   return concisePrompt;
 }
 

@@ -224,7 +224,7 @@ export const suggest_branch_or_virtual_course = async (city: string, WaId: strin
       // Obtener las sedes activas desde la tabla "sedes"
       const branches = await DynamicRecord.find({
         tableSlug: "sedes",
-        "data.status": "activo",
+        "data.estatus": "activo",
       });
 
       if (!branches || branches.length === 0) {
@@ -234,14 +234,14 @@ export const suggest_branch_or_virtual_course = async (city: string, WaId: strin
       const normalizedCity = city.trim().toLowerCase();
 
       const foundBranch = branches.find((branch: any) => {
-        const address = branch.data.direccion;
+        const address = branch.data.direccio_n;
         return address && address.toLowerCase().includes(normalizedCity);
       });
 
       if (foundBranch) {
         const name = foundBranch.data.nombre || "Sucursal sin nombre";
-        const address = foundBranch.data.direccion || "Dirección no disponible";
-        const mapLink = foundBranch.data.googlelink || "Sin enlace de ubicación";
+        const address = foundBranch.data.direccio_n || "Dirección no disponible";
+        const mapLink = foundBranch.data.google_link || "Sin enlace de ubicación";
 
         return `📍 ¡Excelente! Tenemos una sucursal en tu ciudad:\n\n🏫 *${name}*\n📍 Dirección: ${address}\n🌐 Google Maps: ${mapLink}\n\nContamos con tres modalidades:\n1. Presencial\n2. Virtual (videollamada en vivo)\n3. Online (plataforma autogestionada)\n\n¿Cuál prefieres?`;
       } else {
@@ -374,7 +374,7 @@ export const suggest_nearby_branch = async (params: any, WaId: string): Promise<
 
     const branches = await DynamicRecord.find({
       tableSlug: "sedes",
-      "data.status": "activo",
+      "data.estatus": "activo",
     });
 
     if (!branches.length) throw new Error("No se encontraron sedes activas.");
@@ -398,9 +398,9 @@ export const suggest_nearby_branch = async (params: any, WaId: string): Promise<
 
     const branchesWithDistance = await Promise.all(
       branches.map(async (branch: any) => {
-        const address = branch.data.direccion;
+        const address = branch.data.direccio_n;
         const name = branch.data.nombre;
-        const mapLink = branch.data.googlelink;
+        const mapLink = branch.data.google_link;
 
         if (!address || !name) return null;
 

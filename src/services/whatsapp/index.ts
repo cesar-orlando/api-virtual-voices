@@ -20,9 +20,13 @@ const qrSent: Record<string, boolean> = {};
 // Determinar el directorio de autenticación basado en el entorno
 const getAuthDir = () => {
   if (process.env.RENDER) {
-    return '/opt/render/project/src/.wwebjs_auth';
+    const renderPath = '/opt/render/project/src/.wwebjs_auth';
+    console.log(`🔧 Render detectado, usando ruta persistente: ${renderPath}`);
+    return renderPath;
   }
-  return path.join(process.cwd(), '.wwebjs_auth');
+  const localPath = path.join(process.cwd(), '.wwebjs_auth');
+  console.log(`🏠 Entorno local, usando ruta: ${localPath}`);
+  return localPath;
 };
 
 export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId) => {
@@ -32,10 +36,22 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     return clients[clientKey];
   }
 
+  const authDir = getAuthDir();
+  console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
+  console.log(`📁 Directorio de autenticación: ${authDir}`);
+  
+  // Verificar si existe sesión previa
+  const sessionPath = path.join(authDir, `session-${company}-${sessionName}`);
+  if (fs.existsSync(sessionPath)) {
+    console.log(`✅ Sesión previa encontrada en: ${sessionPath}`);
+  } else {
+    console.log(`❌ No se encontró sesión previa en: ${sessionPath}`);
+  }
+
   const whatsappClient = new Client({
     authStrategy: new LocalAuth({ 
       clientId: `${company}-${sessionName}`,
-      dataPath: getAuthDir()
+      dataPath: authDir
     }),
     puppeteer: {
       headless: true,
@@ -204,6 +220,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     // Evento cuando la autenticación está en progreso
     whatsappClient.on('authenticated', async () => {
+      console.log(`🔓 WhatsApp autenticado exitosamente para: ${company}-${sessionName}`);
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
           status: 'authenticated', 
@@ -214,6 +231,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     });
 
     whatsappClient.on('ready', async () => {
+      console.log(`🚀 WhatsApp listo y conectado para: ${company}-${sessionName}`);
       const chats = await whatsappClient.getChats();
 
       const fetchLimit = 50;

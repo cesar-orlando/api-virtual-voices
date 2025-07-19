@@ -33,7 +33,6 @@ async function restoreSessionFromDB(company: string, sessionName: string) {
     const sessionDoc = await WhatsappSession.findOne({ name: sessionName });
     
     if (!sessionDoc || !sessionDoc.sessionData) {
-      console.log(`📱 No hay sesión guardada para ${company}:${sessionName}, se pedirá QR`);
       return false;
     }
 
@@ -41,15 +40,13 @@ async function restoreSessionFromDB(company: string, sessionName: string) {
     const sessionDir = path.join(getAuthDir(), `session-${company}-${sessionName}`, 'Default');
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { recursive: true });
-      console.log(`📁 Carpeta de sesión creada: ${sessionDir}`);
     }
     
     const sessionFile = path.join(sessionDir, 'session.json');
     fs.writeFileSync(sessionFile, JSON.stringify(sessionDoc.sessionData, null, 2));
-    console.log(`✅ Sesión restaurada para ${company}:${sessionName}`);
     return true;
   } catch (error) {
-    console.error(`❌ Error restaurando sesión para ${company}:${sessionName}:`, error);
+    console.error(`Error restaurando sesión para ${company}:${sessionName}:`, error);
     return false;
   }
 }
@@ -245,9 +242,8 @@ export const startWhatsappBot = async (sessionName: string, company: string, use
           { sessionData: session },
           { upsert: true }
         );
-        console.log(`💾 Sesión guardada en BD para ${company}:${sessionName}`);
       } catch (error) {
-        console.error(`❌ Error guardando sesión en BD para ${company}:${sessionName}:`, error);
+        console.error(`Error guardando sesión en BD para ${company}:${sessionName}:`, error);
       }
 
       if (io) {

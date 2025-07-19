@@ -26,10 +26,10 @@ const getAuthDir = () => {
     return localPath;
   }
   
-  // Solo en Render usar la ruta persistente
+  // En Render usar la ruta persistente real: /var/data
   if (process.env.RENDER === 'true') {
-    const renderPath = '/opt/render/project/src/.wwebjs_auth';
-    console.log(`🔧 Render detectado, usando ruta persistente: ${renderPath}`);
+    const renderPath = '/var/data/.wwebjs_auth';
+    console.log(`🔧 Render detectado, usando ruta persistente REAL: ${renderPath}`);
     return renderPath;
   }
   
@@ -48,7 +48,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   const authDir = getAuthDir();
   console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
-  console.log(`🔄 TEST PERSISTENCIA - Deploy: ${new Date().toISOString()}`);
   
   // Crear directorio si no existe
   if (!fs.existsSync(authDir)) {

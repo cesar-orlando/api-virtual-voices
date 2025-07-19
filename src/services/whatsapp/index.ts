@@ -1,4 +1,4 @@
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import { Client, LocalAuth, RemoteAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { handleIncomingMessage } from './handlers';
 import { io } from '../../server'; // Ajusta la ruta según tu estructura
@@ -19,13 +19,23 @@ const qrSent: Record<string, boolean> = {};
 
 // Determinar el directorio de autenticación basado en el entorno
 const getAuthDir = () => {
-  if (process.env.RENDER) {
+  // En local, siempre usar la ruta local
+  if (process.env.NODE_ENV === 'development' || !process.env.RENDER) {
+    const localPath = path.join(process.cwd(), '.wwebjs_auth');
+    console.log(`🏠 Entorno local, usando ruta: ${localPath}`);
+    return localPath;
+  }
+  
+  // Solo en Render usar la ruta persistente
+  if (process.env.RENDER === 'true') {
     const renderPath = '/opt/render/project/src/.wwebjs_auth';
     console.log(`🔧 Render detectado, usando ruta persistente: ${renderPath}`);
     return renderPath;
   }
+  
+  // Fallback a local
   const localPath = path.join(process.cwd(), '.wwebjs_auth');
-  console.log(`🏠 Entorno local, usando ruta: ${localPath}`);
+  console.log(`🏠 Fallback a ruta local: ${localPath}`);
   return localPath;
 };
 
@@ -38,28 +48,19 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   const authDir = getAuthDir();
   console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
-  console.log(`📁 Directorio de autenticación: ${authDir}`);
-  console.log(`🔧 Variable RENDER: ${process.env.RENDER}`);
-  console.log(`🌍 Entorno: ${process.env.NODE_ENV}`);
+  
+  // Crear directorio si no existe
+  if (!fs.existsSync(authDir)) {
+    try {
+      fs.mkdirSync(authDir, { recursive: true });
+      console.log(`✅ Directorio creado: ${authDir}`);
+    } catch (err) {
+      console.error(`❌ Error creando directorio: ${err}`);
+    }
+  }
   
   // Verificar si existe sesión previa
   const sessionPath = path.join(authDir, `session-${company}-${sessionName}`);
-  console.log(`🔍 Verificando sesión en: ${sessionPath}`);
-  
-  // Verificar si el directorio existe
-  if (fs.existsSync(authDir)) {
-    console.log(`✅ Directorio de autenticación existe: ${authDir}`);
-    
-    // Listar contenido del directorio
-    try {
-      const files = fs.readdirSync(authDir);
-      console.log(`📁 Contenido del directorio:`, files);
-    } catch (err) {
-      console.log(`❌ Error leyendo directorio:`, err);
-    }
-  } else {
-    console.log(`❌ Directorio de autenticación NO existe: ${authDir}`);
-  }
   
   if (fs.existsSync(sessionPath)) {
     console.log(`✅ Sesión previa encontrada en: ${sessionPath}`);
@@ -67,6 +68,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     console.log(`❌ No se encontró sesión previa en: ${sessionPath}`);
   }
 
+  // Usar LocalAuth con configuración optimizada para Render
   const whatsappClient = new Client({
     authStrategy: new LocalAuth({ 
       clientId: `${company}-${sessionName}`,
@@ -240,6 +242,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     // Evento cuando la autenticación está en progreso
     whatsappClient.on('authenticated', async () => {
       console.log(`🔓 WhatsApp autenticado exitosamente para: ${company}-${sessionName}`);
+      
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
           status: 'authenticated', 
@@ -251,6 +254,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     whatsappClient.on('ready', async () => {
       console.log(`🚀 WhatsApp listo y conectado para: ${company}-${sessionName}`);
+      
       const chats = await whatsappClient.getChats();
 
       const fetchLimit = 50;

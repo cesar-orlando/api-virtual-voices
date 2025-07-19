@@ -25,12 +25,41 @@ const getAuthDir = () => {
   return path.join(process.cwd(), '.wwebjs_auth');
 };
 
-export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId) => {
+// Función para restaurar la sesión desde la base de datos al filesystem
+async function restoreSessionFromDB(company: string, sessionName: string) {
+  try {
+    const conn = await getDbConnection(company);
+    const WhatsappSession = getSessionModel(conn);
+    const sessionDoc = await WhatsappSession.findOne({ name: sessionName });
+    
+    if (!sessionDoc || !sessionDoc.sessionData) {
+      return false;
+    }
+
+    // Ruta donde WhatsApp Web JS espera el archivo de sesión
+    const sessionDir = path.join(getAuthDir(), `session-${company}-${sessionName}`, 'Default');
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+    }
+    
+    const sessionFile = path.join(sessionDir, 'session.json');
+    fs.writeFileSync(sessionFile, JSON.stringify(sessionDoc.sessionData, null, 2));
+    return true;
+  } catch (error) {
+    console.error(`Error restaurando sesión para ${company}:${sessionName}:`, error);
+    return false;
+  }
+}
+
+export const startWhatsappBot = async (sessionName: string, company: string, user_id: Types.ObjectId) => {
   const clientKey = `${company}:${sessionName}`;
   if (clients[clientKey]) {
     console.log(`Cliente WhatsApp para la sesión '${sessionName}' ya existe.`);
     return clients[clientKey];
   }
+
+  // Restaurar sesión antes de crear el cliente
+  await restoreSessionFromDB(company, sessionName);
 
   const whatsappClient = new Client({
     authStrategy: new LocalAuth({ 
@@ -203,7 +232,20 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     });
 
     // Evento cuando la autenticación está en progreso
-    whatsappClient.on('authenticated', async () => {
+    whatsappClient.on('authenticated', async (session) => {
+      // Guardar la sesión en la base de datos
+      try {
+        const conn = await getDbConnection(company);
+        const WhatsappSession = getSessionModel(conn);
+        await WhatsappSession.updateOne(
+          { name: sessionName },
+          { sessionData: session },
+          { upsert: true }
+        );
+      } catch (error) {
+        console.error(`Error guardando sesión en BD para ${company}:${sessionName}:`, error);
+      }
+
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
           status: 'authenticated', 

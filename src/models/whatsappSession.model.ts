@@ -5,6 +5,7 @@ export interface IWhatsappSession extends Document {
   name: string; // Nombre de la tabla
   icon: string; // Ícono asociado a la tabla
   status: string;
+  sessionData?: any; // Datos de la sesión de WhatsApp
   IA: {
     id: Types.ObjectId; // Referencia al IA asociado
     name: string; // Nombre del IA asociado
@@ -21,6 +22,7 @@ const SessionSchema: Schema = new Schema(
     name: { type: String, required: true },
     icon: { type: String, default: "" }, // Campo opcional para el ícono
     status: { type: String, enum:['connected','disconnected','pending','error']},
+    sessionData: { type: Schema.Types.Mixed }, // Campo para almacenar datos de sesión de WhatsApp
     IA: {
       id: { type: Types.ObjectId, ref: "IaConfig", required: true }, // Referencia a IaConfig
       name: { type: String, required: true }, // Nombre del IA asociado

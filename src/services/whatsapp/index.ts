@@ -256,6 +256,23 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     whatsappClient.on('ready', async () => {
       console.log(`🚀 WhatsApp listo y conectado para: ${company}-${sessionName}`);
       
+      // Verificar si la sesión se guardó después de estar listo
+      setTimeout(() => {
+        const sessionPath = path.join(authDir, `session-${company}-${sessionName}`);
+        if (fs.existsSync(sessionPath)) {
+          console.log(`✅ Sesión guardada exitosamente en: ${sessionPath}`);
+          // Listar archivos de la sesión
+          try {
+            const files = fs.readdirSync(sessionPath);
+            console.log(`📁 Archivos de sesión:`, files);
+          } catch (err) {
+            console.log(`❌ Error leyendo archivos de sesión:`, err);
+          }
+        } else {
+          console.log(`❌ Sesión NO se guardó en: ${sessionPath}`);
+        }
+      }, 5000);
+      
       const chats = await whatsappClient.getChats();
 
       const fetchLimit = 50;

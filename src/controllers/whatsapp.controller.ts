@@ -280,13 +280,24 @@ export const deleteWhatsappSession = async (req: Request, res: Response) => {
 
   // Ahora intenta borrar la carpeta
   try {
-    const sessionFolder = path.join(
-      process.cwd(),
-      ".wwebjs_auth",
-      `session-${c_name}-${session.name}`
-    );
+    // Usar la misma lógica de rutas que en el servicio de WhatsApp
+    const getAuthDir = () => {
+      if (process.env.RENDER === 'true') {
+        return '/var/data/.wwebjs_auth';
+      }
+      return path.join(process.cwd(), '.wwebjs_auth');
+    };
+    
+    const authDir = getAuthDir();
+    const sessionFolder = path.join(authDir, `session-${c_name}-${session.name}`);
+    
+    console.log(`🗑️ Intentando eliminar sesión de: ${sessionFolder}`);
+    
     if (fs.existsSync(sessionFolder)) {
       fs.rmSync(sessionFolder, { recursive: true, force: true });
+      console.log(`✅ Sesión eliminada de: ${sessionFolder}`);
+    } else {
+      console.log(`⚠️ No se encontró carpeta de sesión en: ${sessionFolder}`);
     }
   } catch (err) {
     console.error("Error deleting session folder:", err);

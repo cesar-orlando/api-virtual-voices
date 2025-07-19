@@ -39,9 +39,28 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   const authDir = getAuthDir();
   console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
   console.log(`📁 Directorio de autenticación: ${authDir}`);
+  console.log(`🔧 Variable RENDER: ${process.env.RENDER}`);
+  console.log(`🌍 Entorno: ${process.env.NODE_ENV}`);
   
   // Verificar si existe sesión previa
   const sessionPath = path.join(authDir, `session-${company}-${sessionName}`);
+  console.log(`🔍 Verificando sesión en: ${sessionPath}`);
+  
+  // Verificar si el directorio existe
+  if (fs.existsSync(authDir)) {
+    console.log(`✅ Directorio de autenticación existe: ${authDir}`);
+    
+    // Listar contenido del directorio
+    try {
+      const files = fs.readdirSync(authDir);
+      console.log(`📁 Contenido del directorio:`, files);
+    } catch (err) {
+      console.log(`❌ Error leyendo directorio:`, err);
+    }
+  } else {
+    console.log(`❌ Directorio de autenticación NO existe: ${authDir}`);
+  }
+  
   if (fs.existsSync(sessionPath)) {
     console.log(`✅ Sesión previa encontrada en: ${sessionPath}`);
   } else {

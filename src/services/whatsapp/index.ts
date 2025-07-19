@@ -19,7 +19,7 @@ const qrSent: Record<string, boolean> = {};
 
 // Determinar el directorio de autenticación basado en el entorno
 const getAuthDir = () => {
-  if (process.env.RENDER === 'true') {
+  if (process.env.RENDER) {
     return '/opt/render/project/src/.wwebjs_auth';
   }
   return path.join(process.cwd(), '.wwebjs_auth');

@@ -486,7 +486,26 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ message: "Missing required fields" });
       return;
     }
+    
+    if (!mongoose.connection.db) {
+      res.status(500).json({ message: "Database connection not established" });
+      return;
+    }
+    
+    const admin = mongoose.connection.db.admin();
+    const dbs = await admin.listDatabases();
+    const dbExists = dbs.databases.some(db => db.name === companySlug);
+    
+    if (!dbExists) {
+      res.status(400).json({ message: "Invalid company" });
+      return;
+    }
+    
     const connection = await getConnectionByCompanySlug(companySlug);
+    if (!connection) {
+      res.status(400).json({ message: "Invalid company" });
+      return;
+    }
     const User = getUserModel(connection);
     const existing = await User.findOne({ email });
     if (existing) {
@@ -526,7 +545,30 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ message: "Missing credentials" });
       return;
     }
+    if (!companySlug) {
+      res.status(400).json({ message: "Missing credentials" });
+      return;
+    }
+
+    if (!mongoose.connection.db) {
+      res.status(500).json({ message: "Database connection not established" });
+      return;
+    }
+    
+    const admin = mongoose.connection.db.admin();
+    const dbs = await admin.listDatabases();
+    const dbExists = dbs.databases.some(db => db.name === companySlug);
+    
+    if (!dbExists) {
+      res.status(400).json({ message: "Invalid company" });
+      return;
+    }
+    
     const connection = await getConnectionByCompanySlug(companySlug);
+    if (!connection) {
+      res.status(400).json({ message: "Invalid company" });
+      return;
+    }
     const User = getUserModel(connection);
     const user = await User.findOne({ email });
     if (!user) {

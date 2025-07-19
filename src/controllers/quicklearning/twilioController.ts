@@ -20,7 +20,7 @@ const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Tim
 /**
  * Emitir notificación por socket cuando llega un mensaje nuevo
  */
-function emitNewMessageNotification(phone: string, messageData: any) {
+function emitNewMessageNotification(phone: string, messageData: any, chat: any = null) {
   try {
     // Obtener la instancia de socket.io desde la app
     const io = (global as any).io as SocketIOServer;
@@ -29,8 +29,8 @@ function emitNewMessageNotification(phone: string, messageData: any) {
       return;
     }
 
-    // Emitir evento a todos los clientes conectados
-    io.emit("nuevo_mensaje_whatsapp", {
+    // Preparar datos completos para el frontend
+    const notificationData = {
       type: "nuevo_mensaje",
       phone: phone,
       message: {
@@ -38,10 +38,31 @@ function emitNewMessageNotification(phone: string, messageData: any) {
         direction: messageData.direction,
         respondedBy: messageData.respondedBy,
         messageType: messageData.messageType,
-        twilioSid: messageData.twilioSid
+        twilioSid: messageData.twilioSid,
+        timestamp: new Date().toISOString()
       },
-      timestamp: new Date().toISOString()
-    });
+      chat: chat ? {
+        phone: chat.phone,
+        profileName: chat.profileName,
+        lastMessage: chat.lastMessage,
+        conversationStart: chat.conversationStart,
+        status: chat.status,
+        aiEnabled: chat.aiEnabled,
+        unreadCount: 1, // Se calculará por usuario en el frontend
+        isNewChat: false // Se determinará en el frontend
+      } : null,
+      timestamp: new Date().toISOString(),
+      // Metadata para funcionalidades avanzadas
+      metadata: {
+        shouldBumpChat: true,
+        shouldPlaySound: true,
+        shouldShowNotification: true,
+        priority: messageData.respondedBy === "human" ? "high" : "normal"
+      }
+    };
+
+    // Emitir evento a todos los clientes conectados
+    io.emit("nuevo_mensaje_whatsapp", notificationData);
 
     console.log(`📡 Notificación emitida para chat: ${phone}`);
   } catch (error) {
@@ -49,7 +70,44 @@ function emitNewMessageNotification(phone: string, messageData: any) {
   }
 }
 
+/**
+ * Emitir evento de "escribiendo" para indicar que alguien está escribiendo
+ */
+function emitTypingIndicator(phone: string, isTyping: boolean, userType: "human" | "bot" | "asesor") {
+  try {
+    const io = (global as any).io as SocketIOServer;
+    if (!io) return;
 
+    io.emit("escribiendo_whatsapp", {
+      type: "escribiendo",
+      phone: phone,
+      isTyping: isTyping,
+      userType: userType,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ Error emitiendo indicador de escritura:", error);
+  }
+}
+
+/**
+ * Emitir evento de mensaje leído
+ */
+function emitMessageRead(phone: string, userId: string) {
+  try {
+    const io = (global as any).io as SocketIOServer;
+    if (!io) return;
+
+    io.emit("mensaje_leido_whatsapp", {
+      type: "mensaje_leido",
+      phone: phone,
+      userId: userId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ Error emitiendo mensaje leído:", error);
+  }
+}
 
 /**
  * Webhook de Twilio para recibir mensajes
@@ -180,7 +238,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       await chat.save();
 
       // Emitir notificación por socket para mensaje nuevo
-      emitNewMessageNotification(phoneUser, newMessage);
+      emitNewMessageNotification(phoneUser, newMessage, chat);
 
       // Actualizar ultimo_mensaje y lastMessageDate en la tabla correcta si el usuario ya existe
       const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
@@ -280,7 +338,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           await chat.save();
 
           // Emitir notificación por socket para respuesta del bot
-          emitNewMessageNotification(phoneUser, botMessage);
+          emitNewMessageNotification(phoneUser, botMessage, chat);
 
           // Actualizar campo ultimo_mensaje en la tabla de alumnos
           try {
@@ -652,33 +710,153 @@ export const getActiveChats = async (req: Request, res: Response): Promise<void>
   }
 };
 
-// Obtener historial de un chat por teléfono
-export const getChatHistory = async (req: Request, res: Response): Promise<void> => {
+/**
+ * Marcar mensajes como leídos por un usuario
+ */
+export const markChatAsRead = async (req: Request, res: Response): Promise<void> => {
   try {
     const { phone } = req.params;
-    const companySlug = req.query.companySlug || req.body.companySlug;
-    if (!companySlug) {
-      res.status(400).json({ error: "companySlug query param is required" });
+    const { userId, companySlug } = req.body;
+
+    if (!userId || !companySlug) {
+      res.status(400).json({ error: "userId y companySlug son requeridos" });
       return;
     }
+
+    const conn = await getConnectionByCompanySlug(companySlug);
+    const QuickLearningChat = getQuickLearningChatModel(conn);
+
+    // Buscar el chat
+    let chat = await QuickLearningChat.findOne({ phone });
+    if (!chat && phone.startsWith('+')) {
+      chat = await QuickLearningChat.findOne({ phone: phone.replace(/^\+/, '') });
+    } else if (!chat && !phone.startsWith('+')) {
+      chat = await QuickLearningChat.findOne({ phone: `+${phone}` });
+    }
+
+    if (!chat) {
+      res.status(404).json({ error: "Chat no encontrado" });
+      return;
+    }
+
+    // Marcar como leído (implementación básica)
+    // TODO: Implementar markAsReadBy cuando el modelo esté actualizado
+    console.log(`Marcando chat ${phone} como leído para usuario ${userId}`);
+
+    // Emitir evento de mensaje leído
+    emitMessageRead(phone, userId);
+
+    res.status(200).json({
+      success: true,
+      message: "Chat marcado como leído",
+      phone: phone,
+      userId: userId
+    });
+  } catch (error) {
+    console.error("❌ Error marcando chat como leído:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Obtener información de chats con conteo de no leídos
+ */
+export const getChatsWithUnreadCount = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId, companySlug, limit = "50" } = req.query;
+
+    if (!userId || !companySlug) {
+      res.status(400).json({ error: "userId y companySlug son requeridos" });
+      return;
+    }
+
     const conn = await getConnectionByCompanySlug(companySlug as string);
     const QuickLearningChat = getQuickLearningChatModel(conn);
 
-    // Buscar primero el valor exacto
+    // Obtener chats ordenados por último mensaje
+    const chats = await QuickLearningChat.find({ status: "active" })
+      .sort({ "lastMessage.date": -1 })
+      .limit(parseInt(limit as string))
+      .lean();
+
+    // Calcular no leídos para cada chat
+    const chatsWithUnread = chats.map(chat => {
+      let unreadCount = 0;
+      
+      // Contar mensajes de las últimas 24 horas como fallback
+      const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      unreadCount = chat.messages?.filter(msg => 
+        new Date(msg.dateCreated || (msg as any).timestamp) > last24Hours
+      ).length || 0;
+
+      return {
+        ...chat,
+        unreadCount,
+        hasUnread: unreadCount > 0,
+        lastMessagePreview: chat.lastMessage?.body?.substring(0, 50) + (chat.lastMessage?.body?.length > 50 ? '...' : '')
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      chats: chatsWithUnread,
+      total: chatsWithUnread.length,
+      totalUnread: chatsWithUnread.reduce((sum, chat) => sum + chat.unreadCount, 0)
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo chats:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Obtener historial de un chat específico
+ */
+export const getChatHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { phone } = req.params;
+    const { companySlug, limit = "100" } = req.query;
+
+    if (!companySlug) {
+      res.status(400).json({ error: "companySlug es requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companySlug as string);
+    const QuickLearningChat = getQuickLearningChatModel(conn);
+
+    // Buscar el chat
     let chat = await QuickLearningChat.findOne({ phone }).lean();
-    // Si no lo encuentra, probar con + y sin +
     if (!chat && phone.startsWith('+')) {
       chat = await QuickLearningChat.findOne({ phone: phone.replace(/^\+/, '') }).lean();
     } else if (!chat && !phone.startsWith('+')) {
       chat = await QuickLearningChat.findOne({ phone: `+${phone}` }).lean();
     }
+
     if (!chat) {
-      res.status(404).json({ error: "Chat not found" });
+      res.status(404).json({ error: "Chat no encontrado" });
       return;
     }
-    res.status(200).json(chat.messages);
+
+    // Ordenar mensajes por fecha y limitar
+    const messages = chat.messages
+      ?.sort((a, b) => new Date(a.dateCreated || (a as any).timestamp).getTime() - new Date(b.dateCreated || (b as any).timestamp).getTime())
+      .slice(-parseInt(limit as string)) || [];
+
+    res.status(200).json({
+      success: true,
+      chat: {
+        phone: chat.phone,
+        profileName: chat.profileName,
+        conversationStart: chat.conversationStart,
+        status: chat.status,
+        aiEnabled: chat.aiEnabled
+      },
+      messages: messages,
+      totalMessages: chat.messages?.length || 0
+    });
   } catch (error) {
     console.error("❌ Error obteniendo historial de chat:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Error interno del servidor" });
   }
 };

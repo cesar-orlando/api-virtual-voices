@@ -7,6 +7,8 @@ import {
   getMessageHistory,
   getActiveChats,
   getChatHistory,
+  markChatAsRead,
+  getChatsWithUnreadCount,
 } from "../../controllers/quicklearning/twilioController";
 import { getDbConnection, getConnectionByCompanySlug } from "../../config/connectionManager";
 import getRecordModel from "../../models/record.model";
@@ -268,6 +270,110 @@ router.get("/chats/active", getActiveChats);
  *                 $ref: '#/components/schemas/Message'
  */
 router.get("/chats/:phone/history", getChatHistory);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/chats/{phone}/read:
+ *   post:
+ *     summary: Marcar mensajes de un chat como leídos por un usuario
+ *     tags: [Twilio Quick Learning]
+ *     parameters:
+ *       - in: path
+ *         name: phone
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Número de teléfono del chat
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - companySlug
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: ID del usuario que marca como leído
+ *               companySlug:
+ *                 type: string
+ *                 description: Slug de la empresa
+ *     responses:
+ *       200:
+ *         description: Chat marcado como leído exitosamente
+ *       400:
+ *         description: Datos inválidos
+ *       404:
+ *         description: Chat no encontrado
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/chats/:phone/read", markChatAsRead);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/chats:
+ *   get:
+ *     summary: Obtener lista de chats con conteo de mensajes no leídos
+ *     tags: [Twilio Quick Learning]
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID del usuario
+ *       - in: query
+ *         name: companySlug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Slug de la empresa
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Límite de chats a obtener
+ *     responses:
+ *       200:
+ *         description: Lista de chats con información de no leídos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 chats:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       phone:
+ *                         type: string
+ *                       profileName:
+ *                         type: string
+ *                       lastMessage:
+ *                         type: object
+ *                       unreadCount:
+ *                         type: number
+ *                       hasUnread:
+ *                         type: boolean
+ *                       lastMessagePreview:
+ *                         type: string
+ *                 total:
+ *                   type: number
+ *                 totalUnread:
+ *                   type: number
+ *       400:
+ *         description: Datos inválidos
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get("/chats", getChatsWithUnreadCount);
 
 /**
  * @swagger

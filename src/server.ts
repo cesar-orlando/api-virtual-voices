@@ -29,7 +29,7 @@ export const io = new Server(server, {
 // Crear directorio .wwebjs_auth si no existe
 const getAuthDir = () => {
   if (process.env.RENDER === 'true') {
-    return '/opt/render/project/src/.wwebjs_auth';
+    return '/var/data/.wwebjs_auth';
   }
   return path.join(process.cwd(), '.wwebjs_auth');
 };

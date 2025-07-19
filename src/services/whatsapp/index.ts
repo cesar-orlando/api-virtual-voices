@@ -48,6 +48,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   const authDir = getAuthDir();
   console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
+  console.log(`🔄 TEST PERSISTENCIA - Deploy: ${new Date().toISOString()}`);
   
   // Crear directorio si no existe
   if (!fs.existsSync(authDir)) {

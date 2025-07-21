@@ -9,6 +9,7 @@ import { Connection, Model, Types } from 'mongoose';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import { Request, Response } from 'express';
+const fs = require('node:fs');
 
 // Store pending timeouts for each user
 const pendingResponses = new Map<string, {
@@ -41,6 +42,99 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     console.log(`🚫 Mensaje de grupo ignorado: ${message.from}`);
     return;
   }
+
+  //Validar que el mensaje sea un audio
+  if (message.type == 'ptt') {
+    console.log("Voice Clip Received");
+    const filePath = `src/audios/${message.id.id}.ogg`;
+
+    const media = await message.downloadMedia()
+      .then(async (data) => {
+        const binaryData = Buffer.from(data.data, 'base64');
+        fs.writeFileSync(filePath, binaryData);
+        const transcribedText = await transcribeAudio(filePath);
+        
+        // If there's statusText from quoted message, prepend it as context
+        if (statusText) {
+          message.body = `Contexto: "${statusText}"\n\nMensaje de voz: ${transcribedText}`;
+          console.log(`📝 Contexto agregado al audio de ${message.from}: "${statusText}"`);
+        } else {
+          message.body = transcribedText;
+        }
+        
+        return transcribedText;
+      })
+      .catch((error) => {
+        console.error("Error al descargar el audio:", error);
+        return null;
+      });
+  } else if (statusText) {
+    // For regular text messages, prepend statusText as context
+    message.body = `Contexto: "${statusText}"\n\n${message.body}`;
+    console.log(`📝 Contexto agregado al mensaje de ${message.from}: "${statusText}"`);
+  }
+
+// For image messages
+if (message.type === 'image') {
+  console.log("Image Received");
+  const media = await message.downloadMedia();
+  
+  // Determine file extension based on mimetype
+  const extension = media.mimetype.split('/')[1] || 'jpg';
+  const filePath = `src/images/${message.id.id}.${extension}`;
+  
+  // Save image to disk
+  const binaryData = Buffer.from(media.data, 'base64');
+  fs.writeFileSync(filePath, binaryData);
+  
+  // Analyze the image
+  const imageAnalysis = await analyzeImage(media.data, media.mimetype);
+  
+  // Delete the image file after analysis (optional)
+  try {
+    fs.unlinkSync(filePath);
+    console.log(`🗑️  Archivo de imagen eliminado: ${filePath}`);
+  } catch (deleteError) {
+    console.warn(`⚠️  No se pudo eliminar el archivo de imagen: ${filePath}`, deleteError);
+  }
+  // Set message body with context
+  if (statusText) {
+    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}`;
+  } else {
+    message.body = `Imagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}`;
+  }
+}
+
+// For video messages
+if (message.type === 'video') {
+  console.log("Video Received");
+  const media = await message.downloadMedia();
+  
+  // Determine file extension based on mimetype
+  const extension = media.mimetype.split('/')[1] || 'mp4';
+  const filePath = `src/videos/${message.id.id}.${extension}`;
+  
+  // Save video to disk
+  const binaryData = Buffer.from(media.data, 'base64');
+  fs.writeFileSync(filePath, binaryData);
+  
+  // Analyze the video
+  const videoAnalysis = await analyzeVideo(filePath, media.mimetype);
+  
+  // Delete the video file after analysis (optional)
+  try {
+    fs.unlinkSync(filePath);
+    console.log(`🗑️  Archivo de video eliminado: ${filePath}`);
+  } catch (deleteError) {
+    console.warn(`⚠️  No se pudo eliminar el archivo de video: ${filePath}`, deleteError);
+  }
+  // Set message body with context
+  if (statusText) {
+    message.body = `Contexto: "${statusText}"\n\nVideo: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}`;
+  } else {
+    message.body = `Video: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}`;
+  }
+}
 
   // Validar que el mensaje no esté vacío o sea solo espacios
   if (!message.body || message.body.trim().length === 0) {
@@ -210,6 +304,39 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   
   // Generate and send response using the latest record state - this should only be called ONCE
   await sendAndRecordBotResponse(company, sessionName, client, lastMessage, latestRecord, conn);
+}
+
+async function transcribeAudio(filePath: string): Promise<string> {
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: 'whisper-1',
+      language: 'es', // Optional: specify language for better accuracy
+    });
+    console.log("Transcripción completada:", transcription.text);
+    
+    // Delete the audio file after successful transcription
+    try {
+      fs.unlinkSync(filePath);
+      console.log(`🗑️  Archivo de audio eliminado: ${filePath}`);
+    } catch (deleteError) {
+      console.warn(`⚠️  No se pudo eliminar el archivo de audio: ${filePath}`, deleteError);
+    }
+    
+    return transcription.text;
+  } catch (error) {
+    console.error('Error transcribing audio:', error);
+    
+    // Try to delete the file even if transcription failed
+    try {
+      fs.unlinkSync(filePath);
+      console.log(`🗑️  Archivo de audio eliminado después de error: ${filePath}`);
+    } catch (deleteError) {
+      console.warn(`⚠️  No se pudo eliminar el archivo de audio después de error: ${filePath}`, deleteError);
+    }
+    
+    throw error;
+  }
 }
 
 async function createNewChatRecord(
@@ -452,5 +579,236 @@ export async function enviarFichaTecnica(req: Request, res: Response): Promise<a
   } catch (error) {
     console.error('===> [enviarFichaTecnica] Error enviando ficha técnica:', error);
     return res.status(500).json({ success: false, message: 'Error interno al enviar ficha técnica' });
+  }
+}
+
+async function analyzeImage(data: string, mimetype: string): Promise<{ description: string; extractedText: string }> {
+  try {
+    // OpenAI Vision API implementation
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o", // Most reliable and latest vision model
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Analiza esta imagen y proporciona: 1) Una descripción detallada de lo que ves, 2) Todo el texto que puedas leer en la imagen. Responde en español."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimetype};base64,${data}`,
+                detail: "auto" // Can be "low", "high", or "auto"
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.3
+    });
+
+    const analysis = response.choices[0]?.message?.content || "";
+    
+    // Parse the response to separate description and text
+    const lines = analysis.split('\n');
+    let description = "";
+    let extractedText = "";
+    
+    let currentSection = "";
+    for (const line of lines) {
+      if (line.toLowerCase().includes('descripción') || line.includes('1)')) {
+        currentSection = "description";
+        description += line.replace(/^\d+\)\s*/, '').replace(/descripción:?/i, '').trim() + " ";
+      } else if (line.toLowerCase().includes('texto') || line.includes('2)')) {
+        currentSection = "text";
+        extractedText += line.replace(/^\d+\)\s*/, '').replace(/texto:?/i, '').trim() + " ";
+      } else if (currentSection === "description" && line.trim()) {
+        description += line.trim() + " ";
+      } else if (currentSection === "text" && line.trim()) {
+        extractedText += line.trim() + " ";
+      }
+    }
+
+    return {
+      description: description.trim() || "Imagen analizada por IA",
+      extractedText: extractedText.trim() || "Sin texto detectado"
+    };
+
+  } catch (error) {
+    console.error('Error analyzing image with OpenAI Vision:', error);
+    return {
+      description: "Error al analizar la imagen",
+      extractedText: "No se pudo extraer texto"
+    };
+  }
+}
+
+async function analyzeVideo(filePath: string, mimetype: string): Promise<{ description: string; transcribedAudio: string; extractedText: string }> {
+  try {
+    const path = require('path');
+    const { execSync } = require('child_process');
+    
+    // Try to get ffmpeg path - first system, then npm package
+    let ffmpegPath = 'ffmpeg';
+    try {
+      // Check if system ffmpeg exists
+      execSync('ffmpeg -version', { stdio: 'ignore' });
+      console.log('✅ Using system FFmpeg');
+    } catch (systemError) {
+      try {
+        // Fallback to npm package
+        ffmpegPath = require('ffmpeg-static');
+        console.log('📦 Using ffmpeg-static npm package');
+      } catch (npmError) {
+        console.warn('⚠️ FFmpeg not available - skipping audio/frame extraction');
+        console.warn('💡 To enable video analysis, install FFmpeg:');
+        console.warn('   Windows: choco install ffmpeg');
+        console.warn('   Or: npm install ffmpeg-static');
+        return {
+          description: "Video recibido (FFmpeg no disponible para análisis completo)",
+          transcribedAudio: "Se necesita FFmpeg para transcribir audio",
+          extractedText: "Se necesita FFmpeg para extraer texto de frames"
+        };
+      }
+    }
+    
+    // Extract audio from video for transcription
+    const audioPath = filePath.replace(path.extname(filePath), '_audio.mp3');
+    let transcribedAudio = "Sin audio detectado";
+    
+    try {
+      // Use ffmpeg to extract audio
+      execSync(`"${ffmpegPath}" -i "${filePath}" -vn -acodec mp3 -y "${audioPath}"`, { stdio: 'ignore' });
+      
+      // Transcribe the extracted audio with Whisper
+      const audioTranscription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model: 'whisper-1',
+        language: 'es',
+      });
+      
+      transcribedAudio = audioTranscription.text || "Audio sin contenido detectado";
+      
+      // Clean up audio file
+      try {
+        fs.unlinkSync(audioPath);
+        console.log(`🗑️ Archivo de audio temporal eliminado: ${audioPath}`);
+      } catch (deleteError) {
+        console.warn(`⚠️ No se pudo eliminar archivo de audio temporal: ${audioPath}`);
+      }
+      
+    } catch (audioError) {
+      console.warn('⚠️ No se pudo extraer/transcribir audio del video:', audioError.message);
+      transcribedAudio = "No se pudo procesar el audio del video";
+    }
+
+    // Extract key frames for visual analysis
+    const frameExtracted = await extractVideoFrame(filePath, ffmpegPath);
+    let description = "Video procesado";
+    let extractedText = "Sin texto visible detectado";
+    
+    if (frameExtracted.success && frameExtracted.frameData) {
+      // Analyze the extracted frame with OpenAI Vision
+      const frameAnalysis = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Analiza este frame de video y proporciona: 1) Una descripción detallada de lo que ves en el video, 2) Todo el texto que puedas leer en la imagen. Responde en español."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${frameExtracted.frameData}`,
+                  detail: "auto"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.3
+      });
+
+      const analysis = frameAnalysis.choices[0]?.message?.content || "";
+      
+      // Parse the response to separate description and text
+      const lines = analysis.split('\n');
+      let tempDescription = "";
+      let tempExtractedText = "";
+      
+      let currentSection = "";
+      for (const line of lines) {
+        if (line.toLowerCase().includes('descripción') || line.includes('1)')) {
+          currentSection = "description";
+          tempDescription += line.replace(/^\d+\)\s*/, '').replace(/descripción:?/i, '').trim() + " ";
+        } else if (line.toLowerCase().includes('texto') || line.includes('2)')) {
+          currentSection = "text";
+          tempExtractedText += line.replace(/^\d+\)\s*/, '').replace(/texto:?/i, '').trim() + " ";
+        } else if (currentSection === "description" && line.trim()) {
+          tempDescription += line.trim() + " ";
+        } else if (currentSection === "text" && line.trim()) {
+          tempExtractedText += line.trim() + " ";
+        }
+      }
+      
+      description = tempDescription.trim() || "Video analizado visualmente";
+      extractedText = tempExtractedText.trim() || "Sin texto visible detectado";
+    }
+
+    console.log(`🎬 Video analizado: ${description}`);
+    console.log(`🎤 Audio transcrito: ${transcribedAudio}`);
+    console.log(`📝 Texto extraído: ${extractedText}`);
+
+    return {
+      description: description,
+      transcribedAudio: transcribedAudio,
+      extractedText: extractedText
+    };
+
+  } catch (error) {
+    console.error('Error analyzing video:', error);
+    return {
+      description: "Error al analizar el video",
+      transcribedAudio: "No se pudo transcribir el audio",
+      extractedText: "No se pudo extraer texto"
+    };
+  }
+}
+
+// Helper function to extract a frame from video
+async function extractVideoFrame(videoPath: string, ffmpegPath: string = 'ffmpeg'): Promise<{ success: boolean; frameData?: string }> {
+  try {
+    const path = require('path');
+    const { execSync } = require('child_process');
+    
+    // Extract frame at 1 second mark (or middle of video)
+    const framePath = videoPath.replace(path.extname(videoPath), '_frame.jpg');
+    
+    // Use ffmpeg to extract a frame
+    execSync(`"${ffmpegPath}" -i "${videoPath}" -ss 00:00:01 -vframes 1 -y "${framePath}"`, { stdio: 'ignore' });
+    
+    // Read the frame and convert to base64
+    const frameBuffer = fs.readFileSync(framePath);
+    const frameData = frameBuffer.toString('base64');
+    
+    // Clean up frame file
+    try {
+      fs.unlinkSync(framePath);
+      console.log(`🗑️ Frame temporal eliminado: ${framePath}`);
+    } catch (deleteError) {
+      console.warn(`⚠️ No se pudo eliminar frame temporal: ${framePath}`);
+    }
+    
+    return { success: true, frameData };
+    
+  } catch (error) {
+    console.warn('⚠️ No se pudo extraer frame del video:', error.message);
+    return { success: false };
   }
 }

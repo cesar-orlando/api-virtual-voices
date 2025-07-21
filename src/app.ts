@@ -126,11 +126,27 @@ app.get("/", (req, res) => {
       },
       links: {
         swagger: "/api/docs",
-        coreUsers: "/api/core/users"
-      },
-      timestamp: new Date().toISOString()
+      }
     });
-  });
+});
+
+// Health check endpoint para el frontend
+app.get("/api/health", (req, res) => {
+    const config = getEnvironmentConfig();
+    
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      uptime: `${Math.floor(process.uptime())}s`,
+      environment: config.name,
+      features: {
+        socketIO: true,
+        twilioWebhook: true,
+        realTimeNotifications: true,
+        typingIndicators: true
+      }
+    });
+});
 
 // Middleware de manejo de errores para payload too large
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

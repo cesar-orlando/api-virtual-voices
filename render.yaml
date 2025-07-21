@@ -13,5 +13,5 @@ services:
         value: true
     disk:
       name: whatsapp-sessions
-      mountPath: /opt/render/project/src/.wwebjs_auth
+      mountPath: /var/data
       sizeGB: 1 

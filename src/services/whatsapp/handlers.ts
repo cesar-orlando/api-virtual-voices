@@ -21,30 +21,6 @@ const pendingResponses = new Map<string, {
   conn: Connection;
 }>();
 
-// Function to check WhatsApp client health
-async function checkClientHealth(client: Client): Promise<{ healthy: boolean; state: string; error?: string }> {
-  try {
-    if (!client) {
-      return { healthy: false, state: 'NULL', error: 'Cliente no inicializado' };
-    }
-
-    const state = await client.getState();
-    const isConnected = state === 'CONNECTED';
-    
-    return {
-      healthy: isConnected,
-      state: state,
-      error: isConnected ? undefined : `Estado no válido: ${state}`
-    };
-  } catch (error) {
-    return {
-      healthy: false,
-      state: 'ERROR',
-      error: error.message
-    };
-  }
-}
-
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
   if (message.isStatus) return;
@@ -61,7 +37,7 @@ export async function handleIncomingMessage(message: Message, client: Client, co
   }
 
   // Validar que no sea un mensaje de grupo
-  if (message.from.endsWith('@g.us')) {
+  if (message.from.endsWith('@g.us') || message.to.endsWith('@g.us')) {
     console.log(`🚫 Mensaje de grupo ignorado: ${message.from}`);
     return;
   }
@@ -118,27 +94,29 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       ]
     });
 
+    // --- VALIDACIÓN DE IA EN PROSPECTOS ---
+
+    const Record = getRecordModel(conn);
+    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': { $in: [cleanUserPhone, Number(cleanUserPhone)] } });
+
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
       const Session = getSessionModel(conn);
       const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
     } else {
-      await updateChatRecord(company, existingRecord, "inbound", message, "human");
+      await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
     }
-    // Don't update chat record here - let the delay system handle it
 
-    if (!existingRecord || !existingRecord.botActive) return;
-
-    // --- VALIDACIÓN DE IA EN PROSPECTOS ---
-    const Record = getRecordModel(conn);
-    const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': Number(cleanUserPhone) });
+    // --- FIN VALIDACIÓN DE IA ---
     if (prospecto && prospecto.data && prospecto.data.ia === false) {
       console.log(`🤖 IA desactivada para ${userPhone}, debe responder un agente.`);
       // Aquí podrías emitir un evento para el agente humano si lo deseas
       return;
+    } else if (message.fromMe) {
+      console.log(`📤 Mensaje enviado por el bot/usuario, no se requiere respuesta`);
+      return;
     }
-    // --- FIN VALIDACIÓN DE IA ---
 
     // Implement 15-second delay to collect multiple messages
     await handleDelayedResponse(userPhone, message, client, company, sessionName, existingRecord, conn);

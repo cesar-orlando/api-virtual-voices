@@ -26,10 +26,41 @@ export const io = new Server(server, {
 // Hacer io disponible globalmente para las notificaciones
 (global as any).io = io;
 
+// Manejar eventos de Socket.IO
+io.on('connection', (socket) => {
+  console.log(`🔌 Cliente conectado: ${socket.id}`);
+  
+  // Enviar información de estado al cliente
+  socket.emit('server_status', {
+    status: 'connected',
+    timestamp: new Date().toISOString(),
+    features: {
+      realTimeNotifications: true,
+      typingIndicators: true,
+      messageReadReceipts: true
+    }
+  });
+  
+  // Manejar desconexión
+  socket.on('disconnect', (reason) => {
+    console.log(`🔌 Cliente desconectado: ${socket.id} - Razón: ${reason}`);
+  });
+  
+  // Manejar errores de socket
+  socket.on('error', (error) => {
+    console.error(`❌ Error en socket ${socket.id}:`, error);
+  });
+});
+
+// Manejar errores del servidor Socket.IO
+io.engine.on('connection_error', (err) => {
+  console.error('❌ Error de conexión Socket.IO:', err);
+});
+
 // Crear directorio .wwebjs_auth si no existe
 const getAuthDir = () => {
   if (process.env.RENDER === 'true') {
-    return '/opt/render/project/src/.wwebjs_auth';
+    return '/var/data/.wwebjs_auth';
   }
   return path.join(process.cwd(), '.wwebjs_auth');
 };

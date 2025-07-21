@@ -57,10 +57,16 @@ function createConcisePrompt(originalPrompt: string): string {
       keyElements.push(trimmed);
     }
   }
-  
-  // Crear versión concisa
-  const concisePrompt = `Eres Alejandro, asesor inmobiliario experto del Grupo Milkasa. Tu objetivo es incrementar ventas adoptando técnicas de venta efectivas.
 
+  // Regex para extraer la primera oración del prompt original
+  const initialPromptMatch = originalPrompt.match(/^.*?[\.\?]/);
+
+  // Extraer el nombre y grupo usando regex
+  const nameMatch = initialPromptMatch[0].match(/\b(soy|eres)\s([A-Za-zÁ-ÿ\s]+)/);
+  const groupMatch = initialPromptMatch[0].match(/(?:de|asistente de)\s(.+)$/);
+
+  // Crear versión concisa
+  const concisePrompt = `Eres ${nameMatch[2]}, asesor experto de ${groupMatch[1]}. Tu objetivo es incrementar ventas adoptando técnicas de venta efectivas.
 ${keyElements.slice(0, 5).join('\n')}
 
 REGLAS CLAVE:
@@ -70,7 +76,6 @@ REGLAS CLAVE:
 - Ofrece ayuda adicional cuando sea necesario
 
 Si el prompt original era muy largo, esta es una versión optimizada que mantiene los elementos esenciales.`;
-  
   return concisePrompt;
 }
 
@@ -559,13 +564,20 @@ export async function generateResponse(
       return fallbackResponse;
     } catch (fallbackError) {
       console.error('Fallback response error:', fallbackError);
+
+      // Regex para extraer la primera oración del prompt original
+      const initialPromptMatch = prompt.match(/^.*?[\.\?]/);
+
+      // Extraer el nombre y grupo usando regex
+      const nameMatch = initialPromptMatch[0].match(/\b(soy|eres)\s([A-Za-zÁ-ÿ\s]+)/);
+      const groupMatch = initialPromptMatch[0].match(/(?:de|asistente de)\s(.+)$/);
       
       // Fallback final garantizado - respuesta mínima pero útil
       try {
         const clientInfo = extractClientInfo(chatHistory);
         const clientName = clientInfo.name || 'Cliente';
-        
-        const minimalPrompt = `Eres Alejandro, asesor inmobiliario del Grupo Milkasa. El cliente se llama ${clientName}. 
+
+        const minimalPrompt = `Eres ${nameMatch[2]}, asesor de ${groupMatch[1]}. El cliente se llama ${clientName}.
         Responde de manera amigable y profesional. Si no tienes contexto suficiente, pide amablemente más información.`;
         
         const response = await openai.chat.completions.create({
@@ -581,7 +593,7 @@ export async function generateResponse(
         return response.choices[0].message.content || "Hola, ¿en qué puedo ayudarte hoy?";
       } catch (finalError) {
         console.error('Final fallback error:', finalError);
-        return "Hola, soy Alejandro de Grupo Milkasa. ¿En qué puedo ayudarte hoy?";
+        return `Hola, soy ${nameMatch[2]} de ${groupMatch[1]}. ¿En qué puedo ayudarte hoy?`;
       }
     }
   }

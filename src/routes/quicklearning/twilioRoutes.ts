@@ -7,6 +7,11 @@ import {
   getMessageHistory,
   getActiveChats,
   getChatHistory,
+  markChatAsRead,
+  getChatsWithUnreadCount,
+  handleWhatsAppTypingIndicators,
+  simulateBotTyping,
+  simulateAdvisorTyping,
 } from "../../controllers/quicklearning/twilioController";
 import { getDbConnection, getConnectionByCompanySlug } from "../../config/connectionManager";
 import getRecordModel from "../../models/record.model";
@@ -268,6 +273,216 @@ router.get("/chats/active", getActiveChats);
  *                 $ref: '#/components/schemas/Message'
  */
 router.get("/chats/:phone/history", getChatHistory);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/chats/{phone}/read:
+ *   post:
+ *     summary: Marcar mensajes de un chat como leídos por un usuario
+ *     tags: [Twilio Quick Learning]
+ *     parameters:
+ *       - in: path
+ *         name: phone
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Número de teléfono del chat
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - companySlug
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: ID del usuario que marca como leído
+ *               companySlug:
+ *                 type: string
+ *                 description: Slug de la empresa
+ *     responses:
+ *       200:
+ *         description: Chat marcado como leído exitosamente
+ *       400:
+ *         description: Datos inválidos
+ *       404:
+ *         description: Chat no encontrado
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/chats/:phone/read", markChatAsRead);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/chats:
+ *   get:
+ *     summary: Obtener lista de chats con conteo de mensajes no leídos
+ *     tags: [Twilio Quick Learning]
+ *     parameters:
+ *       - in: query
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID del usuario
+ *       - in: query
+ *         name: companySlug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Slug de la empresa
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Límite de chats a obtener
+ *     responses:
+ *       200:
+ *         description: Lista de chats con información de no leídos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 chats:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       phone:
+ *                         type: string
+ *                       profileName:
+ *                         type: string
+ *                       lastMessage:
+ *                         type: object
+ *                       unreadCount:
+ *                         type: number
+ *                       hasUnread:
+ *                         type: boolean
+ *                       lastMessagePreview:
+ *                         type: string
+ *                 total:
+ *                   type: number
+ *                 totalUnread:
+ *                   type: number
+ *       400:
+ *         description: Datos inválidos
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get("/chats", getChatsWithUnreadCount);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/typing-indicators:
+ *   post:
+ *     summary: Webhook para recibir indicadores de escritura de WhatsApp Business API
+ *     tags: [Twilio Quick Learning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               From:
+ *                 type: string
+ *                 description: Número de teléfono del remitente
+ *               To:
+ *                 type: string
+ *                 description: Número de teléfono de destino
+ *               EventType:
+ *                 type: string
+ *                 description: Tipo de evento (typing_start, typing_stop, read, delivered)
+ *               EventData:
+ *                 type: string
+ *                 description: Datos adicionales del evento
+ *     responses:
+ *       200:
+ *         description: Evento procesado exitosamente
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/typing-indicators", handleWhatsAppTypingIndicators);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/simulate-typing:
+ *   post:
+ *     summary: Simular indicador de escritura (para testing)
+ *     tags: [Twilio Quick Learning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - isTyping
+ *               - userType
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 description: Número de teléfono
+ *               isTyping:
+ *                 type: boolean
+ *                 description: Si está escribiendo o no
+ *               userType:
+ *                 type: string
+ *                 enum: [bot, asesor]
+ *                 description: Tipo de usuario que está escribiendo
+ *               advisorId:
+ *                 type: string
+ *                 description: ID del asesor (solo si userType es asesor)
+ *     responses:
+ *       200:
+ *         description: Indicador de escritura simulado exitosamente
+ *       400:
+ *         description: Datos inválidos
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/simulate-typing", async (req: Request, res: Response) => {
+  try {
+    const { phone, isTyping, userType, advisorId } = req.body;
+
+    if (!phone || typeof isTyping !== 'boolean' || !userType) {
+      res.status(400).json({ error: "phone, isTyping y userType son requeridos" });
+      return;
+    }
+
+    if (userType === "bot") {
+      await simulateBotTyping(phone, isTyping);
+    } else if (userType === "asesor") {
+      if (!advisorId) {
+        res.status(400).json({ error: "advisorId es requerido para userType asesor" });
+        return;
+      }
+      await simulateAdvisorTyping(phone, isTyping, advisorId);
+    } else {
+      res.status(400).json({ error: "userType debe ser 'bot' o 'asesor'" });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Indicador de escritura simulado para ${userType}`,
+      phone,
+      isTyping,
+      userType
+    });
+  } catch (error) {
+    console.error("❌ Error simulando indicador de escritura:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
 
 /**
  * @swagger

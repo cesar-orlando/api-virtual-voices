@@ -50,7 +50,7 @@ const validateFieldValue = (value: any, field: any): any => {
       return value;
 
     case 'select':
-      if (field.options && !field.options.includes(value)) {
+      if (field.options && !field.options.includes(value) && value !== '') {
         throw new Error(`Campo '${field.label}' debe ser uno de: ${field.options.join(', ')}`);
       }
       return value;

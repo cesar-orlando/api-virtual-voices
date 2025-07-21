@@ -187,7 +187,7 @@ export class QuickLearningOpenAIService {
 
       // Llamada a OpenAI
       const completion = await this.openai.chat.completions.create({
-        model: "gpt-4-turbo",
+        model: "gpt-3.5-turbo-0125",
         messages: chatHistoryMessages as ChatCompletionMessageParam[],
         temperature: 0.3,
         top_p: 0.9,

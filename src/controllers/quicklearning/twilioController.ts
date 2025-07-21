@@ -24,6 +24,7 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
   try {
     // Obtener la instancia de socket.io desde la app
     const io = (global as any).io as SocketIOServer;
+    console.log("🔌 Socket.IO disponible:", !!io);
     if (!io) {
       console.log("⚠️ Socket.io no está disponible para notificaciones");
       return;
@@ -65,6 +66,7 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
     io.emit("nuevo_mensaje_whatsapp", notificationData);
 
     console.log(`📡 Notificación emitida para chat: ${phone}`);
+    console.log(`📊 Datos enviados:`, JSON.stringify(notificationData, null, 2));
   } catch (error) {
     console.error("❌ Error emitiendo notificación por socket:", error);
   }
@@ -858,5 +860,89 @@ export const getChatHistory = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error("❌ Error obteniendo historial de chat:", error);
     res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Manejar indicadores de escritura de WhatsApp Business API
+ * Estos eventos vienen del webhook de Twilio cuando el usuario está escribiendo
+ */
+export const handleWhatsAppTypingIndicators = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { 
+      From, 
+      To, 
+      EventType, 
+      EventData 
+    } = req.body;
+
+    console.log("📝 Indicador de escritura recibido:", { From, To, EventType, EventData });
+
+    // WhatsApp Business API envía diferentes tipos de eventos
+    switch (EventType) {
+      case "typing_start":
+        // Usuario comenzó a escribir
+        emitTypingIndicator(From, true, "human");
+        break;
+      
+      case "typing_stop":
+        // Usuario dejó de escribir
+        emitTypingIndicator(From, false, "human");
+        break;
+      
+      case "read":
+        // Usuario leyó el mensaje
+        emitMessageRead(From, "user");
+        break;
+      
+      case "delivered":
+        // Mensaje entregado al usuario
+        console.log("✅ Mensaje entregado a:", From);
+        break;
+      
+      default:
+        console.log("📝 Evento no manejado:", EventType);
+    }
+
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("❌ Error manejando indicador de escritura:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Simular indicador de escritura del bot (cuando está procesando)
+ */
+export const simulateBotTyping = async (phone: string, isTyping: boolean): Promise<void> => {
+  try {
+    // Emitir evento de escritura del bot
+    emitTypingIndicator(phone, isTyping, "bot");
+    
+    if (isTyping) {
+      console.log(`🤖 Bot comenzó a escribir a: ${phone}`);
+    } else {
+      console.log(`🤖 Bot terminó de escribir a: ${phone}`);
+    }
+  } catch (error) {
+    console.error("❌ Error simulando escritura del bot:", error);
+  }
+};
+
+/**
+ * Simular indicador de escritura del asesor (cuando está escribiendo)
+ */
+export const simulateAdvisorTyping = async (phone: string, isTyping: boolean, advisorId: string): Promise<void> => {
+  try {
+    // Emitir evento de escritura del asesor
+    emitTypingIndicator(phone, isTyping, "asesor");
+    
+    if (isTyping) {
+      console.log(`👤 Asesor ${advisorId} comenzó a escribir a: ${phone}`);
+    } else {
+      console.log(`👤 Asesor ${advisorId} terminó de escribir a: ${phone}`);
+    }
+  } catch (error) {
+    console.error("❌ Error simulando escritura del asesor:", error);
   }
 };

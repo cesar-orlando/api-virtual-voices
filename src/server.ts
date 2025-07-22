@@ -94,7 +94,6 @@ async function main() {
           console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`, err);
         });
     }
-    
     // Monitoreo periódico de conexiones (cada 5 minutos)
     setInterval(() => {
       cleanupInactiveConnections();

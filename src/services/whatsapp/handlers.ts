@@ -46,7 +46,15 @@ export async function handleIncomingMessage(message: Message, client: Client, co
   //Validar que el mensaje sea un audio
   if (message.type == 'ptt') {
     console.log("Voice Clip Received");
-    const filePath = `src/audios/${message.id.id}.ogg`;
+    
+    // Ensure audio directory exists
+    const audioDir = 'src/audios';
+    if (!fs.existsSync(audioDir)) {
+      fs.mkdirSync(audioDir, { recursive: true });
+      console.log(`📁 Directorio creado: ${audioDir}`);
+    }
+    
+    const filePath = `${audioDir}/${message.id.id}.ogg`;
 
     const media = await message.downloadMedia()
       .then(async (data) => {
@@ -79,9 +87,16 @@ if (message.type === 'image') {
   console.log("Image Received");
   const media = await message.downloadMedia();
   
+  // Ensure images directory exists
+  const imageDir = 'src/images';
+  if (!fs.existsSync(imageDir)) {
+    fs.mkdirSync(imageDir, { recursive: true });
+    console.log(`📁 Directorio creado: ${imageDir}`);
+  }
+  
   // Determine file extension based on mimetype
   const extension = media.mimetype.split('/')[1] || 'jpg';
-  const filePath = `src/images/${message.id.id}.${extension}`;
+  const filePath = `${imageDir}/${message.id.id}.${extension}`;
   
   // Save image to disk
   const binaryData = Buffer.from(media.data, 'base64');
@@ -110,9 +125,16 @@ if (message.type === 'video') {
   console.log("Video Received");
   const media = await message.downloadMedia();
   
+  // Ensure videos directory exists
+  const videoDir = 'src/videos';
+  if (!fs.existsSync(videoDir)) {
+    fs.mkdirSync(videoDir, { recursive: true });
+    console.log(`📁 Directorio creado: ${videoDir}`);
+  }
+  
   // Determine file extension based on mimetype
   const extension = media.mimetype.split('/')[1] || 'mp4';
-  const filePath = `src/videos/${message.id.id}.${extension}`;
+  const filePath = `${videoDir}/${message.id.id}.${extension}`;
   
   // Save video to disk
   const binaryData = Buffer.from(media.data, 'base64');

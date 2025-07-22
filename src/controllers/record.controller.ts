@@ -33,7 +33,7 @@ const validateFieldValue = (value: any, field: any): any => {
 
     case 'date':
       const dateValue = new Date(value);
-      if (isNaN(dateValue.getTime())) {
+      if (isNaN(dateValue.getTime()) && value !== '') {
         throw new Error(`Campo '${field.label}' debe ser una fecha válida`);
       }
       return dateValue;
@@ -168,10 +168,10 @@ export const createDynamicRecord = async (req: Request, res: Response) => {
 
 export const getDynamicRecords = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
-  const { 
-    page = 1, 
-    limit = 100, 
-    sortBy = 'createdAt', 
+  const {
+    page = 1,
+    limit = 100,
+    sortBy = 'createdAt',
     sortOrder = 'desc',
     filters
   } = req.query;
@@ -188,10 +188,15 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       return;
     }
 
-    // Construir filtros de consulta
+    // Filtros base fijos
     const queryFilter: any = { tableSlug, c_name };
 
-    // Procesar filtros directos de query
+    // Arrays para almacenar filtros
+    const orTextFilters: any[] = [];
+    const orDateFilters: any[] = [];
+    const otherFilters: any[] = [];
+
+    // Procesar filtros directos de query (excluyendo parámetros especiales)
     for (const [key, value] of Object.entries(req.query)) {
       if (
         !['page', 'limit', 'sortBy', 'sortOrder', 'filters'].includes(key) &&
@@ -199,7 +204,6 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
         value !== null &&
         value !== ''
       ) {
-        // Buscar el tipo de campo en la tabla
         const fieldDef = table.fields.find((f: any) => f.name === key);
         let filterValue: any = value;
         if (fieldDef) {
@@ -209,25 +213,55 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               filterValue = Number(value);
               break;
             case 'boolean':
-              if (value === 'true') filterValue = true;
-              else if (value === 'false') filterValue = false;
+              filterValue = value === 'true';
+              break;
+            case 'date':
               break;
             default:
               filterValue = { $regex: `.*${value}.*`, $options: 'i' };
               break;
           }
         }
-        queryFilter[`data.${key}`] = filterValue;
       }
     }
 
-    // Aplicar filtros dinámicos si se proporcionan
+    // Procesar filtros dinámicos (JSON string)
     if (filters && typeof filters === 'string') {
       try {
         const parsedFilters = JSON.parse(filters);
+
         for (const [fieldName, value] of Object.entries(parsedFilters)) {
-          if (value !== undefined && value !== null && value !== '') {
-            queryFilter[`data.${fieldName}`] = value;
+          if (value === undefined || value === null || value === '') continue;
+
+          const dateFields = [
+            ...table.fields
+              .filter(field => field.type === 'date')
+              .map(field => field.name),
+            'createdAt'
+          ];
+
+          if (fieldName === 'textQuery') {
+            const textFields = table.fields
+              .filter(field => ['text', 'email'].includes(field.type))
+              .map(field => field.name);
+
+            const textSearch = textFields.map(field => ({
+              [`data.${field}`]: { $regex: value, $options: 'i' }
+            }));
+
+            orTextFilters.push(...textSearch);
+
+          } else if (dateFields.includes(fieldName)) {
+            const dateRange = value as { $gte?: string; $lte?: string };
+            const parsedRange: any = {};
+
+            if (dateRange.$gte) parsedRange.$gte = new Date(dateRange.$gte);
+            if (dateRange.$lte) parsedRange.$lte = new Date(dateRange.$lte);
+
+            orDateFilters.push({[fieldName]: parsedRange })
+            orDateFilters.push({[`data.${fieldName}`]: parsedRange })
+          } else {
+            otherFilters.push({ [`data.${fieldName}`]: value });
           }
         }
       } catch (error) {
@@ -235,13 +269,31 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
         return;
       }
     }
+    const andFilters: any[] = [];
+
+    if (orTextFilters.length > 0) {
+      andFilters.push({ $or: orTextFilters });
+    }
+
+    if (orDateFilters.length > 0) {
+      andFilters.push({ $or: orDateFilters });
+    }
+
+    if (otherFilters.length > 0) {
+      andFilters.push(...otherFilters);
+    }
+
+    // Si hay filtros combinados, agregarlos con $and
+    if (andFilters.length > 0) {
+      queryFilter.$and = andFilters;
+    }
 
     // Configurar paginación y ordenamiento
     const skip = (Number(page) - 1) * Number(limit);
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Obtener registros con o sin proyección
+    // Obtener registros
     const records = await Record.find(queryFilter)
       .sort(sort)
       .skip(skip)
@@ -261,9 +313,11 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
+    console.error('Error in getDynamicRecords:', error);
     res.status(500).json({ message: "Error fetching dynamic records", error });
   }
 };
+
 
 // Obtener todos los registros de una tabla
 export const getDynamicRecordsBot = async (req: Request, res: Response) => {
@@ -368,8 +422,6 @@ export const getDynamicRecordsBot = async (req: Request, res: Response) => {
 
     // Contar total de registros
     const total = await Record.countDocuments(queryFilter);
-
-    console.log(queryFilter);
 
     res.json({
       records,

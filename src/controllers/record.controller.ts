@@ -584,15 +584,35 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
       return;
     }
 
-    // Obtener tabla actualizada
-    const table = await Table.findOne({ slug: existingRecord.tableSlug, c_name, isActive: true });
+    // Extraer tableSlug de los datos si está presente
+    const { tableSlug: newTableSlug, ...dataWithoutTableSlug } = data;
+    const currentTableSlug = existingRecord.tableSlug;
+    const isTableSlugChanged = newTableSlug && newTableSlug !== currentTableSlug;
+
+    // Determinar qué tabla usar para validación
+    let targetTableSlug = currentTableSlug;
+    if (isTableSlugChanged) {
+      // Validar que la nueva tabla existe
+      const newTable = await Table.findOne({ slug: newTableSlug, c_name, isActive: true });
+      if (!newTable) {
+        res.status(404).json({ 
+          message: "New table not found or inactive", 
+          newTableSlug 
+        });
+        return;
+      }
+      targetTableSlug = newTableSlug;
+    }
+
+    // Obtener tabla para validación
+    const table = await Table.findOne({ slug: targetTableSlug, c_name, isActive: true });
     if (!table) {
       res.status(404).json({ message: "Table not found or inactive" });
       return;
     }
 
     // Combinar datos existentes con nuevos datos para actualización parcial
-    const combinedData = { ...existingRecord.data, ...data };
+    const combinedData = { ...existingRecord.data, ...dataWithoutTableSlug };
 
     // Validar datos combinados contra la estructura de tabla
     let validatedData: Record<string, any>;
@@ -609,6 +629,12 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
     // Actualizar el registro
     existingRecord.data = validatedData;
     existingRecord.updatedBy = updatedBy;
+    
+    // Si el tableSlug cambió, actualizarlo también
+    if (isTableSlugChanged) {
+      existingRecord.tableSlug = newTableSlug;
+    }
+    
     await existingRecord.save();
 
     res.status(200).json({ 
@@ -618,7 +644,9 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
         name: table.name,
         slug: table.slug,
         fields: table.fields
-      }
+      },
+      tableChanged: isTableSlugChanged,
+      previousTableSlug: isTableSlugChanged ? currentTableSlug : undefined
     });
   } catch (error) {
     res.status(500).json({ message: "Error updating dynamic record", error });

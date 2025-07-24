@@ -436,7 +436,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
           comentario: null,
           asesor: asesorRandom,
           ultimo_mensaje: body || null,
-          aiEnabled: false,
+          aiEnabled: true,
           lastMessageDate: new Date(),
           createdBy: "twilio-webhook",
           createdAt: new Date()

@@ -590,47 +590,37 @@ router.get("/usuarios", async (req: Request, res: Response) => {
       res.status(400).json({ error: "role query param is required" });
       return;
     }
-    
+    if (role === "Asesor" && !asesorId) {
+      res.status(400).json({ error: "asesorId query param is required for Asesor role" });
+      return;
+    }
+
     const limitNum = Math.min(parseInt(limit as string) || 20, 50); // Máximo 50 por request
     const slugs = (tableSlugs as string).split(",").map(s => s.trim()).filter(Boolean);
     const conn = await getConnectionByCompanySlug(companySlug as string);
     const Record = getRecordModel(conn);
 
-    // Obtener registros de las tablas especificadas
-    let records = await Record.find({ 
+    // Construir filtro Mongo
+    const filter: any = {
       tableSlug: { $in: slugs }
-    }).lean();
-
-    // Filtrar por asesor si el rol es Asesor
-    if (role === "Asesor") {
-      if (!asesorId) {
-        res.status(400).json({ error: "asesorId query param is required for Asesor role" });
-        return;
-      }
-      records = records.filter((record: any) => {
-        let asesor = record.data && record.data.asesor;
-      
-        // Si es un string que parece JSON, intenta parsear
-        if (typeof asesor === "string" && asesor.trim().startsWith("{")) {
-          try {
-            asesor = JSON.parse(asesor);
-          } catch (e) {
-            // Si no se puede parsear, ignora
-          }
-        }
-      
-        if (!asesor) return false;
-        if (typeof asesor === "string") return asesor === asesorId;
-        if (typeof asesor === "object" && asesor._id) return asesor._id === asesorId;
-        return false;
-      });
+    };
+    if (role === "Asesor" && asesorId) {
+      // Buscar el _id del asesor dentro del string JSON
+      filter["data.asesor"] = { $regex: `\\"_id\\":\\"${asesorId}\\"` };
+    }
+    if (cursor) {
+      filter["data.lastMessageDate"] = { $lt: new Date(cursor as string) };
     }
 
-    // Mapear registros para retornar solo el data, pero mantener lastMessageDate para ordenamiento
+    // Buscar y ordenar por fecha de último mensaje
+    const records = await Record.find(filter)
+      .sort({ "data.lastMessageDate": -1 })
+      .limit(limitNum + 1) // Traer uno extra para saber si hay más
+      .lean();
+
+    // Mapear registros para mantener compatibilidad con respuesta anterior
     const usuariosMapeados = records.map((record: any) => {
       const data = record.data || {};
-      
-      // Determinar el último mensaje y la fecha para ordenamiento
       let lastMessageDate = null;
       if (data.ultimo_mensaje) {
         if (data.lastMessageDate) {
@@ -639,52 +629,29 @@ router.get("/usuarios", async (req: Request, res: Response) => {
           lastMessageDate = new Date(data.ultimo_mensaje);
         }
       }
-      
       return {
         data: data,
-        lastMessageDate: lastMessageDate, // Solo para ordenamiento interno
+        lastMessageDate: lastMessageDate,
         tableSlug: record.tableSlug,
         _id: record._id,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt
       };
     });
-    
-    // Ordenar por lastMessageDate (más reciente primero)
-    const usuariosOrdenados = usuariosMapeados.sort((a: any, b: any) => {
-      const aTime = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
-      const bTime = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
-      return bTime - aTime;
-    });
-    
-    // Aplicar paginación con cursor
-    let usuariosFiltrados = usuariosOrdenados;
-    if (cursor) {
-      const cursorDate = new Date(cursor as string);
-      usuariosFiltrados = usuariosOrdenados.filter(usuario => {
-        if (!usuario.lastMessageDate) return true; // Usuarios sin mensajes van al final
-        return new Date(usuario.lastMessageDate) < cursorDate;
-      });
-    }
-    
-    // Aplicar límite
-    const usuariosLimitados = usuariosFiltrados.slice(0, limitNum);
-    
-    // Calcular paginación
-    const hasMore = usuariosFiltrados.length > limitNum;
-    const nextCursor = hasMore && usuariosLimitados.length > 0 
+
+    // Paginación
+    const hasMore = usuariosMapeados.length > limitNum;
+    const usuariosLimitados = hasMore ? usuariosMapeados.slice(0, limitNum) : usuariosMapeados;
+    const nextCursor = hasMore && usuariosLimitados.length > 0
       ? usuariosLimitados[usuariosLimitados.length - 1].lastMessageDate?.toISOString()
       : null;
-    
-    // Limpiar resultado para retornar solo el data
-    const usuariosFinales = usuariosLimitados.map(usuario => usuario);
-    
+
     res.status(200).json({
-      usuarios: usuariosFinales,
+      usuarios: usuariosLimitados,
       pagination: {
         hasMore,
         nextCursor,
-        total: records.length,
+        total: undefined, // No se calcula el total para evitar lentitud
         limit: limitNum
       }
     });

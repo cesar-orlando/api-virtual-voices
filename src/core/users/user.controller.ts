@@ -277,6 +277,13 @@ export const compareLogin = async (
           res.status(401).json({ error: "Credenciales inválidas" });
           return;
         }
+        
+        // Verificar si el usuario está eliminado
+        if (existingUser.status === "eliminado") {
+          res.status(403).json({ error: "Este usuario ha sido eliminado, no se puede acceder a la cuenta" });
+          return;
+        }
+        
         // Generate JWT token
         const token = jwt.sign(
           {
@@ -581,8 +588,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
     console.log("user", user);
-    if (user.status !== "active") {
-      res.status(403).json({ message: "Usuario no activo" });
+    // Verificar si el usuario está eliminado
+    if (user.status === "eliminado") {
+      res.status(403).json({ message: "Este usuario ha sido eliminado, no se puede acceder a la cuenta" });
       return;
     }
     const jwtSecret = getJwtSecret(companySlug);

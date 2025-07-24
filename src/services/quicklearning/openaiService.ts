@@ -108,6 +108,17 @@ const tools: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "request_human_advisor",
+      description: "Solicita que un asesor humano contacte al usuario y desactiva la IA para este chat.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
 ];
 
 /**
@@ -187,7 +198,7 @@ export class QuickLearningOpenAIService {
 
       // Llamada a OpenAI
       const completion = await this.openai.chat.completions.create({
-        model: "gpt-3.5-turbo-0125",
+        model: "gpt-4-turbo",
         messages: chatHistoryMessages as ChatCompletionMessageParam[],
         temperature: 0.3,
         top_p: 0.9,
@@ -209,7 +220,8 @@ export class QuickLearningOpenAIService {
 
         switch (functionName) {
           case "get_start_dates":
-            return get_start_dates();
+            // Respuesta genérica porque la función real no está disponible
+            return "📢 ¿Para qué fecha te gustaría empezar? Puedo revisar las semanas disponibles a partir de ese mes o día específico. 😊";
           case "register_user_name":
             return register_user_name(functionArgs.full_name, phoneUser);
           case "submit_student_complaint":
@@ -218,6 +230,17 @@ export class QuickLearningOpenAIService {
             return suggest_branch_or_virtual_course(functionArgs.city, phoneUser);
           case "suggest_nearby_branch":
             return suggest_nearby_branch(functionArgs, phoneUser);
+          case "request_human_advisor": {
+            // Obtener hora actual en zona horaria MX
+            const now = new Date();
+            const hour = now.getHours();
+            if (hour >= 21 || hour < 8) {
+              return "En este momento no hay asesores disponibles, pero en cuanto tengamos uno disponible te contactaremos. ¡Gracias por tu interés!";
+            }
+            // Desactivar IA y notificar a un asesor humano
+            await desactivarIAyNotificarAsesor(phoneUser);
+            return "Un asesor humano te contactará en breve para brindarte toda la información que necesitas. ¡Gracias por tu interés!";
+          }
           default:
             console.warn(`⚠️ Herramienta no reconocida: ${functionName}`);
             return "Un asesor se pondrá en contacto contigo en breve.";
@@ -227,6 +250,20 @@ export class QuickLearningOpenAIService {
       const response = completion.choices[0]?.message?.content || "No se pudo generar una respuesta.";
       console.log(`✅ Respuesta generada: ${response.substring(0, 100)}...`);
       
+      // Si la respuesta es informativa sobre el curso, agrega la invitación a contactar a un asesor
+      if (
+        response &&
+        // Debe contener palabras clave de información de curso
+        /horario|inversi[oó]n|duraci[oó]n|materiales|plataforma|clases|modalidad|virtual|presencial|online|curso intensivo|curso semi-intensivo|curso sabatino|incluye|acceso|sesiones ilimitadas|maestros|inscripción|precio|costo|grupo|semanas|meses|a tu ritmo|videollamada/i.test(response) &&
+        // No debe ser un saludo, pregunta inicial o confirmación de interés
+        !/usted es el interesado|con quién tengo el gusto|cómo te puedo ayudar|hola|buenas tardes|buenos días|información|nombre|platíqueme|ciudad|zona|colonia|área|modalidad prefieres|modalidad que mejor se adapte|¿cómo te gustaría aprender|¿te gustaría que aseguremos tu cupo|¿hay algo más en lo que pueda ayudarte|¿te ayudo a completar tu inscripción|¿te gustaría que te cuente más|¿te gustaría inscribirte o tienes alguna otra pregunta|asesor humano te contacte|Un asesor humano te contactará|asesores disponibles|problema t[eé]cnico|Un asesor se pondrá en contacto/i.test(response)
+      ) {
+        // Si ya termina con una invitación a inscribirse o preguntar, agrega la opción del asesor en la misma línea
+        if (/¿Te gustaría inscribirte o tienes alguna otra pregunta\??$/i.test(response.trim())) {
+          return response.trim() + "\nO si prefieres, ¿te gustaría que un asesor humano te contacte para brindarte más información o resolver tus dudas?";
+        }
+        return response.trim() + "\n\n¿Te gustaría que un asesor especializado te contacte para brindarte más información o resolver tus dudas?";
+      }
       return response;
 
     } catch (error) {
@@ -436,3 +473,17 @@ Si el usuario menciona 'queja', 'problema con maestro', 'quiero reportar algo' o
 
 // Exportar instancia singleton
 export const quickLearningOpenAIService = QuickLearningOpenAIService.getInstance();
+
+// Agregar función para desactivar la IA y notificar a un asesor
+async function desactivarIAyNotificarAsesor(phoneUser: string) {
+  // Usar reconexión para obtener el modelo y actualizar el chat
+  await executeQuickLearningWithReconnection(async (conn) => {
+    const QuickLearningChat = getQuickLearningChatModel(conn);
+    await QuickLearningChat.findOneAndUpdate(
+      { phone: phoneUser },
+      { $set: { aiEnabled: false } }
+    );
+    // Aquí puedes agregar la lógica para notificar a un asesor humano (por socket, email, etc.)
+    // Ejemplo: emitir un evento por socket.io o guardar en una tabla de tareas
+  });
+}

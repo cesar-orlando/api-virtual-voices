@@ -14,7 +14,7 @@ export const get_start_dates = async (requestedDate: string | null = null, isGen
     let config = {
       method: "get",
       maxBodyLength: Infinity,
-      url: "http://localhost:10000/api/v1/datecourses",
+      url: "https://api.quick-learning.virtualvoices.com.mx/api/v1/datecourses",
       headers: {},
     };
 
@@ -243,7 +243,7 @@ export const suggest_branch_or_virtual_course = async (city: string, WaId: strin
         const address = foundBranch.data.direccio_n || "Dirección no disponible";
         const mapLink = foundBranch.data.google_link || "Sin enlace de ubicación";
 
-        return `📍 ¡Excelente! Tenemos una sucursal en tu ciudad:\n\n🏫 *${name}*\n📍 Dirección: ${address}\n🌐 Google Maps: ${mapLink}\n\nContamos con tres modalidades:\n1. Presencial\n2. Virtual (videollamada en vivo)\n3. Online (plataforma autogestionada)\n\n¿Cuál prefieres?`;
+        return `📍 ¡Super bien! Contamos con tres modalidades:\n1. Presencial\n2. Virtual (videollamada en vivo)\n3. Online (plataforma autogestionada)\n\n¿Cuál prefieres?`;
       } else {
         // No se encontró sucursal, se responde con opciones virtuales
         const users = await User.find();

@@ -277,6 +277,13 @@ export const compareLogin = async (
           res.status(401).json({ error: "Credenciales inválidas" });
           return;
         }
+        
+        // Verificar si el usuario está eliminado
+        if (existingUser.status === "eliminado") {
+          res.status(403).json({ error: "Este usuario ha sido eliminado, no se puede acceder a la cuenta" });
+          return;
+        }
+        
         // Generate JWT token
         const token = jwt.sign(
           {
@@ -497,19 +504,19 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const dbExists = dbs.databases.some(db => db.name === companySlug);
     
     if (!dbExists) {
-      res.status(400).json({ message: "Invalid company" });
+      res.status(400).json({ message: "Compañia no encontrada" });
       return;
     }
     
     const connection = await getConnectionByCompanySlug(companySlug);
     if (!connection) {
-      res.status(400).json({ message: "Invalid company" });
+      res.status(400).json({ message: "Compañia no encontrada" });
       return;
     }
     const User = getUserModel(connection);
     const existing = await User.findOne({ email });
     if (existing) {
-      res.status(409).json({ message: "User already exists" });
+      res.status(409).json({ message: "Usuario ya existe" });
       return;
     }
     const hashed = await bcrypt.hash(password, 10);
@@ -542,11 +549,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const { email, password, companySlug } = req.body;
     console.log("req.body", req.body);
     if (!email || !password) {
-      res.status(400).json({ message: "Missing credentials" });
+      res.status(400).json({ message: "Credenciales Invalidas" });
       return;
     }
     if (!companySlug) {
-      res.status(400).json({ message: "Missing credentials" });
+      res.status(400).json({ message: "Credenciales Invalidas" });
       return;
     }
 
@@ -560,29 +567,30 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const dbExists = dbs.databases.some(db => db.name === companySlug);
     
     if (!dbExists) {
-      res.status(400).json({ message: "Invalid company" });
+      res.status(400).json({ message: "Compañia no encontrada" });
       return;
     }
     
     const connection = await getConnectionByCompanySlug(companySlug);
     if (!connection) {
-      res.status(400).json({ message: "Invalid company" });
+      res.status(400).json({ message: "Compañia no encontrada" });
       return;
     }
     const User = getUserModel(connection);
     const user = await User.findOne({ email });
     if (!user) {
-      res.status(401).json({ message: "Invalid credentials" });
+      res.status(401).json({ message: "Credenciales Invalidas" });
       return;
     }
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
-      res.status(401).json({ message: "Invalid credentials" });
+      res.status(401).json({ message: "Credenciales Invalidas" });
       return;
     }
     console.log("user", user);
-    if (user.status !== "active") {
-      res.status(403).json({ message: "User is not active" });
+    // Verificar si el usuario está eliminado
+    if (user.status === "eliminado") {
+      res.status(403).json({ message: "Este usuario ha sido eliminado, no se puede acceder a la cuenta" });
       return;
     }
     const jwtSecret = getJwtSecret(companySlug);

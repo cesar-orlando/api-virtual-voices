@@ -23,17 +23,24 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
 
     const token = authHeader.substring(7);
     const config = getEnvironmentConfig();
-    const decoded = jwt.verify(token, config.jwtSecret) as any;
     
-    const slug = decoded.companySlug || decoded.c_name;
-    if (slug) {
-      const companyContext = getCompanyContext(slug);
-      if (companyContext) {
-        req.companyContext = companyContext;
+    try {
+      const decoded = jwt.verify(token, config.jwtSecret) as any;
+      
+      const slug = decoded.companySlug || decoded.c_name;
+      if (slug) {
+        const companyContext = getCompanyContext(slug);
+        if (companyContext) {
+          req.companyContext = companyContext;
+        }
       }
+    } catch (jwtError: any) {
+      // Ignorar todos los errores de JWT (expired, invalid, etc.) y continuar
+      console.warn('⚠️ Token JWT inválido o expirado en ruta:', req.path);
+      // Continuar sin contexto de empresa
     }
   } catch (error) {
-    console.warn('⚠️ Error al decodificar token:', error);
+    console.warn('⚠️ Error general en middleware de autenticación:', error);
   }
   
   next();

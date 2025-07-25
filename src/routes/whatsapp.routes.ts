@@ -10,9 +10,8 @@ import {
   MessageToAll,
   sendWhatsappMessage,
   getChatMessages,
+  enviarFichaTecnica
 } from "../controllers/whatsapp.controller";
-
-import { enviarFichaTecnica } from '../services/whatsapp/handlers';
 
 const router = Router();
 

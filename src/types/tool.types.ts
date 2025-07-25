@@ -28,6 +28,11 @@ export interface ParameterProperty {
   required?: boolean;
   enum?: string[];
   format?: 'email' | 'phone' | 'date' | 'url' | 'uuid';
+  items?: {
+    type: "string";
+    format?: 'email' | 'phone' | 'date' | 'url' | 'uuid';
+    description?: string;
+  };
 }
 
 // Parámetros de herramienta

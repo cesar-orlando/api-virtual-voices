@@ -9,7 +9,6 @@ import {
   submit_student_complaint,
   suggest_branch_or_virtual_course,
   suggest_nearby_branch,
-  create_google_calendar_event,
 } from "./openaiTools";
 
 // Configuración de OpenAI
@@ -106,50 +105,6 @@ const tools: ChatCompletionTool[] = [
             description: "Longitud si el usuario mandó su ubicación",
           },
         },
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "create_google_calendar_event",
-      description: "Crea un evento en Google Calendar cuando el usuario solicite agendar, programar, crear una cita, reunión, evento, recordatorio, clase, examen, inscripción, o mencione cualquier actividad con fecha y hora específica. También cuando diga palabras como 'agéndame', 'recuérdame', 'programa', 'reserva', 'apartar', 'separa fecha', 'bloquea tiempo', etc. Úsala siempre que detectes intención de calendario o scheduling. IMPORTANTE: Siempre calcula las fechas basándote en la zona horaria de México (America/Mexico_City) y convierte a UTC para los parámetros.",
-      parameters: {
-        type: "object",
-        properties: {
-          summary: {
-            type: "string",
-            description: "Título o nombre del evento (requerido)",
-          },
-          startDateTime: {
-            type: "string",
-            description: "Fecha y hora de inicio en formato ISO 8601 UTC. DEBE estar en formato '2024-07-25T10:00:00.000Z'. Si el usuario dice 'mañana a las 2 PM', calcula la fecha de mañana y convierte 2 PM hora de México a UTC. Ejemplo: si el usuario dice '2 PM' y estamos en México, sería '20:00:00.000Z' en UTC (2 PM + 6 horas).",
-          },
-          endDateTime: {
-            type: "string", 
-            description: "Fecha y hora de fin en formato ISO 8601 UTC. DEBE estar en formato '2024-07-25T11:00:00.000Z'. Si no se especifica duración, asume 1 hora después del inicio. Convierte la hora de México a UTC agregando 6 horas (en horario estándar) o 5 horas (en horario de verano).",
-          },
-          description: {
-            type: "string",
-            description: "Descripción detallada del evento (opcional)",
-          },
-          location: {
-            type: "string",
-            description: "Ubicación del evento (opcional)",
-          },
-          attendeeEmails: {
-            type: "array",
-            items: {
-              type: "string",
-            },
-            description: "Lista de emails de los invitados (opcional)",
-          },
-          timeZone: {
-            type: "string",
-            description: "Zona horaria (por defecto 'America/Mexico_City')",
-          },
-        },
-        required: ["summary", "startDateTime", "endDateTime"],
       },
     },
   },
@@ -278,12 +233,6 @@ export class QuickLearningOpenAIService {
         console.log('\n🎪🎪🎪 TOOL CALL DETECTED IN AI RESPONSE! 🎪🎪🎪');
         console.log(`🔧 Ejecutando herramienta: ${functionName}`);
         console.log(`📋 Argumentos:`, functionArgs);
-        
-        // Special logging for Google Calendar tool
-        if (functionName === "create_google_calendar_event") {
-          console.log('📅 GOOGLE CALENDAR EVENT CREATION REQUESTED!');
-          console.log('⭐ This is the Google Calendar tool you wanted to track!');
-        }
 
         switch (functionName) {
           case "get_start_dates":
@@ -297,21 +246,6 @@ export class QuickLearningOpenAIService {
             return suggest_branch_or_virtual_course(functionArgs.city, phoneUser);
           case "suggest_nearby_branch":
             return suggest_nearby_branch(functionArgs, phoneUser);
-          case "create_google_calendar_event":
-            console.log('\n🎯🎯🎯 OPENAI DECIDED TO CALL GOOGLE CALENDAR TOOL! 🎯🎯🎯');
-            console.log('📞 Called from OpenAI Service');
-            console.log('📋 Function arguments from AI:', functionArgs);
-            console.log('🔄 About to call create_google_calendar_event function...');
-            
-            return create_google_calendar_event(
-              functionArgs.summary,
-              functionArgs.startDateTime,
-              functionArgs.endDateTime,
-              functionArgs.description,
-              functionArgs.location,
-              functionArgs.attendeeEmails,
-              functionArgs.timeZone || "America/Mexico_City"
-            );
           case "request_human_advisor": {
             // Obtener hora actual en zona horaria MX
             const now = new Date();

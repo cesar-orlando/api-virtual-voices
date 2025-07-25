@@ -426,3 +426,40 @@ export const getChatMessages = async (req: Request, res: Response) : Promise<voi
     res.status(500).json({ message: "Error fetching chat messages", error });
   }
 };
+
+export async function enviarFichaTecnica(req: Request, res: Response): Promise<any> {
+  try {
+    const { propertyId, phoneNumber, company, sessionName } = req.body;
+
+    if (company !== 'grupokg') {
+      return res.status(403).json({ success: false, message: 'Solo disponible para grupokg' });
+    }
+    if (!propertyId || !phoneNumber) {
+      return res.status(400).json({ success: false, message: 'propertyId y phoneNumber son requeridos' });
+    }
+
+    // Obtener la propiedad
+    const conn = await getConnectionByCompanySlug(company);
+    const Record = getRecordModel(conn);
+    const propiedad = await Record.findById(propertyId);
+    if (!propiedad || !propiedad.data.link_ficha_tecnica) {
+      return res.status(404).json({ success: false, message: 'No se encontró el link de la ficha técnica' });
+    }
+    const link = propiedad.data.link_ficha_tecnica;
+    const mensaje = `¡Gracias por tu interés! Aquí tienes la ficha técnica de la propiedad: ${link}`;
+
+    // Enviar mensaje por WhatsApp Web
+    const { clients } = require('./index');
+    const clientKey = `${company}:${sessionName}`;
+    const client = clients[clientKey];
+    if (!client) {
+      return res.status(500).json({ success: false, message: 'No se encontró la sesión de WhatsApp activa' });
+    }
+
+    await client.sendMessage(`${phoneNumber}@c.us`, mensaje);
+    return res.json({ success: true, message: 'Ficha técnica enviada exitosamente', link });
+  } catch (error) {
+    console.error('===> [enviarFichaTecnica] Error enviando ficha técnica:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al enviar ficha técnica' });
+  }
+}

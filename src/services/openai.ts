@@ -7,7 +7,7 @@ import { getDbConnection } from "../config/connectionManager";
 import getToolModel from "../models/tool.model";
 import { ToolExecutor } from "./toolExecutor";
 import { OpenAIToolSchema } from "../types/tool.types";
-import { create_google_calendar_event } from "./quicklearning/openaiTools";
+import { create_google_calendar_event } from "../services/google/calendarService";
 dotenv.config();
 
 // Obtener la configuración del entorno actual
@@ -465,6 +465,15 @@ export async function getToolsForCompany(c_name: string, chatHistory?: any[]): P
               type: "string",
               description: "Zona horaria del evento, por defecto 'America/Mexico_City'",
             },
+            attendeeEmails: {
+              type: "array",
+              items: {
+                type: "string",
+                format: "email",
+                description: "Correo electrónico de un invitado al evento"
+              },
+              description: "Lista de correos electrónicos de los asistentes al evento. Extrae todos los correos mencionados por el usuario y agrégalos aquí."
+            },
           },
           required: ["summary", "startDateTime", "endDateTime"],
         },
@@ -497,7 +506,8 @@ export async function getToolsForCompany(c_name: string, chatHistory?: any[]): P
             endDateTime: { type: "string", description: "Fecha y hora de fin en formato ISO 8601 UTC. HOY ES 25 DE JULIO DE 2025. Usar formato 2025-07-25T11:00:00.000Z" },
             description: { type: "string", description: "Descripción del evento" },
             location: { type: "string", description: "Ubicación del evento" },
-            timeZone: { type: "string", description: "Zona horaria, por defecto America/Mexico_City" }
+            timeZone: { type: "string", description: "Zona horaria, por defecto America/Mexico_City" },
+            attendeeEmails: { type: "array", items: { type: "string", format: "email", description: "Correo electrónico de un invitado al evento" }, description: "Lista de correos electrónicos de los asistentes al evento. Extrae todos los correos mencionados por el usuario y agrégalos aquí." },
           },
           required: ["summary", "startDateTime", "endDateTime"]
         }
@@ -541,7 +551,7 @@ export async function executeFunctionCall(
         parameters.endDateTime,
         parameters.description,
         parameters.location,
-        [], // Empty array for attendeeEmails since we removed it from schema
+        parameters.attendeeEmails || [],
         parameters.timeZone || "America/Mexico_City"
       );
       

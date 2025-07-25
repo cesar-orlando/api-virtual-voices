@@ -24,6 +24,41 @@ const pendingResponses = new Map<string, {
 
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
+  console.log('\n💬💬💬 WHATSAPP MESSAGE RECEIVED IN GENERAL HANDLER! 💬💬💬');
+  console.log(`📱 From: ${message.from}`);
+  console.log(`📝 Message: "${message.body}"`);
+  console.log(`🏢 Company: ${company}`);
+  console.log(`📱 Session: ${sessionName}`);
+  console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
+  
+  // Check if message contains intent to CREATE a new calendar event (not just calendar-related words)
+  const calendarCreationKeywords = [
+    'agendar', 'agéndame', 'programar', 'crear evento', 'crear cita', 
+    'reservar', 'apartar', 'separa', 'bloquea', 'quiero agendar',
+    'necesito agendar', 'programa una', 'crea un evento', 'agenda una'
+  ];
+  
+  const messageText = message.body?.toLowerCase() || '';
+  
+  // Check for calendar creation intent (more specific)
+  const hasCreationIntent = calendarCreationKeywords.some(keyword => 
+    messageText.includes(keyword.toLowerCase())
+  );
+  
+  // Exclude follow-up messages that are just providing info
+  const isFollowUpMessage = messageText.match(/^[a-zA-Z0-9@.\s]{1,50}$/) && 
+    (messageText.includes('@') || messageText.match(/^\d+$/) || messageText.split(' ').length <= 3);
+  
+  if (hasCreationIntent && !isFollowUpMessage) {
+    console.log('📅 ⚠️  MESSAGE CONTAINS CALENDAR CREATION INTENT - MIGHT TRIGGER GOOGLE CALENDAR TOOL!');
+    console.log(`🔍 Creation intent detected in: "${messageText}"`);
+  } else if (messageText.includes('calendar') || messageText.includes('evento') || messageText.includes('cita')) {
+    console.log('📝 Calendar-related words detected but no creation intent');
+  } else {
+    console.log('📝 No calendar creation intent detected');
+  }
+  console.log('='.repeat(70));
+
   if (message.isStatus) return;
 
   let statusText: string | undefined = undefined;
@@ -477,12 +512,19 @@ async function sendAndRecordBotResponse(
     .map(h => ({ role: h.role, content: h.content }));
 
   try {
+    console.log('\n🤖🤖🤖 CALLING AI GENERATERESPONSE FROM WHATSAPP HANDLER! 🤖🤖🤖');
+    console.log(`📞 Calling generateResponse for company: ${company}`);
+    console.log(`📝 Message to analyze: "${(existingRecord.messages?.slice(-1)[0] as any)?.body || 'unknown'}"`);
+    console.log(`🔧 Tools will be loaded for this company...`);
+    
     const response = await generateResponse(
       IAPrompt,
       config,
       safeHistoryForOpenAI,
       records,
       company) // Agregar c_name para las herramientas
+      
+    console.log(`✅ AI Response received: "${response?.substring(0, 100)}${response && response.length > 100 ? '...' : ''}"`);
     aiResponse = response || defaultResponse;
   } catch (error) {
     console.error("Error al obtener respuesta de OpenAI:", error);

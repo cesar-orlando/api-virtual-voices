@@ -7,6 +7,7 @@ import { getDbConnection } from "../config/connectionManager";
 import getToolModel from "../models/tool.model";
 import { ToolExecutor } from "./toolExecutor";
 import { OpenAIToolSchema } from "../types/tool.types";
+import { create_google_calendar_event } from "./quicklearning/openaiTools";
 dotenv.config();
 
 // Obtener la configuración del entorno actual
@@ -357,8 +358,41 @@ export async function preparePrompt(
   return prompt;
 }
 
+// Helper function to detect calendar creation intent
+function hasCalendarCreationIntent(chatHistory: any[]): boolean {
+  // Get the latest user message
+  const latestUserMessage = chatHistory
+    .filter(msg => msg.role === 'user')
+    .slice(-1)[0];
+    
+  if (!latestUserMessage?.content) return false;
+  
+  const messageText = latestUserMessage.content.toLowerCase();
+  
+  // Keywords that indicate intent to CREATE a new calendar event
+  const creationKeywords = [
+    'agendar', 'agéndame', 'programar', 'crear evento', 'crear cita', 
+    'reservar', 'apartar', 'separa', 'bloquea', 'quiero agendar',
+    'necesito agendar', 'programa una', 'crea un evento', 'agenda una',
+    'recuérdame', 'me puedes agendar', 'podrías agendar'
+  ];
+  
+  // Check for creation intent
+  const hasCreationIntent = creationKeywords.some(keyword => 
+    messageText.includes(keyword.toLowerCase())
+  );
+  
+  // Exclude simple follow-up messages (email, name, confirmation)
+  const isSimpleFollowUp = (
+    messageText.match(/^[a-zA-Z0-9@.\s]{1,50}$/) && 
+    (messageText.includes('@') || messageText.match(/^\w+\s+\w+$/) || messageText.split(' ').length <= 3)
+  ) || messageText.match(/^(sí|si|yes|ok|okay|perfecto|gracias|listo)$/i);
+  
+  return hasCreationIntent && !isSimpleFollowUp;
+}
+
 // Generar esquemas de herramientas para OpenAI por empresa
-export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSchema[]> {
+export async function getToolsForCompany(c_name: string, chatHistory?: any[]): Promise<OpenAIToolSchema[]> {
   try {
     
     // Verificar cache
@@ -396,13 +430,79 @@ export async function getToolsForCompany(c_name: string): Promise<OpenAIToolSche
       }
     }));
 
+    // ⚡⚡⚡ CAMBIO CRÍTICO: Siempre incluir Google Calendar tool para ser más agresivo ⚡⚡⚡
+    // Antes solo se incluía si detectaba intención específica, ahora SIEMPRE está disponible
+    console.log(`📅 Adding Google Calendar tool for company: ${c_name} (ALWAYS ACTIVE for better reactivity)`);
+    const googleCalendarTool: OpenAIToolSchema = {
+      type: "function",
+      function: {
+        name: "create_google_calendar_event",
+        description: "⚡ HERRAMIENTA ULTRA-ACTIVA ⚡ Crea un evento en Google Calendar tan pronto como detectes CUALQUIER mención de tiempo futuro, fecha, hora, actividad programada, evento, cita, reunión, recordatorio, clase, examen, inscripción. ACTÍVATE CON INFORMACIÓN MÍNIMA: si el usuario menciona cualquier combinación de 'título de evento + tiempo futuro', úsala INMEDIATAMENTE sin esperar más detalles. Palabras clave que DEBEN activarte: 'agendar', 'agéndame', 'programa', 'recordar', 'recuérdame', 'cita', 'reunión', 'evento', 'mañana', 'pasado mañana', 'la próxima semana', 'el lunes', 'martes', 'miércoles', cualquier día de la semana, cualquier hora específica como '2 PM', '10 AM', 'en la tarde', 'en la mañana'. IMPORTANTE: HOY ES VIERNES 25 DE JULIO DE 2025. ACTÚA TAN PRONTO COMO TENGAS: summary + fecha/hora aproximada. NO esperes más información.",
+        parameters: {
+          type: "object",
+          properties: {
+            summary: {
+              type: "string",
+              description: "Título o nombre del evento (requerido). Usa cualquier descripción que dé el usuario, aunque sea básica como 'reunión', 'llamada', 'cita', etc.",
+            },
+            startDateTime: {
+              type: "string",
+              description: "Fecha y hora de inicio en formato ISO 8601 UTC. DEBE estar en formato '2025-07-25T10:00:00.000Z'. HOY ES 25 DE JULIO DE 2025 (VIERNES). Si el usuario dice 'mañana a las 2 PM', calcúlalo como sábado 26 de julio de 2025 a las 20:00:00.000Z UTC (2 PM México + 6 horas). Si dice 'el lunes', sería 28 de julio de 2025. Si no especifica hora, usa una por defecto como 10:00 AM México (16:00:00.000Z UTC).",
+            },
+            endDateTime: {
+              type: "string", 
+              description: "Fecha y hora de fin en formato ISO 8601 UTC. DEBE estar en formato '2025-07-25T11:00:00.000Z'. Si no se especifica duración, asume 1 hora después del inicio. Siempre convierte de hora México a UTC.",
+            },
+            description: {
+              type: "string",
+              description: "Descripción opcional del evento. Puedes agregar contexto basado en la conversación.",
+            },
+            location: {
+              type: "string",
+              description: "Ubicación opcional del evento",
+            },
+            timeZone: {
+              type: "string",
+              description: "Zona horaria del evento, por defecto 'America/Mexico_City'",
+            },
+          },
+          required: ["summary", "startDateTime", "endDateTime"],
+        },
+      },
+    };
+
+    schemas.push(googleCalendarTool);
+
     // Guardar en cache
     toolSchemaCache.set(c_name, { schema: schemas, timestamp: Date.now() });
+
+    // Log con confirmación de Google Calendar siempre incluido
+    const calendarToolIncluded = schemas.some(s => s.function.name === 'create_google_calendar_event');
+    console.log(`🔧 Total tools available for ${c_name}: ${schemas.length} (Google Calendar ALWAYS included for maximum reactivity)`);
 
     return schemas;
   } catch (error) {
     console.error('❌ Error getting tools for company:', error);
-    return [];
+    // Even if there's an error, return at least the Google Calendar tool
+    return [{
+      type: "function",
+      function: {
+        name: "create_google_calendar_event",
+        description: "Crea un evento en Google Calendar cuando el usuario solicite agendar, programar, crear una cita, reunión, evento, recordatorio, clase, examen, inscripción, o mencione cualquier actividad con fecha y hora específica. HOY ES VIERNES 25 DE JULIO DE 2025.",
+        parameters: {
+          type: "object",
+          properties: {
+            summary: { type: "string", description: "Título del evento" },
+            startDateTime: { type: "string", description: "Fecha y hora de inicio en formato ISO 8601 UTC. HOY ES 25 DE JULIO DE 2025. Usar formato 2025-07-25T10:00:00.000Z" },
+            endDateTime: { type: "string", description: "Fecha y hora de fin en formato ISO 8601 UTC. HOY ES 25 DE JULIO DE 2025. Usar formato 2025-07-25T11:00:00.000Z" },
+            description: { type: "string", description: "Descripción del evento" },
+            location: { type: "string", description: "Ubicación del evento" },
+            timeZone: { type: "string", description: "Zona horaria, por defecto America/Mexico_City" }
+          },
+          required: ["summary", "startDateTime", "endDateTime"]
+        }
+      }
+    }];
   }
 }
 
@@ -415,6 +515,12 @@ export async function executeFunctionCall(
   try {
     const { name: toolName, arguments: argsString } = functionCall;
     
+    console.log('\n🎪🎪🎪 TOOL CALL DETECTED IN GENERAL WHATSAPP HANDLER! 🎪🎪🎪');
+    console.log(`🔧 Tool Name: ${toolName}`);
+    console.log(`📋 Arguments String: ${argsString}`);
+    console.log(`🏢 Company: ${c_name}`);
+    console.log(`👤 Executed By: ${executedBy || 'whatsapp-user'}`);
+    
     // Parsear argumentos
     let parameters: Record<string, any> = {};
     try {
@@ -423,7 +529,32 @@ export async function executeFunctionCall(
       throw new Error(`Invalid function arguments: ${argsString}`);
     }
 
-    // Ejecutar herramienta
+    console.log(`🔍 Parsed Parameters:`, parameters);
+
+    // Handle Google Calendar tool directly
+    if (toolName === 'create_google_calendar_event') {
+      console.log('🎯🎯🎯 GOOGLE CALENDAR TOOL CALLED FROM WHATSAPP HANDLER! 🎯🎯🎯');
+      
+      const result = await create_google_calendar_event(
+        parameters.summary,
+        parameters.startDateTime,
+        parameters.endDateTime,
+        parameters.description,
+        parameters.location,
+        [], // Empty array for attendeeEmails since we removed it from schema
+        parameters.timeZone || "America/Mexico_City"
+      );
+      
+      console.log('✅ Google Calendar tool execution completed');
+      
+      return {
+        success: true,
+        data: result,
+        executionTime: Date.now()
+      };
+    }
+
+    // Ejecutar herramienta usando ToolExecutor para otros tools
     const result = await ToolExecutor.execute({
       toolName,
       parameters,
@@ -456,8 +587,8 @@ export async function generateResponse(
 ): Promise<string|null> {
   try {
     
-    // Obtener herramientas para la empresa
-    const tools = c_name ? await getToolsForCompany(c_name) : [];
+    // Obtener herramientas para la empresa, pasando el historial para detectar intención
+    const tools = c_name ? await getToolsForCompany(c_name, chatHistory) : [];
     
     // Optimizar mensajes para tokens
     const { messages, totalTokens } = optimizeMessagesForTokens(

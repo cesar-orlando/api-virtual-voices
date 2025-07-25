@@ -7,6 +7,7 @@ import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import toolRoutes from "./routes/tool.routes";
 import uploadRoutes from "./routes/upload.routes";
+import googleCalendarRoutes from "./routes/googleCalendar.routes";
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -69,6 +70,16 @@ app.use(detectCompanyFromToken);
 // Inicializar proyectos al arrancar
 initializeProjects();
 
+// OAuth inicial token access y refresh
+fetch('http://localhost:3001/api/google-calendar/auto-refresh-token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' }
+}).then(() => {
+  console.log('✅ Initial token refresh completed');
+}).catch(err => {
+  console.log('⚠️ Initial token refresh failed:', err.message);
+});
+
 // ========================================
 // CORE USER SYSTEM ROUTES (Multi-Empresa)
 // ========================================
@@ -94,6 +105,14 @@ app.use("/api/tools", toolRoutes);
 
 // Rutas para subida de archivos
 app.use("/api/upload", uploadRoutes);
+
+// Rutas para Google Calendar
+app.use("/api/google-calendar", googleCalendarRoutes);
+
+// Google OAuth callback route (must be at root level to match redirect URI)
+// Removed in simplified version - not needed for direct token approach
+// import { handleGoogleCallback } from "./controllers/googleCalendar.controller";
+// app.get("/auth/google/callback", handleGoogleCallback);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);

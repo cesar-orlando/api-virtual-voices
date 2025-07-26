@@ -21,41 +21,6 @@ const pendingResponses = new Map<string, {
 
 export async function handleIncomingMessage(message: Message, client: Client, company: string, sessionName: string) {
 
-  console.log('\n💬💬💬 WHATSAPP MESSAGE RECEIVED IN GENERAL HANDLER! 💬💬💬');
-  console.log(`📱 From: ${message.from}`);
-  console.log(`📝 Message: "${message.body}"`);
-  console.log(`🏢 Company: ${company}`);
-  console.log(`📱 Session: ${sessionName}`);
-  console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
-  
-  // Check if message contains intent to CREATE a new calendar event (not just calendar-related words)
-  const calendarCreationKeywords = [
-    'agendar', 'agéndame', 'programar', 'crear evento', 'crear cita', 
-    'reservar', 'apartar', 'separa', 'bloquea', 'quiero agendar',
-    'necesito agendar', 'programa una', 'crea un evento', 'agenda una'
-  ];
-  
-  const messageText = message.body?.toLowerCase() || '';
-  
-  // Check for calendar creation intent (more specific)
-  const hasCreationIntent = calendarCreationKeywords.some(keyword => 
-    messageText.includes(keyword.toLowerCase())
-  );
-  
-  // Exclude follow-up messages that are just providing info
-  const isFollowUpMessage = messageText.match(/^[a-zA-Z0-9@.\s]{1,50}$/) && 
-    (messageText.includes('@') || messageText.match(/^\d+$/) || messageText.split(' ').length <= 3);
-  
-  if (hasCreationIntent && !isFollowUpMessage) {
-    console.log('📅 ⚠️  MESSAGE CONTAINS CALENDAR CREATION INTENT - MIGHT TRIGGER GOOGLE CALENDAR TOOL!');
-    console.log(`🔍 Creation intent detected in: "${messageText}"`);
-  } else if (messageText.includes('calendar') || messageText.includes('evento') || messageText.includes('cita')) {
-    console.log('📝 Calendar-related words detected but no creation intent');
-  } else {
-    console.log('📝 No calendar creation intent detected');
-  }
-  console.log('='.repeat(70));
-
   if (message.isStatus) return;
 
   let statusText: string | undefined = undefined;
@@ -135,7 +100,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       $or: [
         { phone: cleanUserPhone },
         { phone: `${cleanUserPhone}@c.us` }
-      ]
+      ],
+      'session.name': sessionName
     });
 
     // --- VALIDACIÓN DE IA EN PROSPECTOS ---

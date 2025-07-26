@@ -58,6 +58,18 @@ export async function updateChatRecord(
     }
   }
 
+  // Si el mensaje es outbound/outbound-api, marca todos los mensajes previos no enviados por mí como 'leído'
+  if (direction === "outbound" || direction === "outbound-api") {
+    chatRecord.messages.forEach((msg: any) => {
+      if (
+        msg.direction === "inbound"  &&
+        msg.status !== "leído"
+      ) {
+        msg.status = "leído";
+      }
+    });
+  }
+
   chatRecord.messages.push({
     msgId: messageId,
     direction: direction,

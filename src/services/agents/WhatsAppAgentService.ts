@@ -40,7 +40,7 @@ export class WhatsAppAgentService {
         
         if (!aiEnabled) {
           console.log(`🚫 IA desactivada para ${phoneUser}, no procesando mensaje`);
-          return "Un asesor se pondrá en contacto contigo pronto.";
+          return "Ya pasé tu consulta a uno de mis compañeros. Te contactará muy pronto para ayudarte.";
         }
       } catch (error) {
         console.error(`❌ Error verificando aiEnabled para ${phoneUser}:`, error);
@@ -92,13 +92,15 @@ export class WhatsAppAgentService {
           console.error(`❌ Error en intento ${attempt}/3 para ${company}:`, error);
           
           if (attempt === 3) {
-            console.log(`⚠️ Todos los intentos fallaron, usando sistema de fallback`);
-            // Try fallback to old system
+            console.log(`⚠️ Todos los intentos fallaron, desactivando IA y transfiriendo a asesor`);
+            // Disable AI and return professional message
             try {
-              return await this.fallbackToOldSystem(company, message, phoneUser, conn, chatHistory);
-            } catch (fallbackError) {
-              console.error(`❌ Fallback también falló:`, fallbackError);
-              throw error; // Throw original error
+              await this.disableAIForUser(phoneUser, conn, company);
+              console.log(`🔴 IA desactivada automáticamente para ${phoneUser} después de 3 intentos fallidos`);
+              return "Disculpa, en este momento no puedo ayudarte como quisiera. Voy a pasar tu consulta a uno de mis compañeros que te podrá atender mejor. Te contactará en unos minutos.";
+            } catch (disableError) {
+              console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
+              return "Disculpa, no me es posible ayudarte en este momento. Voy a transferir tu consulta para que te atiendan de la mejor manera. Te contactarán pronto.";
             }
           } else {
             // Wait before retry (exponential backoff)
@@ -120,42 +122,12 @@ export class WhatsAppAgentService {
         console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
       }
       
-      // Fallback response (professional, no mention of technical error)
-      return "Un asesor especializado se pondrá en contacto contigo en breve para ayudarte con tu consulta.";
+      // Fallback response (human-like, no mention of technical error)
+      return "Disculpa, necesito que uno de mis compañeros te ayude con esto. Te van a contactar muy pronto para darte toda la información que necesitas.";
     }
   }
 
-  /**
-   * Fallback to old system when new agents fail
-   */
-  private async fallbackToOldSystem(company: string, message: string, phoneUser: string, conn: Connection, chatHistory: any[]): Promise<string> {
-    // console.log(`🔄 Usando sistema de fallback para ${company}`);
-    
-    try {
-      if (company === 'quicklearning') {
-        // Use QuickLearning old system
-        const { quickLearningOpenAIService } = await import('../quicklearning/openaiService');
-        return await quickLearningOpenAIService.generateResponse(message, phoneUser);
-      } else {
-        // For other companies, provide a basic response and transfer to advisor
-        // console.log(`📞 Fallback: Transfiriendo a asesor para ${company}`);
-        
-        // Basic professional response for other companies
-        const responses = {
-          'grupokg': 'Gracias por contactarnos. Un asesor especializado en bienes raíces se pondrá en contacto contigo en breve para ayudarte con tu consulta sobre propiedades.',
-          'grupo-milkasa': 'Gracias por contactarnos. Un asesor especializado en propiedades se pondrá en contacto contigo en breve para ayudarte con tu consulta inmobiliaria.',
-          'britanicomx': 'Gracias por contactarnos al Colegio Británico. Un asesor educativo se pondrá en contacto contigo en breve para ayudarte con información sobre nuestros programas académicos.'
-        };
-        
-        return responses[company as keyof typeof responses] || 
-               'Gracias por contactarnos. Un asesor especializado se pondrá en contacto contigo en breve para ayudarte con tu consulta.';
-      }
-    } catch (fallbackError) {
-      console.error(`❌ Error en fallback para ${company}:`, fallbackError);
-      // Last resort: professional transfer message
-      return 'Gracias por contactarnos. Un asesor especializado se pondrá en contacto contigo en breve para ayudarte con tu consulta.';
-    }
-  }
+
 
   /**
    * Disable AI for user when error occurs

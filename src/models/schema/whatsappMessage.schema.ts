@@ -5,6 +5,7 @@ const whatsappMessage: Schema = new Schema(
   {
     direction: { type: String, required: true }, // Inbound o Outbound
     body: { type: Schema.Types.Mixed, required: true }, // Mensaje
+    status: { type: String, enum: ['enviado', 'recibido', 'leído'], required: true, default: 'recibido' }, // Estado del mensaje
     createdAt: {
         type: Date,
         default: Date.now,

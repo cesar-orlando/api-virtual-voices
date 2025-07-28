@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
 import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
+import { WhatsAppAgentService } from "../../services/agents/WhatsAppAgentService";
 import { getConnectionByCompanySlug, executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
 import getRecordModel from "../../models/record.model";
@@ -13,6 +14,9 @@ import { Server as SocketIOServer } from "socket.io";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
+
+// Instancia del nuevo sistema de agentes
+const whatsAppAgentService = new WhatsAppAgentService();
 
 // Buffer de mensajes para agrupar mensajes rápidos
 const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Timeout }>();
@@ -301,10 +305,15 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       // Combinar todos los mensajes del buffer
       const combinedMessage = buffer.messages.join("\n");
       
-      console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser}`);
+      console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser} con NUEVO SISTEMA DE AGENTES`);
       
-      // Generar respuesta de IA
-      const aiResponse = await quickLearningOpenAIService.generateResponse(combinedMessage, phoneUser);
+      // Generar respuesta usando el NUEVO sistema de agentes
+      const aiResponse = await whatsAppAgentService.processWhatsAppMessage(
+        'quicklearning',
+        combinedMessage,
+        phoneUser,
+        conn
+      );
 
       // Enviar respuesta
       const result = await twilioService.sendMessage({
@@ -342,28 +351,106 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           // Emitir notificación por socket para respuesta del bot
           emitNewMessageNotification(phoneUser, botMessage, chat);
 
-          // Actualizar campo ultimo_mensaje en la tabla de alumnos
-          try {
-            await Record.updateOne(
-              { 
-                tableSlug: "alumnos",
-                "data.telefono": phoneUser,
-                c_name: "quicklearning"
-              },
-              { 
-                $set: { 
-                  "data.ultimo_mensaje": currentDate,
-                  "data.lastMessage": aiResponse
-                } 
+          // Verificar si es mensaje de transferencia a asesor
+          const isTransferMessage = aiResponse.toLowerCase().includes('transferir con un asesor') || aiResponse.toLowerCase().includes('te voy a transferir');
+          
+          if (isTransferMessage) {
+            console.log(`🔄 Transferencia a asesor detectada para ${phoneUser}. Desactivando IA...`);
+            
+            // Desactivar IA en el chat
+            chat.aiEnabled = false;
+            await chat.save();
+
+            // Asignar asesor disponible y enviar mensaje de seguimiento
+            try {
+              const { advisor, message: advisorMessage } = await assignAvailableAdvisor(phoneUser, conn);
+              
+              // Enviar mensaje adicional sobre la asignación del asesor
+              if (advisorMessage) {
+                const followUpResult = await twilioService.sendMessage({
+                  to: phoneUser,
+                  body: advisorMessage,
+                });
+
+                if (followUpResult.success) {
+                  // Guardar el mensaje de seguimiento en el chat
+                  chat.messages.push({
+                    direction: "outbound-api",
+                    body: advisorMessage,
+                    dateCreated: new Date(),
+                    respondedBy: "bot",
+                    responseTime: 0,
+                    twilioSid: followUpResult.messageId || `follow-${Date.now()}`,
+                    mediaUrl: [],
+                    messageType: "text",
+                    metadata: {}
+                  });
+                  await chat.save();
+
+                  console.log(`📨 Mensaje de asignación de asesor enviado a ${phoneUser}: ${advisorMessage}`);
+                  
+                  if (advisor) {
+                    console.log(`👨‍💼 Chat asignado al asesor: ${advisor.name} (${advisor.email})`);
+                  } else {
+                    console.log(`⏰ Transferencia programada para mañana temprano`);
+                  }
+                } else {
+                  console.error(`❌ Error enviando mensaje de asignación: ${followUpResult.error}`);
+                }
               }
-            );
-            console.log(`📝 Campo ultimo_mensaje actualizado en tabla alumnos (respuesta bot) para: ${phoneUser}`);
-          } catch (error) {
-            console.error(`❌ Error actualizando ultimo_mensaje en tabla alumnos (respuesta bot):`, error);
+            } catch (error) {
+              console.error(`❌ Error en asignación de asesor para ${phoneUser}:`, error);
+            }
+          }
+          
+          // Actualizar registros en TODAS las tablas (alumnos, prospectos, clientes, sin_contestar)
+          const tableSlugs = ["alumnos", "prospectos", "nuevo_ingreso", "sin_contestar"];
+          let updated = false;
+          
+          for (const tableSlug of tableSlugs) {
+            try {
+              const updateData: any = {
+                "data.ultimo_mensaje": currentDate,
+                "data.lastMessage": aiResponse
+              };
+              
+              // Si es transferencia, también desactivar IA
+              if (isTransferMessage) {
+                updateData["data.aiEnabled"] = false;
+              }
+              
+              const result = await Record.updateOne(
+                { 
+                  tableSlug,
+                  $or: [
+                    { "data.telefono": phoneUser },
+                    { "data.phone": phoneUser }
+                  ],
+                  c_name: "quicklearning"
+                },
+                { $set: updateData }
+              );
+              
+              if (result.modifiedCount > 0) {
+                updated = true;
+                if (isTransferMessage) {
+                  console.log(`🚫 IA desactivada en tabla ${tableSlug} para ${phoneUser} - Transferencia completada`);
+                } else {
+                  console.log(`📝 Registro actualizado en tabla ${tableSlug} para ${phoneUser}`);
+                }
+                break; // Solo actualizar en la primera tabla donde se encuentre
+              }
+            } catch (error) {
+              console.error(`❌ Error actualizando tabla ${tableSlug}:`, error);
+            }
+          }
+          
+          if (!updated) {
+            console.warn(`⚠️ No se encontró el usuario ${phoneUser} en ninguna tabla para actualizar`);
           }
         });
 
-        console.log(`✅ Respuesta enviada a ${phoneUser}`);
+        console.log(`✅ Respuesta del NUEVO AGENTE enviada a ${phoneUser}`);
       } else {
         console.error(`❌ Error enviando respuesta: ${result.error}`);
       }
@@ -371,7 +458,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       // Limpiar buffer
       messageBuffers.delete(phoneUser);
     } catch (error) {
-      console.error("❌ Error procesando mensaje:", error);
+      console.error("❌ Error procesando mensaje con nuevo agente:", error);
       messageBuffers.delete(phoneUser);
     }
   }, 3000); // Esperar 3 segundos antes de procesar
@@ -946,3 +1033,114 @@ export const simulateAdvisorTyping = async (phone: string, isTyping: boolean, ad
     console.error("❌ Error simulando escritura del asesor:", error);
   }
 };
+
+/**
+ * Asignar un asesor activo disponible al chat
+ */
+async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{advisor: any, message: string}> {
+  try {
+    const User = getUserModel(conn);
+    const ChatModel = getQuickLearningChatModel(conn);
+    
+    // Verificar si el usuario ya tiene un asesor asignado
+    const existingChat = await ChatModel.findOne({ phone: phoneUser });
+    
+    if (existingChat && existingChat.advisor && existingChat.advisor.id) {
+      // Verificar si el asesor asignado sigue activo
+      const currentAdvisor = await User.findOne({
+        _id: existingChat.advisor.id,
+        role: 'Asesor',
+        status: 'active',
+        companySlug: 'quicklearning'
+      }).select('_id name email');
+
+      if (currentAdvisor) {
+        // El asesor actual sigue activo, mantenerlo
+        console.log(`👨‍💼 Asesor actual ${currentAdvisor.name} sigue activo para ${phoneUser}. Manteniendo asignación.`);
+        
+        const message = `Tu consulta sigue asignada a ${currentAdvisor.name}, tu asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
+        
+        return { advisor: currentAdvisor, message };
+      } else {
+        // El asesor actual ya no está activo, necesitamos reasignar
+        console.log(`⚠️ Asesor anterior ${existingChat.advisor.name} ya no está activo para ${phoneUser}. Reasignando...`);
+      }
+    }
+    
+    // Buscar asesores activos de QuickLearning (solo si no tiene asesor activo)
+    const availableAdvisors = await User.find({
+      role: 'Asesor',
+      status: 'active',
+      companySlug: 'quicklearning'
+    }).select('_id name email');
+
+    const currentHour = new Date().getHours();
+    const isAfterHours = currentHour >= 21; // Después de las 9 PM
+
+    if (availableAdvisors.length === 0) {
+      // No hay asesores disponibles - LIMPIAR asignación anterior
+      await ChatModel.updateOne(
+        { phone: phoneUser },
+        { 
+          $unset: { advisor: "" } // Eliminar asesor anterior
+        }
+      );
+
+      const message = isAfterHours 
+        ? "Gracias por tu interés. Nuestros asesores no están disponibles en este momento. Mañana temprano un asesor se pondrá en contacto contigo para ayudarte. ¡Que tengas buena noche!"
+        : "Gracias por tu interés. En este momento nuestros asesores están ocupados. Uno de ellos se pondrá en contacto contigo a la brevedad.";
+      
+      console.log(`⚠️ Sin asesores disponibles para ${phoneUser}. Asignación anterior eliminada.`);
+      return { advisor: null, message };
+    }
+
+          if (isAfterHours) {
+        // Hay asesores pero es después de las 9 PM - LIMPIAR asignación anterior
+        await ChatModel.updateOne(
+          { phone: phoneUser },
+          { 
+            $unset: { advisor: "" } // Eliminar asesor anterior
+          }
+        );
+
+      const message = "Gracias por tu interés. Aunque tenemos asesores disponibles, nuestro horario de atención ha terminado. Mañana temprano un asesor se pondrá en contacto contigo para ayudarte. ¡Que tengas buena noche!";
+      
+      console.log(`🌙 Horario nocturno para ${phoneUser}. Asignación anterior eliminada.`);
+      return { advisor: null, message };
+    }
+
+    // Seleccionar un asesor (por ahora el primero disponible, se puede mejorar con lógica de balanceo)
+    const selectedAdvisor = availableAdvisors[0];
+    
+    // Actualizar el chat con el asesor asignado
+    await ChatModel.updateOne(
+      { phone: phoneUser },
+      { 
+        $set: { 
+          advisor: {
+            id: selectedAdvisor._id,
+            name: selectedAdvisor.name
+          }
+        }
+      }
+    );
+
+    console.log(`👨‍💼 Asesor asignado: ${selectedAdvisor.name} (${selectedAdvisor.email}) para ${phoneUser}`);
+    
+    const message = `Tu consulta ha sido transferida a ${selectedAdvisor.name}, uno de nuestros asesores especializados. Se pondrá en contacto contigo en breve para ayudarte.`;
+    
+    return { advisor: selectedAdvisor, message };
+
+  } catch (error) {
+    console.error(`❌ Error asignando asesor para ${phoneUser}:`, error);
+    
+    const currentHour = new Date().getHours();
+    const isAfterHours = currentHour >= 21;
+    
+    const message = isAfterHours 
+      ? "Gracias por tu interés. Mañana temprano un asesor se pondrá en contacto contigo para ayudarte. ¡Que tengas buena noche!"
+      : "Gracias por tu interés. Un asesor se pondrá en contacto contigo a la brevedad.";
+    
+    return { advisor: null, message };
+  }
+}

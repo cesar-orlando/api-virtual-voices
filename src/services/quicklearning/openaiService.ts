@@ -158,6 +158,21 @@ export class QuickLearningOpenAIService {
    */
   public async generateResponse(message: string, phoneUser: string): Promise<string> {
     try {
+      console.log('\n💬💬💬 WHATSAPP MESSAGE RECEIVED FOR AI PROCESSING! 💬💬💬');
+      console.log(`📱 Phone: ${phoneUser}`);
+      console.log(`📝 Message: "${message}"`);
+      console.log('🔍 Checking if message contains calendar-related keywords...');
+      
+      // Check if message might trigger calendar tool
+      const calendarKeywords = ['agendar', 'reunión', 'evento', 'cita', 'calendar', 'meeting', 'appointment'];
+      const hasCalendarKeywords = calendarKeywords.some(keyword => 
+        message.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (hasCalendarKeywords) {
+        console.log('📅 ⚠️  MESSAGE CONTAINS CALENDAR KEYWORDS - MIGHT TRIGGER GOOGLE CALENDAR TOOL!');
+      }
+      
       // Obtener el contexto inicial del sistema
       const initialContext = await this.generateSystemPrompt();
 
@@ -215,6 +230,7 @@ export class QuickLearningOpenAIService {
         const functionName = toolCall.function.name;
         const functionArgs = JSON.parse(toolCall.function.arguments);
         
+        console.log('\n🎪🎪🎪 TOOL CALL DETECTED IN AI RESPONSE! 🎪🎪🎪');
         console.log(`🔧 Ejecutando herramienta: ${functionName}`);
         console.log(`📋 Argumentos:`, functionArgs);
 

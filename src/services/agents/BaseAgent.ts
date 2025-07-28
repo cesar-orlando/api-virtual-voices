@@ -62,20 +62,26 @@ export abstract class BaseAgent {
       // Build conversation history for context
       let conversationContext = '';
       if (context?.chatHistory && context.chatHistory.length > 0) {
-        conversationContext = '\n\n### 📝 **HISTORIAL DE CONVERSACIÓN:**\n';
+        conversationContext = '\n\nHISTORIAL DE CONVERSACION:\n';
         context.chatHistory.forEach((msg: any, index: number) => {
-          const role = msg.role === 'user' ? '👤 Usuario' : '🤖 NatalIA';
-          conversationContext += `${role}: ${msg.content}\n`;
+          const role = msg.role === 'user' ? 'Usuario' : 'NatalIA';
+          // Escape special characters that could break JSON
+          const cleanContent = msg.content
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, ' ')
+            .replace(/\r/g, ' ')
+            .replace(/\t/g, ' ');
+          conversationContext += `${role}: ${cleanContent}\n`;
         });
-        conversationContext += '\n### 🎯 **CONTEXTO ACTUAL:**\n';
+        conversationContext += '\nCONTEXTO ACTUAL:\n';
         conversationContext += `- Nombre del usuario: ${this.extractUserName(context.chatHistory)}\n`;
-        conversationContext += `- Etapa de conversación: ${this.determineConversationStage(context.chatHistory)}\n`;
+        conversationContext += `- Etapa de conversacion: ${this.determineConversationStage(context.chatHistory)}\n`;
         conversationContext += `- Modalidad elegida: ${this.extractChosenModality(context.chatHistory)}\n`;
       }
       
       // Add conversation context to the message
       const messageWithContext = conversationContext ? 
-        `${conversationContext}\n\n### 💬 **MENSAJE ACTUAL DEL USUARIO:**\n${message}` : 
+        `${conversationContext}\n\nMENSAJE ACTUAL DEL USUARIO:\n${message}` : 
         message;
       
       const agentContext: AgentContext = {

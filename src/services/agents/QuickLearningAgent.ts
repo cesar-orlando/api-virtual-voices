@@ -45,20 +45,20 @@ export class QuickLearningAgent extends BaseAgent {
           description: 'Get detailed information about Virtual courses including schedules and prices.',
           parameters: z.object({}) as any,
           execute: async () => {
-            return `CURSOS VIRTUALES:
+                          return `CURSOS VIRTUALES:
 
 Esquemas disponibles:
 - Intensivo: Lunes a viernes, 3 horas diarias, 4 semanas (60 horas)
   Horarios: 09:30-12:30 | 18:00-21:00
-  Precio: $6,280 MXN
+  Inversión: $6,280 MXN
 
 - Semi-intensivo: Lunes a viernes, 1.5 horas diarias, 4 semanas (30 horas)
   Horarios: 07:00-08:30 | 09:30-11:00 | 16:00-17:30 | 18:00-19:30 | 19:30-21:00
-  Precio: $4,030 MXN
+  Inversión: $4,030 MXN
 
 - Sabatino: Sábados, 7.5 horas, 4 semanas (30 horas)
   Horario: 08:00-15:30
-  Precio: $4,030 MXN
+  Inversión: $4,030 MXN
 
 Incluye: Material de estudio, examen de ubicación opcional, sin cuota de inscripción, pago mensual, descuentos del 9% o 18% desde el 2do ciclo, Quick Life (profesores disponibles 9 AM a 9 PM), Quick Online (plataforma interactiva 24/7).`;
           }
@@ -68,7 +68,7 @@ Incluye: Material de estudio, examen de ubicación opcional, sin cuota de inscri
           description: 'Get detailed information about Online courses including memberships and prices.',
           parameters: z.object({}) as any,
           execute: async () => {
-            return `CURSOS ONLINE:
+                          return `CURSOS ONLINE:
 
 Membresías disponibles:
 - 1 mes: $1,250 MXN
@@ -86,7 +86,7 @@ Características: Plataforma interactiva 24/7, tabla fonética a color, reconoci
             courseType: z.string().describe('Type of course: Virtual or Online')
           }) as any,
           execute: async ({ courseType }) => {
-            return `INFORMACIÓN DE TRANSFERENCIA BANCARIA:
+                          return `INFORMACIÓN DE TRANSFERENCIA BANCARIA:
 
 Para completar tu inscripción, realiza el pago por transferencia bancaria y envía el comprobante a: pagoscinf@quicklearning.com
 
@@ -427,15 +427,15 @@ Cuando ya tenga todos los datos, envía la información completa de transferenci
 **CURSOS VIRTUALES:**
 - **Intensivo:** Lunes a viernes, 3 horas diarias, 4 semanas (60 horas)
   Horarios: 09:30-12:30 | 18:00-21:00
-  Precio: $6,280 MXN
+  Inversión: $6,280 MXN
 
 - **Semi-intensivo:** Lunes a viernes, 1.5 horas diarias, 4 semanas (30 horas)
   Horarios: 07:00-08:30 | 09:30-11:00 | 16:00-17:30 | 18:00-19:30 | 19:30-21:00
-  Precio: $4,030 MXN
+  Inversión: $4,030 MXN
 
 - **Sabatino:** Sábados, 7.5 horas, 4 semanas (30 horas)
   Horario: 08:00-15:30
-  Precio: $4,030 MXN
+  Inversión: $4,030 MXN
 
 **Incluye:** Material de estudio, examen de ubicación opcional, sin cuota de inscripción, pago mensual, descuentos del 9% o 18% desde el 2do ciclo, Quick Life (profesores disponibles 9 AM a 9 PM), Quick Online (plataforma interactiva 24/7).
 

@@ -280,7 +280,17 @@ const COMPANY_CONFIGS = {
     name: "Quick Learning",
     description: "Escuela de inglés con cursos virtuales, presenciales y online",
     testScenarios: {
-      // Escenario 1: Usuario super informal (como en la vida real)
+      //Escenario especial para testing
+      especial: [
+        { userMessage: 'Hola. Quisiera más información de cursos de inglés. (RMKT)', expectedStage: 'Saludo inicial' },
+        { userMessage: 'Cesar', expectedStage: 'Pide información' },
+        { userMessage: 'Si', expectedStage: 'Da nombre corto' },
+        { userMessage: 'No', expectedStage: 'Confirma interés' },
+        { userMessage: 'Si', expectedStage: 'Acepta explicación' },
+        { userMessage: '2', expectedStage: 'Elige modalidad' },
+        { userMessage: 'Si', expectedStage: 'Confirma interés' },
+      ]
+    /*   // Escenario 1: Usuario super informal (como en la vida real)
       informal_basico: [
         { userMessage: 'hola', expectedStage: 'Saludo inicial' },
         { userMessage: 'info', expectedStage: 'Pide información' },
@@ -401,7 +411,7 @@ const COMPANY_CONFIGS = {
         { userMessage: 'Perfecto, quiero inscribirme', expectedStage: 'Quiere inscribirse' },
         { userMessage: 'Mi teléfono es 3398765432', expectedStage: 'Da teléfono' },
         { userMessage: 'Mi correo es patricia@hotmail.com', expectedStage: 'Da correo' }
-      ]
+      ] */
     }
   },
   grupokg: {

@@ -32,10 +32,28 @@ const validateFieldValue = (value: any, field: any): any => {
       return numValue;
 
     case 'date':
-      const dateValue = new Date(value);
-      if (isNaN(dateValue.getTime()) && value !== '') {
-        throw new Error(`Campo '${field.label}' debe ser una fecha válida`);
+      // Handle empty values
+      if (value === undefined || value === null || value === '') {
+        return null;
       }
+      
+      let dateValue: Date;
+      
+      // Handle Excel serial date numbers (days since 1900-01-01)
+      if (typeof value === 'number') {
+        // Excel date serial number conversion
+        // Excel counts from 1900-01-01, but has a leap year bug (treats 1900 as leap year)
+        const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
+        dateValue = new Date(excelEpoch.getTime() + (value * 24 * 60 * 60 * 1000));
+      } else {
+        // Try to parse as regular date string
+        dateValue = new Date(value);
+      }
+      
+      if (isNaN(dateValue.getTime())) {
+        throw new Error(`Campo '${field.label}' debe ser una fecha válida. Recibido: ${value} (tipo: ${typeof value})`);
+      }
+      
       return dateValue;
 
     case 'boolean':

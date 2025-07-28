@@ -165,18 +165,69 @@ export class GeneralAgent extends BaseAgent {
                   c_name: this.company
                 };
                 
-                // Agregar filtros basados en los parámetros
+                // Función para crear regex que funcione con y sin acentos
+                const createFlexibleRegex = (text: string): RegExp => {
+                  const normalized = text
+                    .toLowerCase()
+                    .replace(/á/g, '[áa]')
+                    .replace(/é/g, '[ée]')
+                    .replace(/í/g, '[íi]')
+                    .replace(/ó/g, '[óo]')
+                    .replace(/ú/g, '[úu]')
+                    .replace(/ñ/g, '[ñn]')
+                    .replace(/a/g, '[áa]')
+                    .replace(/e/g, '[ée]')
+                    .replace(/i/g, '[íi]')
+                    .replace(/o/g, '[óo]')
+                    .replace(/u/g, '[úu]')
+                    .replace(/n/g, '[ñn]')
+                    .replace(/\s+/g, '\\s*'); // Espacios flexibles
+                  
+                  return new RegExp(normalized, 'i');
+                };
+
+                // Agregar filtros basados en los parámetros (con búsqueda flexible)
+                const orConditions: any[] = [];
+                
                 if (mappedParams['renta_venta_inversión ']) {
-                  query['data.renta_venta_inversión '] = new RegExp(mappedParams['renta_venta_inversión '], 'i');
+                  query['data.renta_venta_inversión '] = createFlexibleRegex(mappedParams['renta_venta_inversión ']);
                 }
+                
+                // Para búsquedas de ubicación, usar $or para buscar en múltiples campos
                 if (mappedParams.colonia) {
-                  query['data.colonia'] = new RegExp(mappedParams.colonia, 'i');
+                  const flexibleRegex = createFlexibleRegex(mappedParams.colonia);
+                  orConditions.push(
+                    { 'data.colonia': flexibleRegex },
+                    { 'data.domicilio': flexibleRegex },
+                    { 'data.titulo': flexibleRegex },
+                    { 'data.zona': flexibleRegex }
+                  );
+                }
+                
+                if (orConditions.length > 0) {
+                  query['$or'] = orConditions;
                 }
                 if (mappedParams.titulo) {
-                  query['data.titulo'] = new RegExp(mappedParams.titulo, 'i');
+                  const flexibleRegex = createFlexibleRegex(mappedParams.titulo);
+                  if (!query['$or']) {
+                    query['$or'] = [];
+                  }
+                  query['$or'].push(
+                    { 'data.titulo': flexibleRegex },
+                    { 'data.colonia': flexibleRegex },
+                    { 'data.domicilio': flexibleRegex }
+                  );
                 }
                 if (mappedParams.domicilio) {
-                  query['data.domicilio'] = new RegExp(mappedParams.domicilio, 'i');
+                  const flexibleRegex = createFlexibleRegex(mappedParams.domicilio);
+                  if (!query['$or']) {
+                    query['$or'] = [];
+                  }
+                  query['$or'].push(
+                    { 'data.domicilio': flexibleRegex },
+                    { 'data.colonia': flexibleRegex },
+                    { 'data.titulo': flexibleRegex }
+                  );
                 }
                 
                 console.log(`🔧 Query for ${companyTool.name}:`, query);

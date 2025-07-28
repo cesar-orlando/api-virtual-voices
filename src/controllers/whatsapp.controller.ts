@@ -26,7 +26,7 @@ export const getAllWhatsappMessages = async (req: Request, res: Response) => {
 // Obtiene usuarios de múltiples tablas con su último mensaje de WhatsApp
 export const getWhatsappUsers = async (req: Request, res: Response) => {
   try {
-    const { c_name } = req.params;
+    const { c_name, user_id } = req.params;
     const { tableSlugs } = req.query;
     
     if (!tableSlugs) {
@@ -37,14 +37,26 @@ export const getWhatsappUsers = async (req: Request, res: Response) => {
     const slugs = (tableSlugs as string).split(",").map(s => s.trim()).filter(Boolean);
     const conn = await getConnectionByCompanySlug(c_name);
     const WhatsappChat = getWhatsappChatModel(conn);
-    
-    // Buscar directamente en WhatsappChat por tableSlug
-    const chats = await WhatsappChat.find({ tableSlug: { $in: slugs } }).lean();
-    
+
+    const UserConfig = getUserModel(conn);
+    const user = await UserConfig.findById(user_id);
+
+    let chats
+
+    if (user.role == "Administrador") {
+      chats = await WhatsappChat.find({ tableSlug: { $in: slugs } }).lean();
+    } else {
+      const WhatsappSession = getSessionModel(conn);
+      const userSessions = await WhatsappSession.find({ "user.id": user_id });
+      // Buscar directamente en WhatsappChat por tableSlug
+      chats = await WhatsappChat.find({ tableSlug: { $in: slugs }, "session.id": { $in: userSessions.map(session => session.id) } }).lean();
+    }
+
     // Mapear los chats a usuarios con su último mensaje
     const usuarios = chats.map((chat: any) => {
       let lastMessage = null;
       let totalMessages = 0;
+      let unreadMessages = 0;
       
       if (chat.messages && chat.messages.length > 0) {
         totalMessages = chat.messages.length;
@@ -57,6 +69,7 @@ export const getWhatsappUsers = async (req: Request, res: Response) => {
           date: lastMsg.createdAt || new Date(),
           _id: lastMsg._id
         };
+        unreadMessages = chat.messages.filter((msg: any) => msg.status !== 'leído' && msg.direction === 'inbound').length;
       }
       
       // Limpiar el número de teléfono (remover @c.us si existe)
@@ -72,7 +85,12 @@ export const getWhatsappUsers = async (req: Request, res: Response) => {
         botActive: chat.botActive || false,
         totalMessages,
         createdAt: chat.createdAt,
-        updatedAt: chat.updatedAt
+        updatedAt: chat.updatedAt,
+        session: {
+          id: chat.session?.id,
+          name: chat.session?.name
+        },
+        unreadMessages
       };
     });
     
@@ -91,7 +109,7 @@ export const getWhatsappUsers = async (req: Request, res: Response) => {
 // Obtiene un usuario específico por número de teléfono
 export const getWhatsappUserByPhone = async (req: Request, res: Response) => {
   try {
-    const { c_name, phone } = req.params;
+    const { c_name, sessionId, phone } = req.params;
     const conn = await getConnectionByCompanySlug(c_name);
     const WhatsappChat = getWhatsappChatModel(conn);
     
@@ -103,7 +121,8 @@ export const getWhatsappUserByPhone = async (req: Request, res: Response) => {
       $or: [
         { phone: cleanPhone },
         { phone: `${cleanPhone}@c.us` }
-      ]
+      ],
+      "session.id": sessionId
     }).lean();
     
     if (!chat) {
@@ -185,13 +204,14 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
   } else {
     try {
       // Espera a que la sesión esté lista antes de guardar en la base de datos
-      await startWhatsappBot(sessionName, c_name, user_id);
+      const client = await startWhatsappBot(sessionName, c_name, user_id);
 
       const defaultIAConfig = await IAConfig.findOne({ type: "general" }); // Obtiene el prompt general por defecto
 
       const newSession = new WhatsappSession({
         name: sessionName,
         user: { id: user_id, name: user_name },
+        phone: client.info.wid._serialized || '',
         IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name },
       });
 
@@ -345,42 +365,15 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
     const conn = await getConnectionByCompanySlug(c_name);
 
     const WhatsappSession = getSessionModel(conn);
-    const WhatsappChat = getWhatsappChatModel(conn);
 
     const session = await WhatsappSession.findById(sessionId);
-    let chatRecord = await WhatsappChat.findOne({ phone });
 
     if (!session) {
       res.status(404).json({ message: "Session not found" });
       return;
     }
 
-    if (!chatRecord) {
-      chatRecord = new WhatsappChat({
-        tableSlug: "clientes",
-        phone: phone,
-        session: {
-          id: session?.id,
-          name: session?.name,
-        },
-        //Se le asigna por default al usuario dueño de la sesion
-        advisor: {
-          id: session?.user.id,
-          name: session?.user.name,
-        },
-      });
-    }
-
-    const msg = clients[`${c_name}:${session.name}`].sendMessage(phone, message);
-
-    chatRecord.messages.push({
-      direction: "outbound",
-      body: message,
-      respondedBy: "human",
-      msgId: (await msg).id.id
-    });
-
-    await chatRecord.save();
+    clients[`${c_name}:${session.name}`].sendMessage(phone, message);
 
     res.status(200).json({ message: "Message sent" });
   } catch (error) {
@@ -391,7 +384,7 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
 // Obtiene el historial de mensajes de un usuario específico (por número limpio o con @c.us)
 export const getChatMessages = async (req: Request, res: Response) : Promise<void> => {
   try {
-    const { c_name, phone } = req.params;
+    const { c_name, sessionId, phone } = req.params;
     const conn = await getConnectionByCompanySlug(c_name);
     const WhatsappChat = getWhatsappChatModel(conn);
 
@@ -401,7 +394,8 @@ export const getChatMessages = async (req: Request, res: Response) : Promise<voi
       $or: [
         { phone: cleanPhone },
         { phone: `${cleanPhone}@c.us` }
-      ]
+      ],
+      "session.id": sessionId
     }).lean();
 
     if (!chat) {

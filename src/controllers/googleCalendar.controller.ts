@@ -6,11 +6,6 @@ import { Request, Response } from "express";
  */
 export const getAccessTokenWithCredentials = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log('\n🔑🔑🔑 GETTING FRESH ACCESS TOKEN WITH CREDENTIALS! 🔑🔑🔑');
-    console.log('='.repeat(60));
-    console.log(`⏰ Timestamp: ${new Date().toISOString()}`);
-    console.log(`📍 Endpoint: POST /api/google-calendar/get-access-token`);
-    console.log('='.repeat(60));
 
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
@@ -25,9 +20,6 @@ export const getAccessTokenWithCredentials = async (req: Request, res: Response)
       });
       return;
     }
-
-    console.log(`🔐 Using Client ID: ${clientId.substring(0, 20)}...`);
-    console.log(`🔐 Using Refresh Token: ${refreshToken.substring(0, 20)}...`);
 
     // Prepare the request body for Google OAuth token endpoint
     const tokenRequestBody = new URLSearchParams({
@@ -63,8 +55,6 @@ export const getAccessTokenWithCredentials = async (req: Request, res: Response)
     }
 
     console.log('✅ Successfully obtained new access token from Google!');
-    console.log(`📝 Token type: ${responseData.token_type}`);
-    console.log(`⏰ Expires in: ${responseData.expires_in} seconds`);
 
     // Calculate expiry date
     const expiryDate = new Date(Date.now() + (responseData.expires_in * 1000));
@@ -78,11 +68,6 @@ export const getAccessTokenWithCredentials = async (req: Request, res: Response)
       // Keep the same refresh token (Google usually doesn't send a new one unless specifically requested)
       refresh_token: refreshToken
     };
-
-    console.log('🎯 Token Data Summary:');
-    console.log(`   - Access Token: ${tokenData.access_token.substring(0, 30)}...`);
-    console.log(`   - Expires: ${tokenData.expiry_date}`);
-    console.log(`   - Scope: ${tokenData.scope}`);
 
     res.status(200).json({
       success: true,

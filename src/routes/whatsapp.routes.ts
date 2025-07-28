@@ -15,9 +15,9 @@ import {
 
 const router = Router();
 
-router.get("/messages/:c_name/:phone", getChatMessages);
+router.get("/messages/:c_name/:sessionId/:phone", getChatMessages);
 router.get("/messages/:c_name", getAllWhatsappMessages);
-router.get("/usuarios/:c_name", getWhatsappUsers);
+router.get("/usuarios/:c_name/:user_id", getWhatsappUsers);
 router.get("/usuarios/:c_name/:phone", getWhatsappUserByPhone);
 router.get("/session/:c_name/:user_id", getAllWhatsappSessions);
 router.post("/session", createWhatsappSession);

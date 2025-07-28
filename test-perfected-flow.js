@@ -287,8 +287,10 @@ const COMPANY_CONFIGS = {
         { userMessage: 'Si', expectedStage: 'Da nombre corto' },
         { userMessage: 'No', expectedStage: 'Confirma interés' },
         { userMessage: 'Si', expectedStage: 'Acepta explicación' },
+        { userMessage: 'Si', expectedStage: 'Acepta explicación' },
         { userMessage: '2', expectedStage: 'Elige modalidad' },
         { userMessage: 'Si', expectedStage: 'Confirma interés' },
+        { userMessage: 'SI', expectedStage: 'Si quiere inscribirse' },
       ]
     /*   // Escenario 1: Usuario super informal (como en la vida real)
       informal_basico: [

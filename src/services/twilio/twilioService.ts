@@ -96,8 +96,7 @@ export class TwilioService {
       // Enviar mensaje
       const message = await this.client.messages.create(messageOptions);
 
-      console.log(`✅ Mensaje enviado exitosamente: ${message.sid}`);
-      console.log(`📱 De: ${messageOptions.from} → Para: ${messageOptions.to}`);
+      // console.log(`📱 De: ${messageOptions.from} → Para: ${messageOptions.to}`);
       
       return {
         success: true,

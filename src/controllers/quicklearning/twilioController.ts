@@ -28,7 +28,6 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
   try {
     // Obtener la instancia de socket.io desde la app
     const io = (global as any).io as SocketIOServer;
-    console.log("🔌 Socket.IO disponible:", !!io);
     if (!io) {
       console.log("⚠️ Socket.io no está disponible para notificaciones");
       return;
@@ -69,8 +68,6 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
     // Emitir evento a todos los clientes conectados
     io.emit("nuevo_mensaje_whatsapp", notificationData);
 
-    console.log(`📡 Notificación emitida para chat: ${phone}`);
-    console.log(`📊 Datos enviados:`, JSON.stringify(notificationData, null, 2));
   } catch (error) {
     console.error("❌ Error emitiendo notificación por socket:", error);
   }
@@ -120,7 +117,6 @@ function emitMessageRead(phone: string, userId: string) {
  */
 export const twilioWebhook = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log("📩 Webhook recibido de Twilio:", req.body);
 
     const {
       From,

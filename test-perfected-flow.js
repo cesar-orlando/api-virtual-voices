@@ -1,6 +1,6 @@
-const axios = require('axios');
+const axios = require("axios");
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = "http://localhost:3001";
 
 // 🗄️ Base de datos local en memoria para simular MongoDB
 class LocalDatabase {
@@ -19,7 +19,7 @@ class LocalDatabase {
       aiEnabled: true,
       status: "active",
       messages: [],
-      lastMessage: null
+      lastMessage: null,
     };
     this.chats.set(phone, chat);
     return chat;
@@ -43,14 +43,14 @@ class LocalDatabase {
         comentario: null,
         asesor: JSON.stringify({
           name: "Test Asesor",
-          _id: "test-asesor-id"
+          _id: "test-asesor-id",
         }),
         ultimo_mensaje: null,
         aiEnabled: true,
         lastMessageDate: new Date(),
         createdBy: "test-simulator",
-        createdAt: new Date()
-      }
+        createdAt: new Date(),
+      },
     };
     this.records.set(`${tableSlug}-${phone}`, record);
     return record;
@@ -67,14 +67,14 @@ class LocalDatabase {
       respondedBy: message.respondedBy,
       twilioSid: `SM${this.messageId++}`,
       messageType: message.messageType || "text",
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     chat.messages.push(newMessage);
     chat.lastMessage = {
       body: message.body,
       date: new Date(),
-      respondedBy: message.respondedBy
+      respondedBy: message.respondedBy,
     };
 
     return newMessage;
@@ -83,7 +83,7 @@ class LocalDatabase {
   // Actualizar registro
   updateRecord(phone, updateData) {
     const tableSlugs = ["alumnos", "prospectos", "nuevo_ingreso", "sin_contestar"];
-    
+
     for (const tableSlug of tableSlugs) {
       const key = `${tableSlug}-${phone}`;
       const record = this.records.get(key);
@@ -100,10 +100,10 @@ class LocalDatabase {
     const chat = this.chats.get(phone);
     if (!chat) return [];
 
-    return chat.messages.map(msg => ({
+    return chat.messages.map((msg) => ({
       role: msg.direction === "inbound" ? "user" : "assistant",
       content: msg.body,
-      timestamp: msg.timestamp
+      timestamp: msg.timestamp,
     }));
   }
 
@@ -117,7 +117,7 @@ class LocalDatabase {
 
 // 🤖 Simulador de WhatsApp Agent Service
 class WhatsAppSimulator {
-  constructor(company = 'quicklearning') {
+  constructor(company = "quicklearning") {
     this.db = new LocalDatabase();
     this.company = company;
   }
@@ -143,12 +143,12 @@ class WhatsAppSimulator {
     try {
       // Obtener historial actual del chat
       const currentHistory = this.db.getChatHistory(phone);
-      
+
       const response = await axios.post(`${BASE_URL}/api/test/agent`, {
         message: message,
         companySlug: this.company,
         phone: phone,
-        chatHistory: currentHistory
+        chatHistory: currentHistory,
       });
 
       const aiResponse = response.data.data.agentResponse;
@@ -159,7 +159,7 @@ class WhatsAppSimulator {
         direction: "inbound",
         body: message,
         respondedBy: "human",
-        messageType: "text"
+        messageType: "text",
       });
 
       // Agregar respuesta del bot al historial local
@@ -167,12 +167,14 @@ class WhatsAppSimulator {
         direction: "outbound-api",
         body: aiResponse,
         respondedBy: "bot",
-        messageType: "text"
+        messageType: "text",
       });
 
       // Verificar si es mensaje de transferencia
-      if (aiResponse.toLowerCase().includes('transferir con un asesor') || 
-          aiResponse.toLowerCase().includes('te voy a transferir')) {
+      if (
+        aiResponse.toLowerCase().includes("transferir con un asesor") ||
+        aiResponse.toLowerCase().includes("te voy a transferir")
+      ) {
         console.log(`🔄 [SIMULADOR] Transferencia detectada para ${phone}`);
         chat.aiEnabled = false;
         this.db.updateRecord(phone, { aiEnabled: false });
@@ -181,23 +183,22 @@ class WhatsAppSimulator {
       // Actualizar último mensaje en registro local
       this.db.updateRecord(phone, {
         ultimo_mensaje: aiResponse,
-        lastMessageDate: new Date()
+        lastMessageDate: new Date(),
       });
 
       return {
         response: aiResponse,
         responseTime,
         aiEnabled: chat.aiEnabled,
-        messageCount: chat.messages.length
+        messageCount: chat.messages.length,
       };
-
     } catch (error) {
       console.error(`❌ [SIMULADOR] Error procesando mensaje:`, error.message);
       return {
         response: "Error en el procesamiento",
         responseTime: 0,
         aiEnabled: chat.aiEnabled,
-        messageCount: chat.messages.length
+        messageCount: chat.messages.length,
       };
     }
   }
@@ -215,61 +216,63 @@ class WhatsAppSimulator {
 
 // Función para crear una tabla de conversación mejorada
 function createConversationTable(title, conversation) {
-  console.log(`\n${'='.repeat(100)}`);
+  console.log(`\n${"=".repeat(100)}`);
   console.log(`💬 ${title}`);
-  console.log('='.repeat(100));
-  
-  console.log('👤 Usuario | 🤖 NatalIA | ⏱️ Tiempo | 📊 Etapa | 🤖 IA');
-  console.log('-'.repeat(120));
-  
+  console.log("=".repeat(100));
+
+  console.log("👤 Usuario | 🤖 NatalIA | ⏱️ Tiempo | 📊 Etapa | 🤖 IA");
+  console.log("-".repeat(120));
+
   conversation.forEach((exchange, index) => {
     console.log(`👤 ${exchange.userMessage}`);
     console.log(`🤖 ${exchange.botResponse}`);
-    console.log(`⏱️ ${exchange.responseTime}ms | 📊 ${exchange.stage || 'N/A'} | ${exchange.aiEnabled ? '✅' : '🚫'} IA`);
+    console.log(
+      `⏱️ ${exchange.responseTime}ms | 📊 ${exchange.stage || "N/A"} | ${exchange.aiEnabled ? "✅" : "🚫"} IA`
+    );
     if (index < conversation.length - 1) {
-      console.log('─'.repeat(60));
+      console.log("─".repeat(60));
     }
   });
-  
-  console.log('='.repeat(100));
+
+  console.log("=".repeat(100));
 }
 
 // Función para ejecutar un escenario de prueba
-async function runTestScenario(scenarioName, messages, phone, profileName, company = 'quicklearning') {
+async function runTestScenario(scenarioName, messages, phone, profileName, company = "quicklearning") {
   console.log(`\n🧪 ${scenarioName}`);
   console.log(`📱 Phone: ${phone} | 👤 Profile: ${profileName} | 🏢 Company: ${company}`);
-  
+
   const simulator = new WhatsAppSimulator(company);
   const results = [];
-  
+
   for (const exchange of messages) {
     const startTime = Date.now();
-    
+
     const result = await simulator.processMessage(phone, exchange.userMessage, profileName);
     const responseTime = Date.now() - startTime;
-    
+
     results.push({
       userMessage: exchange.userMessage,
       botResponse: result.response,
       responseTime: result.responseTime || responseTime,
       stage: exchange.expectedStage,
       aiEnabled: result.aiEnabled,
-      messageCount: result.messageCount
+      messageCount: result.messageCount,
     });
-    
+
     // Pausa entre mensajes para simular tiempo real
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  
+
   createConversationTable(scenarioName, results);
-  
+
   // Mostrar historial completo
   const fullHistory = simulator.getFullHistory(phone);
   console.log(`\n📚 Historial completo (${fullHistory.length} mensajes):`);
   fullHistory.forEach((msg, index) => {
-    console.log(`${index + 1}. ${msg.role === 'user' ? '👤' : '🤖'} ${msg.content}`);
+    console.log(`${index + 1}. ${msg.role === "user" ? "👤" : "🤖"} ${msg.content}`);
   });
-  
+
   simulator.clear();
   return results;
 }
@@ -282,17 +285,17 @@ const COMPANY_CONFIGS = {
     testScenarios: {
       //Escenario especial para testing
       especial: [
-        { userMessage: 'Hola. Quisiera más información de cursos de inglés. (RMKT)', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Cesar', expectedStage: 'Pide información' },
-        { userMessage: 'Si', expectedStage: 'Da nombre corto' },
-        { userMessage: 'No', expectedStage: 'Confirma interés' },
-        { userMessage: 'Si', expectedStage: 'Acepta explicación' },
-        { userMessage: 'Si', expectedStage: 'Acepta explicación' },
-        { userMessage: '2', expectedStage: 'Elige modalidad' },
-        { userMessage: 'Si', expectedStage: 'Confirma interés' },
-        { userMessage: 'SI', expectedStage: 'Si quiere inscribirse' },
-      ]
-    /*   // Escenario 1: Usuario super informal (como en la vida real)
+        { userMessage: "Hola. Quisiera más información de cursos de inglés. (RMKT)", expectedStage: "Saludo inicial" },
+        { userMessage: "Cesar", expectedStage: "Pide información" },
+        { userMessage: "Si", expectedStage: "Da nombre corto" },
+        { userMessage: "No", expectedStage: "Confirma interés" },
+        { userMessage: "Si", expectedStage: "Acepta explicación" },
+        { userMessage: "Si", expectedStage: "Acepta explicación" },
+        { userMessage: "2", expectedStage: "Elige modalidad" },
+        { userMessage: "Si", expectedStage: "Confirma interés" },
+        { userMessage: "SI", expectedStage: "Si quiere inscribirse" },
+      ],
+      /*   // Escenario 1: Usuario super informal (como en la vida real)
       informal_basico: [
         { userMessage: 'hola', expectedStage: 'Saludo inicial' },
         { userMessage: 'info', expectedStage: 'Pide información' },
@@ -414,17 +417,32 @@ const COMPANY_CONFIGS = {
         { userMessage: 'Mi teléfono es 3398765432', expectedStage: 'Da teléfono' },
         { userMessage: 'Mi correo es patricia@hotmail.com', expectedStage: 'Da correo' }
       ] */
-    }
+    },
   },
   grupokg: {
     name: "Grupo KG",
     description: "Empresa de bienes raíces y servicios inmobiliarios",
     testScenarios: {
-        asesor_web:[
-            {userMessage: 'Hola, tengo un cliente que puede estar interesado en ver esta propiedad. ¿Podrías contactarme? https://www.easybroker.com/mx/listings/casa-de-un-solo-nivel-en-rinconada-santa-rita', expectedStage: 'Mensaje automático portal'},
-            {userMessage: 'Hola, Soy Germán Cuevas Asesor inmobiliario, tengo cliente que busca en esa Zona. Compartes comisión?', expectedStage: 'Pregunta comisión asesor'}
-          ],
-/*       venta: [
+      asesor_web: [
+        {
+          userMessage:
+            "Hola, tengo un cliente que puede estar interesado en ver esta propiedad. ¿Podrías contactarme? https://www.easybroker.com/mx/listings/casa-de-un-solo-nivel-en-rinconada-santa-rita",
+          expectedStage: "Mensaje automático portal",
+        },
+        {
+          userMessage:
+            "Hola, Soy Germán Cuevas Asesor inmobiliario, tengo cliente que busca en esa Zona. Compartes comisión?",
+          expectedStage: "Pregunta comisión asesor",
+        },
+      ],
+      venta1: [
+        {
+          userMessage: "Hola, me puedes dar información de la casa gomez farias",
+          expectedStage: "Mensaje de cliente preguntando por una casa",
+        },
+        { userMessage: "zona medrina", expectedStage: "Dice zona" },
+      ],
+      /*       venta: [
         { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
         { userMessage: 'Busco una casa', expectedStage: 'Solicita información' },
         { userMessage: 'Me llamo Carlos Ruiz', expectedStage: 'Proporciona nombre' },
@@ -472,7 +490,7 @@ const COMPANY_CONFIGS = {
         { userMessage: '3 recámaras mínimo', expectedStage: 'Especifica recámaras' },
         { userMessage: '¿Qué opciones tienes?', expectedStage: 'Solicita opciones' }
       ] */
-    }
+    },
   },
   "grupo-milkasa": {
     name: "Grupo Milkasa",
@@ -480,214 +498,214 @@ const COMPANY_CONFIGS = {
     testScenarios: {
       // Escenario 1: Cliente básico buscando casa
       cliente_basico: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Busco una casa', expectedStage: 'Solicita información' },
-        { userMessage: 'Me llamo María González', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Para comprar', expectedStage: 'Especifica operación' },
-        { userMessage: 'En Uruapan', expectedStage: 'Proporciona ciudad' },
-        { userMessage: 'Tengo un presupuesto de 2 millones', expectedStage: 'Proporciona presupuesto' },
-        { userMessage: '¿Qué opciones tienes?', expectedStage: 'Solicita opciones' },
-        { userMessage: 'Me interesa la primera', expectedStage: 'Muestra interés' },
-        { userMessage: '¿Puedo verla mañana?', expectedStage: 'Solicita cita' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Busco una casa", expectedStage: "Solicita información" },
+        { userMessage: "Me llamo María González", expectedStage: "Proporciona nombre" },
+        { userMessage: "Para comprar", expectedStage: "Especifica operación" },
+        { userMessage: "En Uruapan", expectedStage: "Proporciona ciudad" },
+        { userMessage: "Tengo un presupuesto de 2 millones", expectedStage: "Proporciona presupuesto" },
+        { userMessage: "¿Qué opciones tienes?", expectedStage: "Solicita opciones" },
+        { userMessage: "Me interesa la primera", expectedStage: "Muestra interés" },
+        { userMessage: "¿Puedo verla mañana?", expectedStage: "Solicita cita" },
       ],
 
       // Escenario 2: Cliente buscando departamento en renta
       departamento_renta: [
-        { userMessage: 'Hola Alejandro', expectedStage: 'Saludo con nombre' },
-        { userMessage: 'Busco departamento en renta', expectedStage: 'Solicita renta' },
-        { userMessage: 'Soy Luis Hernández', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'En Morelia', expectedStage: 'Proporciona ciudad' },
-        { userMessage: 'Máximo 15 mil pesos', expectedStage: 'Proporciona presupuesto' },
-        { userMessage: '2 recámaras', expectedStage: 'Especifica recámaras' },
-        { userMessage: '¿Tienes algo disponible?', expectedStage: 'Pregunta disponibilidad' }
+        { userMessage: "Hola Alejandro", expectedStage: "Saludo con nombre" },
+        { userMessage: "Busco departamento en renta", expectedStage: "Solicita renta" },
+        { userMessage: "Soy Luis Hernández", expectedStage: "Proporciona nombre" },
+        { userMessage: "En Morelia", expectedStage: "Proporciona ciudad" },
+        { userMessage: "Máximo 15 mil pesos", expectedStage: "Proporciona presupuesto" },
+        { userMessage: "2 recámaras", expectedStage: "Especifica recámaras" },
+        { userMessage: "¿Tienes algo disponible?", expectedStage: "Pregunta disponibilidad" },
       ],
 
       // Escenario 3: Cliente con presupuesto específico
       presupuesto_especifico: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Información', expectedStage: 'Solicita información' },
-        { userMessage: 'Ana Martínez', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Quiero comprar', expectedStage: 'Especifica compra' },
-        { userMessage: 'Pátzcuaro', expectedStage: 'Proporciona ciudad' },
-        { userMessage: 'Entre 1.5 y 3 millones', expectedStage: 'Rango presupuesto' },
-        { userMessage: 'Casa de campo', expectedStage: 'Tipo específico' },
-        { userMessage: '¿Qué me recomiendas?', expectedStage: 'Solicita recomendación' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Información", expectedStage: "Solicita información" },
+        { userMessage: "Ana Martínez", expectedStage: "Proporciona nombre" },
+        { userMessage: "Quiero comprar", expectedStage: "Especifica compra" },
+        { userMessage: "Pátzcuaro", expectedStage: "Proporciona ciudad" },
+        { userMessage: "Entre 1.5 y 3 millones", expectedStage: "Rango presupuesto" },
+        { userMessage: "Casa de campo", expectedStage: "Tipo específico" },
+        { userMessage: "¿Qué me recomiendas?", expectedStage: "Solicita recomendación" },
       ],
 
       // Escenario 4: Asesor inmobiliario
       asesor_inmobiliario: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Soy asesor inmobiliario', expectedStage: 'Se identifica asesor' },
-        { userMessage: 'Roberto Silva de Century 21', expectedStage: 'Proporciona datos' },
-        { userMessage: 'Tengo cliente interesado', expectedStage: 'Menciona cliente' },
-        { userMessage: 'Casa en Uruapan', expectedStage: 'Especifica búsqueda' },
-        { userMessage: '¿Compartes comisión?', expectedStage: 'Pregunta comisión' },
-        { userMessage: 'Estoy registrado en AMPI', expectedStage: 'Indica registro' },
-        { userMessage: '¿Cuánto es la comisión?', expectedStage: 'Pregunta porcentaje' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Soy asesor inmobiliario", expectedStage: "Se identifica asesor" },
+        { userMessage: "Roberto Silva de Century 21", expectedStage: "Proporciona datos" },
+        { userMessage: "Tengo cliente interesado", expectedStage: "Menciona cliente" },
+        { userMessage: "Casa en Uruapan", expectedStage: "Especifica búsqueda" },
+        { userMessage: "¿Compartes comisión?", expectedStage: "Pregunta comisión" },
+        { userMessage: "Estoy registrado en AMPI", expectedStage: "Indica registro" },
+        { userMessage: "¿Cuánto es la comisión?", expectedStage: "Pregunta porcentaje" },
       ],
 
       // Escenario 5: Cliente preguntando por propiedad específica
       propiedad_especifica: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Me llamo Carmen López', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Vi una casa en Valle Imperial', expectedStage: 'Menciona propiedad' },
-        { userMessage: '¿Sigue disponible?', expectedStage: 'Pregunta disponibilidad' },
-        { userMessage: '¿Cuánto cuesta?', expectedStage: 'Pregunta precio' },
-        { userMessage: '¿Acepta mascotas?', expectedStage: 'Pregunta mascotas' },
-        { userMessage: '¿Puedo agendar cita?', expectedStage: 'Solicita cita' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Me llamo Carmen López", expectedStage: "Proporciona nombre" },
+        { userMessage: "Vi una casa en Valle Imperial", expectedStage: "Menciona propiedad" },
+        { userMessage: "¿Sigue disponible?", expectedStage: "Pregunta disponibilidad" },
+        { userMessage: "¿Cuánto cuesta?", expectedStage: "Pregunta precio" },
+        { userMessage: "¿Acepta mascotas?", expectedStage: "Pregunta mascotas" },
+        { userMessage: "¿Puedo agendar cita?", expectedStage: "Solicita cita" },
       ],
 
       // Escenario 6: Cliente buscando terreno
       terreno_inversion: [
-        { userMessage: 'Hola Alejandro', expectedStage: 'Saludo con nombre' },
-        { userMessage: 'Busco terreno', expectedStage: 'Solicita terreno' },
-        { userMessage: 'Diego Ramírez', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Para inversión', expectedStage: 'Especifica propósito' },
-        { userMessage: 'En Uruapan o alrededores', expectedStage: 'Proporciona zona' },
-        { userMessage: 'Presupuesto flexible', expectedStage: 'Menciona presupuesto' },
-        { userMessage: '¿Qué opciones tienes?', expectedStage: 'Solicita opciones' }
+        { userMessage: "Hola Alejandro", expectedStage: "Saludo con nombre" },
+        { userMessage: "Busco terreno", expectedStage: "Solicita terreno" },
+        { userMessage: "Diego Ramírez", expectedStage: "Proporciona nombre" },
+        { userMessage: "Para inversión", expectedStage: "Especifica propósito" },
+        { userMessage: "En Uruapan o alrededores", expectedStage: "Proporciona zona" },
+        { userMessage: "Presupuesto flexible", expectedStage: "Menciona presupuesto" },
+        { userMessage: "¿Qué opciones tienes?", expectedStage: "Solicita opciones" },
       ],
 
       // Escenario 7: Cliente informal con mensajes cortos
       cliente_informal: [
-        { userMessage: 'hola', expectedStage: 'Saludo informal' },
-        { userMessage: 'info', expectedStage: 'Solicita info corta' },
-        { userMessage: 'pedro', expectedStage: 'Nombre corto' },
-        { userMessage: 'casa', expectedStage: 'Tipo corto' },
-        { userMessage: 'uruapan', expectedStage: 'Ciudad corta' },
-        { userMessage: '1 millon', expectedStage: 'Presupuesto corto' },
-        { userMessage: 'ok', expectedStage: 'Confirmación corta' }
+        { userMessage: "hola", expectedStage: "Saludo informal" },
+        { userMessage: "info", expectedStage: "Solicita info corta" },
+        { userMessage: "pedro", expectedStage: "Nombre corto" },
+        { userMessage: "casa", expectedStage: "Tipo corto" },
+        { userMessage: "uruapan", expectedStage: "Ciudad corta" },
+        { userMessage: "1 millon", expectedStage: "Presupuesto corto" },
+        { userMessage: "ok", expectedStage: "Confirmación corta" },
       ],
 
       // Escenario 8: Cliente con muchas preguntas
       cliente_detallado: [
-        { userMessage: 'Hola, buenos días', expectedStage: 'Saludo formal' },
-        { userMessage: 'Me llamo Patricia Morales', expectedStage: 'Proporciona nombre completo' },
-        { userMessage: 'Estoy buscando casa en venta', expectedStage: 'Especifica búsqueda' },
-        { userMessage: 'En Morelia', expectedStage: 'Proporciona ciudad' },
-        { userMessage: '3 recámaras mínimo', expectedStage: 'Especifica recámaras' },
-        { userMessage: '¿Tienen con jardín?', expectedStage: 'Pregunta jardín' },
-        { userMessage: '¿Aceptan crédito bancario?', expectedStage: 'Pregunta financiamiento' },
-        { userMessage: '¿Cuáles son los precios?', expectedStage: 'Pregunta precios' }
-      ]
-    }
+        { userMessage: "Hola, buenos días", expectedStage: "Saludo formal" },
+        { userMessage: "Me llamo Patricia Morales", expectedStage: "Proporciona nombre completo" },
+        { userMessage: "Estoy buscando casa en venta", expectedStage: "Especifica búsqueda" },
+        { userMessage: "En Morelia", expectedStage: "Proporciona ciudad" },
+        { userMessage: "3 recámaras mínimo", expectedStage: "Especifica recámaras" },
+        { userMessage: "¿Tienen con jardín?", expectedStage: "Pregunta jardín" },
+        { userMessage: "¿Aceptan crédito bancario?", expectedStage: "Pregunta financiamiento" },
+        { userMessage: "¿Cuáles son los precios?", expectedStage: "Pregunta precios" },
+      ],
+    },
   },
-  
+
   britanicomx: {
     name: "Colegio Británico de Guadalajara",
     description: "Institución educativa bilingüe con filosofía humanista y laica",
     testScenarios: {
       // Escenario 1: Padre interesado en Maternal
       consulta_maternal: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Información', expectedStage: 'Solicita información' },
-        { userMessage: 'María González', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Maternal', expectedStage: 'Especifica grado' },
-        { userMessage: '¿Cuánto cuesta?', expectedStage: 'Pregunta costos' },
-        { userMessage: '¿Qué incluye?', expectedStage: 'Pregunta detalles' },
-        { userMessage: '¿Puedo visitarlos?', expectedStage: 'Solicita visita' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Información", expectedStage: "Solicita información" },
+        { userMessage: "María González", expectedStage: "Proporciona nombre" },
+        { userMessage: "Maternal", expectedStage: "Especifica grado" },
+        { userMessage: "¿Cuánto cuesta?", expectedStage: "Pregunta costos" },
+        { userMessage: "¿Qué incluye?", expectedStage: "Pregunta detalles" },
+        { userMessage: "¿Puedo visitarlos?", expectedStage: "Solicita visita" },
       ],
 
       // Escenario 2: Consulta sobre Preescolar K3
       preescolar_k3: [
-        { userMessage: 'Buenos días', expectedStage: 'Saludo formal' },
-        { userMessage: 'Soy Laura Martínez', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Busco información de K3', expectedStage: 'Especifica K3' },
-        { userMessage: '¿Hay descuentos?', expectedStage: 'Pregunta descuentos' },
-        { userMessage: '¿Qué documentos necesito?', expectedStage: 'Pregunta documentación' },
-        { userMessage: '¿Cómo son los horarios?', expectedStage: 'Pregunta horarios' }
+        { userMessage: "Buenos días", expectedStage: "Saludo formal" },
+        { userMessage: "Soy Laura Martínez", expectedStage: "Proporciona nombre" },
+        { userMessage: "Busco información de K3", expectedStage: "Especifica K3" },
+        { userMessage: "¿Hay descuentos?", expectedStage: "Pregunta descuentos" },
+        { userMessage: "¿Qué documentos necesito?", expectedStage: "Pregunta documentación" },
+        { userMessage: "¿Cómo son los horarios?", expectedStage: "Pregunta horarios" },
       ],
 
       // Escenario 3: Primaria con preguntas específicas
       primaria_completa: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Roberto Silva', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Quiero información de 3ro de primaria', expectedStage: 'Especifica 3ro primaria' },
-        { userMessage: '¿Qué metodología usan?', expectedStage: 'Pregunta metodología' },
-        { userMessage: '¿Tienen actividades extracurriculares?', expectedStage: 'Pregunta actividades' },
-        { userMessage: '¿Hasta qué hora se pueden quedar?', expectedStage: 'Pregunta horario extendido' },
-        { userMessage: 'Me interesa agendar visita', expectedStage: 'Solicita visita' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Roberto Silva", expectedStage: "Proporciona nombre" },
+        { userMessage: "Quiero información de 3ro de primaria", expectedStage: "Especifica 3ro primaria" },
+        { userMessage: "¿Qué metodología usan?", expectedStage: "Pregunta metodología" },
+        { userMessage: "¿Tienen actividades extracurriculares?", expectedStage: "Pregunta actividades" },
+        { userMessage: "¿Hasta qué hora se pueden quedar?", expectedStage: "Pregunta horario extendido" },
+        { userMessage: "Me interesa agendar visita", expectedStage: "Solicita visita" },
       ],
 
       // Escenario 4: Secundaria con certificaciones
       secundaria_certificacion: [
-        { userMessage: 'Buenas tardes', expectedStage: 'Saludo formal' },
-        { userMessage: 'Ana Patricia Ruiz', expectedStage: 'Proporciona nombre completo' },
-        { userMessage: 'Información de 1ro de secundaria', expectedStage: 'Especifica 1ro secundaria' },
-        { userMessage: '¿Tienen certificaciones internacionales?', expectedStage: 'Pregunta certificaciones' },
-        { userMessage: '¿Cuánto inglés ven?', expectedStage: 'Pregunta porcentaje inglés' },
-        { userMessage: '¿Qué preparatorias recomiendan?', expectedStage: 'Pregunta preparatorias' }
+        { userMessage: "Buenas tardes", expectedStage: "Saludo formal" },
+        { userMessage: "Ana Patricia Ruiz", expectedStage: "Proporciona nombre completo" },
+        { userMessage: "Información de 1ro de secundaria", expectedStage: "Especifica 1ro secundaria" },
+        { userMessage: "¿Tienen certificaciones internacionales?", expectedStage: "Pregunta certificaciones" },
+        { userMessage: "¿Cuánto inglés ven?", expectedStage: "Pregunta porcentaje inglés" },
+        { userMessage: "¿Qué preparatorias recomiendan?", expectedStage: "Pregunta preparatorias" },
       ],
 
       // Escenario 5: Comparación de grados y costos
       comparacion_grados: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Carlos Mendoza', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Tengo dos hijos', expectedStage: 'Menciona múltiples hijos' },
-        { userMessage: 'Uno en K2 y otro en 4to de primaria', expectedStage: 'Especifica múltiples grados' },
-        { userMessage: '¿Cuánto sería en total?', expectedStage: 'Pregunta costo total' },
-        { userMessage: '¿Hay descuentos por hermanos?', expectedStage: 'Pregunta descuento hermanos' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Carlos Mendoza", expectedStage: "Proporciona nombre" },
+        { userMessage: "Tengo dos hijos", expectedStage: "Menciona múltiples hijos" },
+        { userMessage: "Uno en K2 y otro en 4to de primaria", expectedStage: "Especifica múltiples grados" },
+        { userMessage: "¿Cuánto sería en total?", expectedStage: "Pregunta costo total" },
+        { userMessage: "¿Hay descuentos por hermanos?", expectedStage: "Pregunta descuento hermanos" },
       ],
 
       // Escenario 6: Consultas sobre servicios adicionales
       servicios_adicionales: [
-        { userMessage: 'Buenos días', expectedStage: 'Saludo formal' },
-        { userMessage: 'Patricia López', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'K1', expectedStage: 'Especifica K1' },
-        { userMessage: '¿Tienen comedor?', expectedStage: 'Pregunta comedor' },
-        { userMessage: '¿Qué incluye el horario extendido?', expectedStage: 'Pregunta horario extendido' },
-        { userMessage: '¿Cuándo empiezan las clases?', expectedStage: 'Pregunta inicio clases' }
+        { userMessage: "Buenos días", expectedStage: "Saludo formal" },
+        { userMessage: "Patricia López", expectedStage: "Proporciona nombre" },
+        { userMessage: "K1", expectedStage: "Especifica K1" },
+        { userMessage: "¿Tienen comedor?", expectedStage: "Pregunta comedor" },
+        { userMessage: "¿Qué incluye el horario extendido?", expectedStage: "Pregunta horario extendido" },
+        { userMessage: "¿Cuándo empiezan las clases?", expectedStage: "Pregunta inicio clases" },
       ],
 
       // Escenario 7: Proceso de inscripción
       proceso_inscripcion: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Diana Herrera', expectedStage: 'Proporciona nombre' },
-        { userMessage: '6to de primaria', expectedStage: 'Especifica 6to primaria' },
-        { userMessage: 'Quiero inscribir a mi hijo', expectedStage: 'Manifiesta intención inscripción' },
-        { userMessage: '¿Qué necesito hacer?', expectedStage: 'Pregunta proceso' },
-        { userMessage: '¿Hay evaluación diagnóstica?', expectedStage: 'Pregunta evaluación' }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Diana Herrera", expectedStage: "Proporciona nombre" },
+        { userMessage: "6to de primaria", expectedStage: "Especifica 6to primaria" },
+        { userMessage: "Quiero inscribir a mi hijo", expectedStage: "Manifiesta intención inscripción" },
+        { userMessage: "¿Qué necesito hacer?", expectedStage: "Pregunta proceso" },
+        { userMessage: "¿Hay evaluación diagnóstica?", expectedStage: "Pregunta evaluación" },
       ],
 
       // Escenario 8: Cliente indeciso con múltiples preguntas
       cliente_indeciso: [
-        { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
-        { userMessage: 'Jorge Ramírez', expectedStage: 'Proporciona nombre' },
-        { userMessage: 'Estoy viendo varias escuelas', expectedStage: 'Menciona comparación' },
-        { userMessage: 'Para 2do de primaria', expectedStage: 'Especifica 2do primaria' },
-        { userMessage: '¿Qué los hace diferentes?', expectedStage: 'Pregunta diferenciadores' },
-        { userMessage: '¿Puedo conocer las instalaciones?', expectedStage: 'Solicita visita' }
-      ]
-    }
-  }
+        { userMessage: "Hola", expectedStage: "Saludo inicial" },
+        { userMessage: "Jorge Ramírez", expectedStage: "Proporciona nombre" },
+        { userMessage: "Estoy viendo varias escuelas", expectedStage: "Menciona comparación" },
+        { userMessage: "Para 2do de primaria", expectedStage: "Especifica 2do primaria" },
+        { userMessage: "¿Qué los hace diferentes?", expectedStage: "Pregunta diferenciadores" },
+        { userMessage: "¿Puedo conocer las instalaciones?", expectedStage: "Solicita visita" },
+      ],
+    },
+  },
 };
 
 // Función para mostrar ayuda
 function showHelp() {
-  console.log('\n🚀 Test Perfected Flow - Multi-Empresa');
-  console.log('='.repeat(50));
-  console.log('\n📋 Uso:');
-  console.log('  node test-perfected-flow.js --quicklearning');
-  console.log('  node test-perfected-flow.js --grupokg');
-  console.log('  node test-perfected-flow.js --grupo-milkasa');
-  console.log('  node test-perfected-flow.js --britanicomx');
-  console.log('  node test-perfected-flow.js --full');
-  console.log('  node test-perfected-flow.js --help');
-  
-  console.log('\n🏢 Empresas disponibles:');
+  console.log("\n🚀 Test Perfected Flow - Multi-Empresa");
+  console.log("=".repeat(50));
+  console.log("\n📋 Uso:");
+  console.log("  node test-perfected-flow.js --quicklearning");
+  console.log("  node test-perfected-flow.js --grupokg");
+  console.log("  node test-perfected-flow.js --grupo-milkasa");
+  console.log("  node test-perfected-flow.js --britanicomx");
+  console.log("  node test-perfected-flow.js --full");
+  console.log("  node test-perfected-flow.js --help");
+
+  console.log("\n🏢 Empresas disponibles:");
   Object.entries(COMPANY_CONFIGS).forEach(([slug, config]) => {
     console.log(`  --${slug}: ${config.name} - ${config.description}`);
   });
-  
-  console.log('\n📊 Opciones:');
-  console.log('  --full: Ejecuta pruebas para todas las empresas');
-  console.log('  --help: Muestra esta ayuda');
-  
-  console.log('\n💡 Ejemplos:');
-  console.log('  node test-perfected-flow.js --quicklearning');
-  console.log('  node test-perfected-flow.js --grupokg');
-  console.log('  node test-perfected-flow.js --grupo-milkasa');
-  console.log('  node test-perfected-flow.js --full');
+
+  console.log("\n📊 Opciones:");
+  console.log("  --full: Ejecuta pruebas para todas las empresas");
+  console.log("  --help: Muestra esta ayuda");
+
+  console.log("\n💡 Ejemplos:");
+  console.log("  node test-perfected-flow.js --quicklearning");
+  console.log("  node test-perfected-flow.js --grupokg");
+  console.log("  node test-perfected-flow.js --grupo-milkasa");
+  console.log("  node test-perfected-flow.js --full");
 }
 
 // Función para probar una empresa específica
@@ -700,21 +718,21 @@ async function testCompany(companySlug) {
 
   console.log(`\n🏢 Probando ${config.name} (${companySlug})`);
   console.log(`📝 ${config.description}`);
-  console.log('='.repeat(80));
+  console.log("=".repeat(80));
 
   try {
     // Health check
-    console.log('🏥 Health check...');
+    console.log("🏥 Health check...");
     const healthResponse = await axios.get(`${BASE_URL}/api/test/health`);
-    console.log('✅ Health:', healthResponse.data.message, '\n');
+    console.log("✅ Health:", healthResponse.data.message, "\n");
 
     // Ejecutar escenarios de prueba
     const results = [];
-    
+
     for (const [scenarioName, messages] of Object.entries(config.testScenarios)) {
       const phone = `test-${companySlug}-${scenarioName}`;
       const profileName = `Usuario ${scenarioName}`;
-      
+
       const result = await runTestScenario(
         `Test ${companySlug}: ${scenarioName}`,
         messages,
@@ -722,13 +740,12 @@ async function testCompany(companySlug) {
         profileName,
         companySlug
       );
-      
+
       results.push({ scenario: scenarioName, result });
     }
 
     console.log(`\n✅ ${config.name} probado exitosamente`);
     return results;
-
   } catch (error) {
     console.error(`❌ Error probando ${config.name}:`, error.response?.data || error.message);
     return null;
@@ -738,25 +755,25 @@ async function testCompany(companySlug) {
 // Función principal
 async function testPerfectedFlow() {
   const args = process.argv.slice(2);
-  
+
   // Mostrar ayuda si se solicita
-  if (args.includes('--help') || args.length === 0) {
+  if (args.includes("--help") || args.length === 0) {
     showHelp();
     return;
   }
 
-  console.log('🧪 Testing PERFECTED BaseAgent Flow - Multi-Empresa\n');
+  console.log("🧪 Testing PERFECTED BaseAgent Flow - Multi-Empresa\n");
 
   try {
     // Determinar qué empresas probar
     let companiesToTest = [];
-    
-    if (args.includes('--full')) {
+
+    if (args.includes("--full")) {
       companiesToTest = Object.keys(COMPANY_CONFIGS);
     } else {
       // Probar empresas específicas
       for (const arg of args) {
-        if (arg.startsWith('--')) {
+        if (arg.startsWith("--")) {
           const companySlug = arg.substring(2);
           if (COMPANY_CONFIGS[companySlug]) {
             companiesToTest.push(companySlug);
@@ -768,14 +785,14 @@ async function testPerfectedFlow() {
     }
 
     if (companiesToTest.length === 0) {
-      console.error('❌ No se especificaron empresas válidas para probar');
+      console.error("❌ No se especificaron empresas válidas para probar");
       showHelp();
       return;
     }
 
     // Ejecutar pruebas para cada empresa
     const allResults = {};
-    
+
     for (const companySlug of companiesToTest) {
       const results = await testCompany(companySlug);
       if (results) {
@@ -784,24 +801,23 @@ async function testPerfectedFlow() {
     }
 
     // Resumen final
-    console.log('\n📊 Resumen Final del Testing Multi-Empresa');
-    console.log('='.repeat(100));
-    
+    console.log("\n📊 Resumen Final del Testing Multi-Empresa");
+    console.log("=".repeat(100));
+
     Object.entries(allResults).forEach(([companySlug, results]) => {
       const config = COMPANY_CONFIGS[companySlug];
       console.log(`✅ ${config.name}: ${results.length} escenarios probados`);
     });
-    
-    console.log('='.repeat(100));
-    console.log('🎉 Testing multi-empresa completado exitosamente');
-    console.log('🗄️ Base de datos local funcionando correctamente');
-    console.log('🔄 Transferencias a asesor funcionando');
-    console.log('📚 Historial de conversaciones mantenido');
 
+    console.log("=".repeat(100));
+    console.log("🎉 Testing multi-empresa completado exitosamente");
+    console.log("🗄️ Base de datos local funcionando correctamente");
+    console.log("🔄 Transferencias a asesor funcionando");
+    console.log("📚 Historial de conversaciones mantenido");
   } catch (error) {
-    console.error('❌ Error en testing multi-empresa:', error.response?.data || error.message);
+    console.error("❌ Error en testing multi-empresa:", error.response?.data || error.message);
   }
 }
 
 // Run the test
-testPerfectedFlow(); 
+testPerfectedFlow();

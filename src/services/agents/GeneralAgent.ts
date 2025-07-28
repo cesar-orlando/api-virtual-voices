@@ -139,7 +139,7 @@ export class GeneralAgent extends BaseAgent {
         const dynamicTool = tool({
           name: companyTool.name,
           description: companyTool.description,
-          parameters: z.object(parameterSchema),
+          parameters: z.object(parameterSchema) as any,
           execute: async (params: any) => {
             console.log(`🔧 Executing tool ${companyTool.name} with params:`, params);
             
@@ -258,7 +258,7 @@ export class GeneralAgent extends BaseAgent {
         description: 'Obtener información básica de la empresa',
         parameters: z.object({
           query: z.string().describe('Qué información se está solicitando')
-        }),
+        }) as any,
         execute: async ({ query }) => {
           return {
             companyName: this.company,

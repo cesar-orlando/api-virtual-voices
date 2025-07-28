@@ -19,7 +19,7 @@ export class QuickLearningAgent extends BaseAgent {
           description: 'Check if user message contains keywords that require immediate transfer to advisor.',
           parameters: z.object({
             message: z.string().describe('The user message to analyze')
-          }),
+          }) as any,
           execute: async ({ message }) => {
             const transferKeywords = [
               'presencial', 'sucursal', 'en persona', 'físico', 'dirección', 'ubicación',
@@ -43,7 +43,7 @@ export class QuickLearningAgent extends BaseAgent {
         tool({
           name: 'get_virtual_course_info',
           description: 'Get detailed information about Virtual courses including schedules and prices.',
-          parameters: z.object({}),
+          parameters: z.object({}) as any,
           execute: async () => {
             return `CURSOS VIRTUALES:
 
@@ -66,7 +66,7 @@ Incluye: Material de estudio, examen de ubicación opcional, sin cuota de inscri
         tool({
           name: 'get_online_course_info',
           description: 'Get detailed information about Online courses including memberships and prices.',
-          parameters: z.object({}),
+          parameters: z.object({}) as any,
           execute: async () => {
             return `CURSOS ONLINE:
 
@@ -84,7 +84,7 @@ Características: Plataforma interactiva 24/7, tabla fonética a color, reconoci
           description: 'Get bank transfer information and required data for course registration.',
           parameters: z.object({
             courseType: z.string().describe('Type of course: Virtual or Online')
-          }),
+          }) as any,
           execute: async ({ courseType }) => {
             return `INFORMACIÓN DE TRANSFERENCIA BANCARIA:
 
@@ -113,7 +113,7 @@ DESPUÉS de enviar esta información, serás transferido a un asesor.`;
           parameters: z.object({
             userMessage: z.string().describe('The current user message'),
             conversationHistory: z.array(z.string()).describe('Previous messages in the conversation')
-          }),
+          }) as any,
           execute: async ({ userMessage, conversationHistory }) => {
             const lowerMessage = userMessage.toLowerCase();
             const history = conversationHistory.join(' ').toLowerCase();
@@ -163,7 +163,7 @@ DESPUÉS de enviar esta información, serás transferido a un asesor.`;
           description: 'Check if user name has already been provided in the conversation.',
           parameters: z.object({
             conversationHistory: z.array(z.string()).describe('Previous messages in the conversation')
-          }),
+          }) as any,
           execute: async ({ conversationHistory }) => {
             const history = conversationHistory.join(' ').toLowerCase();
             
@@ -180,7 +180,7 @@ DESPUÉS de enviar esta información, serás transferido a un asesor.`;
           description: 'Transfer user to human advisor when they choose presencial modality. This tool MUST be called when user mentions presencial, sucursal, or physical location.',
           parameters: z.object({
             userName: z.string().describe('Name of the user to include in the transfer message')
-          }),
+          }) as any,
           execute: async ({ userName }) => {
             // This tool will be called by the agent when presencial is detected
             // The agent should use this tool and then provide the transfer message
@@ -192,7 +192,7 @@ DESPUÉS de enviar esta información, serás transferido a un asesor.`;
           description: 'Check what user data is already collected and what is missing for registration.',
           parameters: z.object({
             conversationHistory: z.array(z.string()).describe('Previous messages in the conversation')
-          }),
+          }) as any,
           execute: async ({ conversationHistory }) => {
             const history = conversationHistory.join(' ').toLowerCase();
             
@@ -221,7 +221,7 @@ DESPUÉS de enviar esta información, serás transferido a un asesor.`;
             userMessage: z.string().describe('The short user message'),
             conversationHistory: z.array(z.string()).describe('Previous messages in the conversation'),
             lastBotMessage: z.string().describe('The last message from the bot')
-          }),
+          }) as any,
           execute: async ({ userMessage, conversationHistory, lastBotMessage }) => {
             const lowerMessage = userMessage.toLowerCase();
             const lastBot = lastBotMessage.toLowerCase();
@@ -262,7 +262,7 @@ DESPUÉS de enviar esta información, serás transferido a un asesor.`;
           description: 'Detect when user mentions a city and handle appropriately.',
           parameters: z.object({
             userMessage: z.string().describe('The user message to analyze')
-          }),
+          }) as any,
           execute: async ({ userMessage }) => {
             const lowerMessage = userMessage.toLowerCase();
             const cities = [

@@ -69,9 +69,8 @@ export class AgentManager {
       console.log(`🔧 AgentManager: Message processed successfully`);
       return result;
     } catch (error) {
-      console.error(`❌ Error processing message for ${company}:`, error);
+      // console.error(`❌ Error processing message for ${company}:`, error);
       console.error(`❌ Error details:`, error.message);
-      console.error(`❌ Error stack:`, error.stack);
       throw error;
     }
   }

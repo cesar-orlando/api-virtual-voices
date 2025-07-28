@@ -21,6 +21,32 @@ export class WhatsAppAgentService {
     providedChatHistory?: any[]
   ): Promise<string> {
     try {
+      // Check if AI is enabled for this user
+      try {
+        let aiEnabled = true;
+        if (company === 'quicklearning') {
+          const getQuickLearningChatModel = (await import('../../models/quicklearning/chat.model')).default;
+          const ChatModel = getQuickLearningChatModel(conn);
+          const chat = await ChatModel.findOne({ phone: phoneUser });
+          aiEnabled = chat?.aiEnabled !== false;
+        } else {
+          const { getWhatsappChatModel } = await import('../../models/whatsappChat.model');
+          const WhatsappChat = getWhatsappChatModel(conn);
+          const chat = await WhatsappChat.findOne({ phone: phoneUser });
+          aiEnabled = chat?.botActive !== false;
+        }
+
+        console.log(`🔍 AI habilitada para ${phoneUser}: ${aiEnabled}`);
+        
+        if (!aiEnabled) {
+          console.log(`🚫 IA desactivada para ${phoneUser}, no procesando mensaje`);
+          return "Un asesor se pondrá en contacto contigo pronto.";
+        }
+      } catch (error) {
+        console.error(`❌ Error verificando aiEnabled para ${phoneUser}:`, error);
+        // En caso de error, continuar con el procesamiento
+      }
+
       // console.log(`🤖 Processing WhatsApp message for ${company} - ${phoneUser}`);
       
       // Use provided chat history or get from database
@@ -46,6 +72,21 @@ export class WhatsAppAgentService {
             company
           });
           console.log(`🤖 Agent response received: ${response.substring(0, 50)}...`);
+          
+          // Check for transfer signals and disable AI if needed
+          if (response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:') ||
+              (response.includes('transferencia bancaria') && response.includes('pagoscinf@quicklearning.com'))) {
+            console.log(`🔄 Señal de transferencia detectada, desactivando IA para ${phoneUser}`);
+            try {
+              await this.disableAIForUser(phoneUser, conn, company);
+              console.log(`🔴 IA desactivada automáticamente para ${phoneUser} después de transferencia`);
+            } catch (disableError) {
+              console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
+            }
+            // Clean the response from transfer signals
+            return response.replace('TRANSFER_PAYMENT_INFO:', '').replace('TRANSFER_TO_ADVISOR:', '').trim();
+          }
+          
           return response;
         } catch (error) {
           console.error(`❌ Error en intento ${attempt}/3 para ${company}:`, error);
@@ -70,7 +111,6 @@ export class WhatsAppAgentService {
     } catch (error) {
       console.error(`❌ Error in WhatsAppAgentService for ${company}:`, error);
       console.error(`❌ Error details:`, error.message);
-      console.error(`❌ Error stack:`, error.stack);
       
       // Disable AI for this user when error occurs
       try {
@@ -135,7 +175,7 @@ export class WhatsAppAgentService {
         const WhatsappChat = getWhatsappChatModel(conn);
         await WhatsappChat.updateOne(
           { phone: phoneUser },
-          { $set: { aiEnabled: false } },
+          { $set: { botActive: false } },
           { upsert: true }
         );
       }
@@ -143,6 +183,26 @@ export class WhatsAppAgentService {
       console.error(`❌ Error disabling AI for ${phoneUser}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Clean message content to prevent JSON parsing errors
+   */
+  private cleanMessageContent(content: string): string {
+    if (!content) return '';
+    
+    return content
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/"/g, '\\"')    // Escape quotes
+      .replace(/\n/g, ' ')     // Replace newlines with spaces
+      .replace(/\r/g, ' ')     // Replace carriage returns with spaces
+      .replace(/\t/g, ' ')     // Replace tabs with spaces
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ') // Remove control characters
+      // Normalize Spanish characters to ASCII
+      .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u')
+      .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U')
+      .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
+      .replace(/¿/g, '').replace(/¡/g, ''); // Remove Spanish punctuation
   }
 
   /**
@@ -159,7 +219,7 @@ export class WhatsAppAgentService {
 
       return chatHistory.messages.map((message: any) => ({
         role: message.direction === "inbound" ? "user" : "assistant",
-        content: message.body,
+        content: this.cleanMessageContent(message.body || ''),
         timestamp: message.timestamp
       }));
     } catch (error) {

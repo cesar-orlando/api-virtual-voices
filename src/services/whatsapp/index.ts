@@ -47,7 +47,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   }
 
   const authDir = getAuthDir();
-  console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
+  // console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
   
   // Crear directorio si no existe
   if (!fs.existsSync(authDir)) {
@@ -213,7 +213,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         return;
       }
       qrSent[clientKey] = true;
-      console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
+      // console.log(`[QR][${sessionName}] Escanea este QR con WhatsApp:`);
       qrcode.generate(qr, { small: true });
       if (io) {
         console.log('Emitiendo QR a:', `whatsapp-qr-${company}-${user_id}`);

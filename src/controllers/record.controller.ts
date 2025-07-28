@@ -1020,7 +1020,7 @@ export const bulkDeleteRecords = async (req: Request, res: Response) => {
 // Importar registros
 export const importRecords = async (req: Request, res: Response) => {
   const { tableSlug, c_name } = req.params;
-  const { records, createdBy } = req.body;
+  const { records, createdBy, options } = req.body;
 
   if (!records || !Array.isArray(records) || !createdBy) {
     res.status(400).json({ 
@@ -1036,6 +1036,13 @@ export const importRecords = async (req: Request, res: Response) => {
     return;
   }
 
+  // Default options if not provided
+  const importOptions = {
+    duplicateStrategy: options?.duplicateStrategy || 'skip',
+    identifierField: options?.identifierField || '',
+    updateExistingFields: options?.updateExistingFields !== false // default true
+  };
+
   // Validar tamaño de datos antes de procesar
   const sizeValidation = validateImportSize(req.headers['content-length'], records.length);
   if (!sizeValidation.isValid) {
@@ -1046,7 +1053,7 @@ export const importRecords = async (req: Request, res: Response) => {
     return;
   }
 
-  console.log(`🚀 Starting import: ${records.length} records for table ${tableSlug}`);
+  console.log(`🚀 Starting import: ${records.length} records for table ${tableSlug} with strategy: ${importOptions.duplicateStrategy}`);
 
   try {
     const conn = await getConnectionByCompanySlug(c_name);
@@ -1060,18 +1067,51 @@ export const importRecords = async (req: Request, res: Response) => {
       return;
     }
 
-    // Validar y transformar todos los registros antes de la inserción
-    const recordsToInsert: Array<{
-      tableSlug: string;
-      c_name: string;
-      data: Record<string, any>;
-      createdBy: string;
-      createdAt: Date;
-      updatedAt: Date;
-    }> = [];
-    const errors = [];
+    // Validar que el campo identificador existe si se especifica
+    if (importOptions.identifierField && importOptions.duplicateStrategy !== 'create') {
+      const fieldExists = table.fields.some((field: any) => field.name === importOptions.identifierField);
+      if (!fieldExists) {
+        res.status(400).json({ 
+          message: `Identifier field '${importOptions.identifierField}' not found in table structure` 
+        });
+        return;
+      }
+    }
 
-    console.log(`📋 Validating ${records.length} records...`);
+    // Obtener registros existentes si necesitamos verificar duplicados
+    let existingRecords: any[] = [];
+    if (importOptions.identifierField && importOptions.duplicateStrategy !== 'create') {
+      console.log(`🔍 Fetching existing records for duplicate detection using field: ${importOptions.identifierField}`);
+      existingRecords = await Record.find({ 
+        tableSlug, 
+        c_name,
+        [`data.${importOptions.identifierField}`]: { $exists: true }
+      }).lean();
+      console.log(`📋 Found ${existingRecords.length} existing records`);
+    }
+
+    // Crear un mapa de registros existentes para búsqueda rápida
+    const existingRecordsMap = new Map();
+    if (importOptions.identifierField) {
+      existingRecords.forEach(record => {
+        const identifierValue = record.data[importOptions.identifierField];
+        if (identifierValue !== undefined && identifierValue !== null) {
+          existingRecordsMap.set(String(identifierValue), record);
+        }
+      });
+    }
+
+    // Contadores para el reporte
+    let newRecords = 0;
+    let updatedRecords = 0;
+    let duplicatesSkipped = 0;
+    const errors: any[] = [];
+
+    // Arrays para diferentes operaciones
+    const recordsToInsert: any[] = [];
+    const recordsToUpdate: any[] = [];
+
+    console.log(`📋 Processing ${records.length} records...`);
 
     for (let i = 0; i < records.length; i++) {
       const recordData = records[i];
@@ -1097,19 +1137,74 @@ export const importRecords = async (req: Request, res: Response) => {
           continue;
         }
 
-        // Construir documento para inserción
-        recordsToInsert.push({
-          tableSlug,
-          c_name,
-          data: validatedData,
-          createdBy,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+        // Verificar duplicados si se especifica un campo identificador
+        let existingRecord = null;
+        if (importOptions.identifierField && validatedData[importOptions.identifierField] !== undefined) {
+          const identifierValue = String(validatedData[importOptions.identifierField]);
+          existingRecord = existingRecordsMap.get(identifierValue);
+        }
+
+        if (existingRecord) {
+          // Registro duplicado encontrado
+          switch (importOptions.duplicateStrategy) {
+            case 'skip':
+              duplicatesSkipped++;
+              console.log(`⏭️  Skipping duplicate record ${i + 1} (${importOptions.identifierField}: ${validatedData[importOptions.identifierField]})`);
+              break;
+
+            case 'update':
+              // Preparar datos para actualización
+              let updateData = { ...validatedData };
+              
+              if (importOptions.updateExistingFields) {
+                // Solo actualizar campos que no están vacíos
+                updateData = Object.fromEntries(
+                  Object.entries(validatedData).filter(([key, value]) => 
+                    value !== null && value !== undefined && value !== ''
+                  )
+                );
+              }
+
+              recordsToUpdate.push({
+                filter: { _id: existingRecord._id },
+                update: {
+                  $set: {
+                    data: { ...existingRecord.data, ...updateData },
+                    updatedBy: createdBy,
+                    updatedAt: new Date()
+                  }
+                }
+              });
+              console.log(`🔄 Prepared update for record ${i + 1} (${importOptions.identifierField}: ${validatedData[importOptions.identifierField]})`);
+              break;
+
+            case 'create':
+              // Crear como nuevo registro (ignorar duplicados)
+              recordsToInsert.push({
+                tableSlug,
+                c_name,
+                data: validatedData,
+                createdBy,
+                createdAt: new Date(),
+                updatedAt: new Date()
+              });
+              break;
+          }
+        } else {
+          // Registro nuevo
+          recordsToInsert.push({
+            tableSlug,
+            c_name,
+            data: validatedData,
+            createdBy,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
 
         // Log progreso cada 100 registros
         if ((i + 1) % 100 === 0) {
-          console.log(`✅ Validated ${i + 1}/${records.length} records`);
+          console.log(`✅ Processed ${i + 1}/${records.length} records`);
         }
       } catch (error) {
         errors.push({ 
@@ -1119,74 +1214,88 @@ export const importRecords = async (req: Request, res: Response) => {
       }
     }
 
-    console.log(`📊 Validation complete: ${recordsToInsert.length} valid, ${errors.length} errors`);
+    console.log(`📊 Processing complete: ${recordsToInsert.length} to insert, ${recordsToUpdate.length} to update, ${duplicatesSkipped} skipped, ${errors.length} errors`);
 
-    // Si no hay registros válidos para insertar
-    if (recordsToInsert.length === 0) {
-      const report = generateImportReport(records.length, 0, errors.length, errors);
-      res.status(400).json({ 
-        message: "No valid records to import", 
-        ...report
-      });
-      return;
-    }
-
-    // Insertar todos los registros válidos en una sola operación
-    console.log(`💾 Inserting ${recordsToInsert.length} records...`);
-    const startTime = Date.now();
-    
-    let insertedRecords;
-    try {
-      insertedRecords = await Record.insertMany(recordsToInsert, { 
-        ordered: false // Continúa insertando aunque algunos fallen
-      });
-      
-      const endTime = Date.now();
-      const duration = endTime - startTime;
-      console.log(`✅ Insert completed in ${duration}ms: ${insertedRecords.length} records inserted`);
-      
-    } catch (insertError: any) {
-      // Manejar errores de inserción masiva
-      if (insertError.writeErrors) {
-        insertError.writeErrors.forEach((writeError: any) => {
-          const index = writeError.index;
-          const originalRecord = recordsToInsert[index];
-          errors.push({
-            index: records.findIndex(r => r.data === originalRecord.data),
-            error: writeError.err.errmsg || "Insert error"
+    // Ejecutar inserciones
+    if (recordsToInsert.length > 0) {
+      console.log(`💾 Inserting ${recordsToInsert.length} new records...`);
+      try {
+        const insertedRecords = await Record.insertMany(recordsToInsert, { 
+          ordered: false 
+        });
+        newRecords = insertedRecords.length;
+        console.log(`✅ Inserted ${newRecords} new records`);
+      } catch (insertError: any) {
+        console.error('❌ Insert error:', insertError);
+        if (insertError.writeErrors) {
+          insertError.writeErrors.forEach((writeError: any) => {
+            errors.push({
+              index: writeError.index,
+              error: writeError.err.errmsg || "Insert error"
+            });
           });
-        });
-      }
-      
-      // Si no hay registros insertados exitosamente
-      if (!insertedRecords || insertedRecords.length === 0) {
-        const report = generateImportReport(records.length, 0, records.length, errors);
-        res.status(400).json({ 
-          message: "Failed to import any records", 
-          ...report
-        });
-        return;
+          newRecords = recordsToInsert.length - insertError.writeErrors.length;
+        }
       }
     }
 
-    // Generar reporte final
-    const report = generateImportReport(
-      records.length, 
-      insertedRecords ? insertedRecords.length : 0, 
-      errors.length, 
-      errors
-    );
+    // Ejecutar actualizaciones
+    if (recordsToUpdate.length > 0) {
+      console.log(`🔄 Updating ${recordsToUpdate.length} existing records...`);
+      try {
+        for (const updateOp of recordsToUpdate) {
+          try {
+            await Record.updateOne(updateOp.filter, updateOp.update);
+            updatedRecords++;
+          } catch (updateError) {
+            console.error('❌ Update error:', updateError);
+            errors.push({
+              error: `Failed to update record: ${updateError instanceof Error ? updateError.message : 'Unknown error'}`
+            });
+          }
+        }
+        console.log(`✅ Updated ${updatedRecords} records`);
+      } catch (bulkUpdateError) {
+        console.error('❌ Bulk update error:', bulkUpdateError);
+      }
+    }
 
-    console.log(`🎉 Import completed: ${report.summary.successful}/${report.summary.total} records imported successfully`);
+    // Generar reporte final compatible con tu frontend
+    const totalProcessed = newRecords + updatedRecords + duplicatesSkipped;
+    const report = {
+      summary: {
+        totalProcessed: records.length,
+        successful: newRecords + updatedRecords,
+        total: records.length,
+        failed: errors.length,
+        newRecords,
+        updatedRecords,
+        duplicatesSkipped,
+        errors: errors.length
+      },
+      details: {
+        strategy: importOptions.duplicateStrategy,
+        identifierField: importOptions.identifierField,
+        updateExistingFields: importOptions.updateExistingFields
+      },
+      errors: errors.slice(0, 20) // Limitar errores mostrados
+    };
 
-    res.status(201).json({ 
-      message: "Import completed", 
-      importedRecords: insertedRecords,
-      ...report
+    console.log(`✅ Import completed:`, report.summary);
+
+    res.status(201).json({
+      message: "Import completed",
+      ...report,
+      // Keep these for backward compatibility with existing code
+      importedRecords: recordsToInsert.length > 0 ? { length: newRecords } : null
     });
+
   } catch (error) {
-    console.error('❌ Import error:', error);
-    res.status(500).json({ message: "Error importing records", error });
+    console.error('❌ Import failed:', error);
+    res.status(500).json({ 
+      message: "Import failed", 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    });
   }
 };
 

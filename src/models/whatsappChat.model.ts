@@ -7,7 +7,14 @@ export interface IWhatsappChat extends Document {
   phone: string;
   name?: string;
   botActive: boolean;
-  messages: {}[];
+  messages: {
+    direction: string; // Inbound o Outbound
+    body: any; // Mensaje
+    status: string; // Estado del mensaje
+    createdAt?: Date;
+    respondedBy: string;
+    msgId: string; // ID del mensaje
+  }[];
   session?: {
     id: mongoose.Types.ObjectId;
     name?: string;

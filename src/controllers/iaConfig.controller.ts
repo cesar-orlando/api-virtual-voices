@@ -192,46 +192,54 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
     const { c_name } = req.params;
     const { messages, aiConfig } = req.body;
 
-    let IAPrompt;
-    if (aiConfig) {
-      IAPrompt = await preparePrompt(aiConfig);
-    }
+    console.log(`🧪 Testing IA for company: ${c_name}`);
+    console.log(`📝 Messages received: ${messages?.length || 0}`);
 
-    const defaultResponse = "Una disculpa, podrias repetir tu mensaje, no pude entenderlo.";
+    const defaultResponse = "Disculpa, hubo un problema técnico. Un asesor se pondrá en contacto contigo para ayudarte.";
     let aiResponse = defaultResponse;
 
-    // Mapea historial para OpenAI
-    const history = (messages || []).map((msg: any) => {
-      if (msg.from === "user") return { role: "user", content: msg.text };
-      if (msg.from === "ai") return { role: "assistant", content: msg.text };
-      return null;
-    }).filter(Boolean);
+    // Obtener el último mensaje del usuario
+    const lastUserMessage = messages && messages.length > 0 
+      ? messages[messages.length - 1].text 
+      : '';
 
-    const conn = await getConnectionByCompanySlug(c_name);
-    const Record = getRecordModel(conn);
-    let records = await Record.find();
-
-    // Si el último mensaje contiene un link, filtra los registros relevantes
-    const lastMsg = messages && messages.length > 0 ? messages[messages.length - 1].text : '';
-    const links = (lastMsg.match(/https?:\/\/[^\s]+/g) || []);
-    if (links.length > 0) {
-      records = records.filter(r => {
-        const data = r.data || r;
-        return Object.values(data).some(v => typeof v === 'string' && links.some(link => v.includes(link.split('/').pop() || '')));
+    if (!lastUserMessage) {
+      res.status(400).json({ 
+        message: "No se proporcionó ningún mensaje para procesar" 
       });
+      return;
     }
 
+    // Mapear historial para el nuevo sistema de agentes
+    const chatHistory = (messages || []).map((msg: any) => ({
+      role: msg.from === "user" ? "user" : "assistant",
+      content: msg.text,
+      timestamp: new Date()
+    }));
+
     try {
-      const response = await generateResponse(
-        IAPrompt,
-        aiConfig,
-        history,
-        records,
-        c_name // <-- Se agrega c_name para herramientas
+      // Usar el nuevo sistema de agentes
+      const { WhatsAppAgentService } = require('../services/agents/WhatsAppAgentService');
+      const agentService = new WhatsAppAgentService();
+      
+      // Obtener conexión a la base de datos
+      const conn = await getConnectionByCompanySlug(c_name);
+      
+      // Procesar mensaje con el nuevo sistema de agentes
+      const response = await agentService.processWhatsAppMessage(
+        c_name,
+        lastUserMessage,
+        'test-frontend-user', // Phone number para testing
+        conn,
+        chatHistory
       );
+
       aiResponse = response || defaultResponse;
+      console.log(`✅ Agent response: ${aiResponse}`);
+
     } catch (error) {
-      console.error("Error al obtener respuesta de OpenAI:", error);
+      console.error(`❌ Error al obtener respuesta del agente para ${c_name}:`, error);
+      aiResponse = defaultResponse;
     }
 
     res.status(201).json({ message: aiResponse });

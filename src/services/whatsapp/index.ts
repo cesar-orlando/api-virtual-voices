@@ -1,4 +1,4 @@
-import { Client, LocalAuth, RemoteAuth } from 'whatsapp-web.js';
+import { Client, LocalAuth, Message, RemoteAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { handleIncomingMessage } from './handlers';
 import { io } from '../../server'; // Ajusta la ruta según tu estructura
@@ -254,6 +254,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     whatsappClient.on('ready', async () => {
       console.log(`🚀 WhatsApp listo y conectado para: ${company}-${sessionName}`);
+
+      resolve(whatsappClient);
       
       // Verificar si la sesión se guardó después de estar listo
       setTimeout(() => {
@@ -278,8 +280,13 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       const conn = await getDbConnection(company);
       const WhatsappChat = getWhatsappChatModel(conn);
 
-      const saveMessagesToRecord = (record: any, messages: any[]) => {
-        for (const msg of messages) {
+      const saveMessagesToRecord = (record: any, messages: Message[]) => {
+        // Encuentra el índice del último mensaje enviado por mí (outbound)
+        const lastOutboundIdx = [...messages].reverse().findIndex(msg => msg.fromMe);
+        const lastOutboundAbsIdx = lastOutboundIdx === -1 ? -1 : messages.length - 1 - lastOutboundIdx;
+
+        for (let i = 0; i < messages.length; i++) {
+          const msg = messages[i];
           try {
             // Validar que el mensaje tenga las propiedades necesarias
             if (!msg || !msg.id || !msg.id.id) {
@@ -290,12 +297,26 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
             const alreadyExists = record.messages.some((m: any) => m.msgId === msg.id.id);
             if (alreadyExists) continue;
 
+            let status: string;
+            if (!msg.fromMe) {
+              // Mensaje recibido
+              if (lastOutboundAbsIdx !== -1 && i < lastOutboundAbsIdx) {
+                status = 'leído'; // Antes de mi último mensaje, lo considero leído
+              } else {
+                status = 'recibido'; // Después de mi último mensaje, solo recibido
+              }
+            } else {
+              // Mensaje enviado por mí
+              status = msg.ack === 3 ? 'leído' : 'enviado';
+            }
+
             record.messages.push({
               msgId: msg.id.id,
               direction: msg.fromMe ? "outbound" : "inbound",
               body: msg.body || '',
               respondedBy: msg.fromMe ? "human" : "user",
               createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
+              status
             });
           } catch (msgError) {
             console.warn('Error procesando mensaje individual:', msgError);
@@ -314,13 +335,15 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
       (async () => {
         try {
+          const WhatsappSession = getSessionModel(conn);
+          const existingSession = await WhatsappSession.findOne({ name: sessionName });
           for (const chat of chats) {
             if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
 
-            let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized });
+            let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized, "session.id": existingSession?.id });
             
             // Manejo seguro de fetchMessages con retry
-            let messages = [];
+            let messages: Message[] = [];
             try {
               messages = await chat.fetchMessages({ limit: fetchLimit });
             } catch (fetchError) {
@@ -335,6 +358,14 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
                 phone: chat.id._serialized,
                 name: chat.name || chat.id._serialized,
                 messages: [],
+                session: {
+                  id: existingSession?.id,
+                  name: existingSession?.name
+                },
+                advisor: {
+                  id: existingSession?.user.id,
+                  name: existingSession?.user.name
+                },
               });
             }
 
@@ -365,8 +396,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
       console.log(`✅ Sesión ${clientKey} inicializada y chats guardados`);
 
-      resolve(whatsappClient);
-
       setTimeout(async () => {
         await updateSessionStatus('connected');
       }, 2000);
@@ -394,6 +423,34 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         await updateSessionStatus('disconnected', reason);
       }, 2000);
       reject(console.error('Disconnected'));
+    });
+
+    whatsappClient.on('message_ack', async (msg, ack) => {
+      try {
+        // 0 = pendiente, 1 = enviado, 2 = entregado, 3 = leído, 4 = reproducido (audio)
+        if (ack === 3) {
+          // Buscar el chat correspondiente en la base de datos
+          const conn = await getDbConnection(company);
+          const WhatsappChat = getWhatsappChatModel(conn);
+
+          // Buscar el chat por número y sesión
+          const chatRecord = await WhatsappChat.findOne({
+            phone: msg.to || msg.from, // depende si es enviado o recibido
+            "session.name": sessionName
+          });
+
+          if (chatRecord) {
+            // Buscar el mensaje por msgId
+            const message = chatRecord.messages.find((m: any) => m.msgId === msg.id.id);
+            if (message && message.status !== 'leído') {
+              message.status = 'leído';
+              await chatRecord.save();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error actualizando estado de mensaje:', err);
+      }
     });
 
     whatsappClient.on('message_create', async (message) => {

@@ -13,6 +13,8 @@ import googleCalendarRoutes from "./routes/googleCalendar.routes";
 import coreUserRoutes from "./core/users/user.routes";
 import quickLearningRoutes from "./projects/quicklearning/routes";
 import quickLearningTwilioRoutes from "./routes/quicklearning/twilioRoutes";
+import twilioTestRoutes from "./routes/quicklearning/twilioTestRoutes";
+import twilioWebhookRoutes from "./routes/quicklearning/twilioWebhookRoutes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -119,6 +121,12 @@ app.use('/api/projects/quicklearning', quickLearningRoutes);
 
 // Rutas de Twilio para Quick Learning
 app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
+
+// Rutas de prueba para el nuevo sistema de agentes
+app.use('/api/test', twilioTestRoutes);
+
+// Rutas de webhook para Twilio
+app.use('/api/webhook', twilioWebhookRoutes);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

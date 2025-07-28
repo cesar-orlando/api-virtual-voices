@@ -7,6 +7,10 @@ import { getSessionModel } from '../../models/whatsappSession.model';
 import { Connection } from 'mongoose';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
+import { WhatsAppAgentService } from '../agents/WhatsAppAgentService';
+
+// Initialize the BaseAgent service
+const whatsAppAgentService = new WhatsAppAgentService();
 
 // Store pending timeouts for each user
 const pendingResponses = new Map<string, {
@@ -251,7 +255,52 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   const lastMessage = messages[messages.length - 1];
   
   console.log(`📊 Generando respuesta consolidada para ${messages.length} mensajes de ${userPhone}`);
+  console.log(`🤖 Using BaseAgent system`);
   
-  // Generate and send response using the latest record state - this should only be called ONCE
-  await sendAndRecordBotResponse(company, sessionName, client, lastMessage, latestRecord, conn);
+  try {
+    console.log('🤖 Using BaseAgent system');
+    const response = await whatsAppAgentService.processWhatsAppMessage(
+      company,
+      lastMessage.body,
+      userPhone,
+      conn
+    );
+    
+    // Send the response directly
+    await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);
+    
+  } catch (error) {
+    console.error(`❌ Error with BaseAgent system:`, error);
+    // Fallback response
+    await sendCustomResponse(client, lastMessage, "Disculpa, hubo un problema técnico. Un asesor se pondrá en contacto contigo.", company, sessionName, latestRecord, conn);
+  }
+}
+
+/**
+ * Send a custom response using the new agent system
+ */
+async function sendCustomResponse(
+  client: Client,
+  message: Message,
+  response: string,
+  company: string,
+  sessionName: string,
+  existingRecord: any,
+  conn: Connection
+) {
+  try {
+    console.log(`📤 Sending custom response for ${company}: ${response.substring(0, 50)}...`);
+    
+    // Send the message
+    const sentMessage = await client.sendMessage(message.from, response);
+    
+    // Record the bot response in the chat
+    await updateChatRecord(company, existingRecord, "outbound-api", response, "bot");
+    
+    console.log(`✅ Custom response sent successfully for ${company}`);
+    
+  } catch (error) {
+    console.error(`❌ Error sending custom response for ${company}:`, error);
+    throw error;
+  }
 }

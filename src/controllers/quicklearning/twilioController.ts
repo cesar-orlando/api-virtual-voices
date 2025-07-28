@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
 import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
+import { WhatsAppAgentService } from "../../services/agents/WhatsAppAgentService";
 import { getConnectionByCompanySlug, executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
 import getRecordModel from "../../models/record.model";
@@ -13,6 +14,9 @@ import { Server as SocketIOServer } from "socket.io";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
+
+// Instancia del nuevo sistema de agentes
+const whatsAppAgentService = new WhatsAppAgentService();
 
 // Buffer de mensajes para agrupar mensajes rápidos
 const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Timeout }>();
@@ -301,10 +305,15 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       // Combinar todos los mensajes del buffer
       const combinedMessage = buffer.messages.join("\n");
       
-      console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser}`);
+      console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser} con NUEVO SISTEMA DE AGENTES`);
       
-      // Generar respuesta de IA
-      const aiResponse = await quickLearningOpenAIService.generateResponse(combinedMessage, phoneUser);
+      // Generar respuesta usando el NUEVO sistema de agentes
+      const aiResponse = await whatsAppAgentService.processWhatsAppMessage(
+        'quicklearning',
+        combinedMessage,
+        phoneUser,
+        conn
+      );
 
       // Enviar respuesta
       const result = await twilioService.sendMessage({
@@ -342,28 +351,65 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           // Emitir notificación por socket para respuesta del bot
           emitNewMessageNotification(phoneUser, botMessage, chat);
 
-          // Actualizar campo ultimo_mensaje en la tabla de alumnos
-          try {
-            await Record.updateOne(
-              { 
-                tableSlug: "alumnos",
-                "data.telefono": phoneUser,
-                c_name: "quicklearning"
-              },
-              { 
-                $set: { 
-                  "data.ultimo_mensaje": currentDate,
-                  "data.lastMessage": aiResponse
-                } 
+          // Verificar si es mensaje de transferencia a asesor
+          const isTransferMessage = aiResponse.toLowerCase().includes('transferir con un asesor') || aiResponse.toLowerCase().includes('te voy a transferir');
+          
+          if (isTransferMessage) {
+            console.log(`🔄 Transferencia a asesor detectada para ${phoneUser}. Desactivando IA...`);
+            
+            // Desactivar IA en el chat
+            chat.aiEnabled = false;
+            await chat.save();
+          }
+          
+          // Actualizar registros en TODAS las tablas (alumnos, prospectos, clientes, sin_contestar)
+          const tableSlugs = ["alumnos", "prospectos", "nuevo_ingreso", "sin_contestar"];
+          let updated = false;
+          
+          for (const tableSlug of tableSlugs) {
+            try {
+              const updateData: any = {
+                "data.ultimo_mensaje": currentDate,
+                "data.lastMessage": aiResponse
+              };
+              
+              // Si es transferencia, también desactivar IA
+              if (isTransferMessage) {
+                updateData["data.aiEnabled"] = false;
               }
-            );
-            console.log(`📝 Campo ultimo_mensaje actualizado en tabla alumnos (respuesta bot) para: ${phoneUser}`);
-          } catch (error) {
-            console.error(`❌ Error actualizando ultimo_mensaje en tabla alumnos (respuesta bot):`, error);
+              
+              const result = await Record.updateOne(
+                { 
+                  tableSlug,
+                  $or: [
+                    { "data.telefono": phoneUser },
+                    { "data.phone": phoneUser }
+                  ],
+                  c_name: "quicklearning"
+                },
+                { $set: updateData }
+              );
+              
+              if (result.modifiedCount > 0) {
+                updated = true;
+                if (isTransferMessage) {
+                  console.log(`🚫 IA desactivada en tabla ${tableSlug} para ${phoneUser} - Transferencia completada`);
+                } else {
+                  console.log(`📝 Registro actualizado en tabla ${tableSlug} para ${phoneUser}`);
+                }
+                break; // Solo actualizar en la primera tabla donde se encuentre
+              }
+            } catch (error) {
+              console.error(`❌ Error actualizando tabla ${tableSlug}:`, error);
+            }
+          }
+          
+          if (!updated) {
+            console.warn(`⚠️ No se encontró el usuario ${phoneUser} en ninguna tabla para actualizar`);
           }
         });
 
-        console.log(`✅ Respuesta enviada a ${phoneUser}`);
+        console.log(`✅ Respuesta del NUEVO AGENTE enviada a ${phoneUser}`);
       } else {
         console.error(`❌ Error enviando respuesta: ${result.error}`);
       }
@@ -371,7 +417,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       // Limpiar buffer
       messageBuffers.delete(phoneUser);
     } catch (error) {
-      console.error("❌ Error procesando mensaje:", error);
+      console.error("❌ Error procesando mensaje con nuevo agente:", error);
       messageBuffers.delete(phoneUser);
     }
   }, 3000); // Esperar 3 segundos antes de procesar

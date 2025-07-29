@@ -116,10 +116,12 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
+      console.log(`📞 No se encontró chat existente para ${userPhone} con [${company}:${sessionName}], creando uno nuevo...`);
       const Session = getSessionModel(conn);
       const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
     } else {
+      console.log(`📞 Chat existente encontrado para ${userPhone} con [${company}:${sessionName}]`);
       await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
     }
 
@@ -262,16 +264,19 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   
   try {
     console.log('🤖 Using BaseAgent system');
-    
-    // Obtener la configuración de IA de la base de datos
-    const config = await getIaConfigModel(conn).findOne();
+
+    const sessionModel = getSessionModel(conn);
+    const session = await sessionModel.findOne({ name: sessionName });
+    const IaConfig = getIaConfigModel(conn);
+    const config = await IaConfig.findOne({ _id: session?.IA?.id });
     
     const response = await whatsAppAgentService.processWhatsAppMessage(
       company,
       lastMessage.body,
       userPhone,
+      conn,
       config?._id.toString(),
-      conn
+      session?._id.toString(),
     );
     
     // Debug específico para empresas inmobiliarias
@@ -311,7 +316,7 @@ async function sendCustomResponse(
     const sentMessage = await client.sendMessage(message.from, response);
     
     // Record the bot response in the chat
-    await updateChatRecord(company, existingRecord, "outbound-api", response, "bot");
+    await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
     
     console.log(`✅ Custom response sent successfully for ${company}`);
     

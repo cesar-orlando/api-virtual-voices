@@ -44,8 +44,9 @@ export class TwilioTestController {
         actualCompany,
         message,
         phone,
-        config?._id.toString(),
         conn,
+        config?._id.toString(),
+        config?.name,
         chatHistory
       );
 
@@ -107,8 +108,8 @@ export class TwilioTestController {
             company,
             message,
             phone,
+            conn,
             config?._id.toString(),
-            conn
           );
 
           const responseTime = Date.now() - startTime;

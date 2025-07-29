@@ -20,8 +20,9 @@ export class AgentManager {
    * Change the company name to the company name in the database
    */
   public async getAgent(company: string, agentContext: Record<string, any> = {}): Promise<BaseAgent> {
-    if (this.agents.has(company)) {
-      return this.agents.get(company)!;
+    const agentKey = `${company}:${agentContext.sessionId || ''}`;
+    if (this.agents.has(agentKey)) {
+      return this.agents.get(agentKey)!;
     }
 
     let agent: BaseAgent;
@@ -40,7 +41,7 @@ export class AgentManager {
                   case 'mitsubishi':
                     console.log(`🔧 AgentManager: Creating GeneralAgent for ${company}`);
                     try {
-                        agent = new GeneralAgent(company);
+                        agent = new GeneralAgent(company, agentContext);
                         await agent.initialize();
                         console.log(`🔧 AgentManager: GeneralAgent created successfully for ${company}`);
                     } catch (error) {

@@ -19,7 +19,7 @@ export class AgentManager {
    * Get or create an agent for a specific company
    * Change the company name to the company name in the database
    */
-  public async getAgent(company: string): Promise<BaseAgent> {
+  public async getAgent(company: string, agentContext: Record<string, any> = {}): Promise<BaseAgent> {
     if (this.agents.has(company)) {
       return this.agents.get(company)!;
     }
@@ -37,9 +37,10 @@ export class AgentManager {
                   case 'grupo-kg':
                   case 'grupo-milkasa':
                   case 'britanicomx':
+                  case 'mitsubishi':
                     console.log(`🔧 AgentManager: Creating GeneralAgent for ${company}`);
                     try {
-                        agent = new GeneralAgent(company);
+                        agent = new GeneralAgent(company, agentContext);
                         await agent.initialize();
                         console.log(`🔧 AgentManager: GeneralAgent created successfully for ${company}`);
                     } catch (error) {
@@ -63,7 +64,7 @@ export class AgentManager {
   public async processMessage(company: string, message: string, context?: any): Promise<string> {
     try {
       console.log(`🔧 AgentManager: Getting agent for ${company}`);
-      const agent = await this.getAgent(company);
+      const agent = await this.getAgent(company, context);
       console.log(`🔧 AgentManager: Agent obtained, processing message`);
       const result = await agent.processMessage(message, context);
       console.log(`🔧 AgentManager: Message processed successfully`);

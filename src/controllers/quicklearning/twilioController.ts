@@ -11,6 +11,7 @@ import FormData from "form-data";
 import { getEnvironmentConfig } from "../../config/environments";
 import getUserModel from "../../core/users/user.model";
 import { Server as SocketIOServer } from "socket.io";
+import getIaConfigModel from "../../models/iaConfig.model";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
@@ -302,12 +303,15 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       const combinedMessage = buffer.messages.join("\n");
       
       console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser} con NUEVO SISTEMA DE AGENTES`);
+
+      const config = await getIaConfigModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
       const aiResponse = await whatsAppAgentService.processWhatsAppMessage(
         'quicklearning',
         combinedMessage,
         phoneUser,
+        config?._id.toString(),
         conn
       );
 

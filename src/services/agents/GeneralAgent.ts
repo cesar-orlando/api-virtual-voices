@@ -12,9 +12,10 @@ export class GeneralAgent extends BaseAgent {
   private customPrompt: string | null = null;
   private companyTools: ITool[] = [];
 
-  constructor(company: string) {
+  constructor(company: string, agentContext: Record<string, any> = {}) {
     console.log(`🔧 GeneralAgent: Constructor called for ${company}`);
     super(company);
+    this.agentContext = agentContext;
     console.log(`🔧 GeneralAgent: Constructor completed for ${company}`);
   }
 
@@ -52,7 +53,7 @@ export class GeneralAgent extends BaseAgent {
       const IaConfig = getIaConfigModel(conn);
       
       // Buscar configuración general de la empresa
-      const config = await IaConfig.findOne({ type: 'general' });
+      const config = await IaConfig.findOne({ _id: this.agentContext.iaConfigId });
       
       if (config && config.customPrompt) {
         this.customPrompt = config.customPrompt;
@@ -278,7 +279,7 @@ export class GeneralAgent extends BaseAgent {
               // Para otras herramientas, usar el ToolExecutor
               const result = await ToolExecutor.execute({
                 toolName: companyTool.name,
-                parameters: params,
+                parameters: { ...params, phoneUser: this.agentContext.phoneUser },
                 c_name: this.company,
                 executedBy: 'GeneralAgent'
               });

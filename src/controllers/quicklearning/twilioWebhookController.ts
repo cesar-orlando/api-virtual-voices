@@ -3,6 +3,7 @@ import { WhatsAppAgentService } from '../../services/agents/WhatsAppAgentService
 import { getDbConnection } from '../../config/connectionManager';
 import getRecordModel from '../../models/record.model';
 import getTableModel from '../../models/table.model';
+import getIaConfigModel from '../../models/iaConfig.model';
 
 export class TwilioWebhookController {
   private agentService: WhatsAppAgentService;
@@ -52,11 +53,14 @@ export class TwilioWebhookController {
       // Create or get user record
       const userRecord = await this.getOrCreateUserRecord(conn, company, cleanPhone);
 
+      const config = await getIaConfigModel(conn).findOne();
+
       // Process message with new agent system
       const response = await this.agentService.processWhatsAppMessage(
         company,
         message,
         cleanPhone,
+        config?._id.toString(),
         conn
       );
 

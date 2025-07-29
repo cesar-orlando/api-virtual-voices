@@ -10,6 +10,7 @@ interface AgentContext {
 export abstract class BaseAgent {
   protected agent: Agent<AgentContext>;
   protected company: string;
+  protected agentContext: Record<string, any>;
   protected openaiApiKey: string;
 
     constructor(company: string) {

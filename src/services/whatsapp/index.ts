@@ -10,6 +10,7 @@ import { getSessionModel } from '../../models/whatsappSession.model';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
+import getUserModel from '../../core/users/user.model';
 
 // Objeto global para almacenar clientes por sesión
 export const clients: Record<string, Client> = {};
@@ -175,6 +176,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       const conn = await getDbConnection(company);
       const Table = getTableModel(conn);
       const Record = getRecordModel(conn);
+      const User = getUserModel(conn);
 
       const table = await Table.findOne({ slug: 'prospectos', c_name: company, isActive: true });
       if (!table) {
@@ -186,6 +188,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         return;
       }
 
+      const userData = await User.findOne({ _id: user_id });
+
       const newProspect = new Record({
         tableSlug: 'prospectos',
         c_name: company,
@@ -193,7 +197,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         data: {
           name: name || '',
           number: num,
-          ia: activateIA === true // Si se pasa activateIA true, se activa la IA
+          ia: activateIA === true, // Si se pasa activateIA true, se activa la IA
+          asesor: { id: user_id, name: userData.name } // Asignar asesor por defecto
         }
       });
       await newProspect.save();
@@ -340,8 +345,11 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           for (const chat of chats) {
             if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
 
-            let chatRecord = await WhatsappChat.findOne({ phone: chat.id._serialized, "session.id": existingSession?.id });
-            
+            let chatRecord = await WhatsappChat.findOne({
+              phone: chat.id._serialized,
+              "session.name": existingSession?.name // Usar el nombre de la sesión
+            });
+
             // Manejo seguro de fetchMessages con retry
             let messages: Message[] = [];
             try {
@@ -359,14 +367,21 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
                 name: chat.name || chat.id._serialized,
                 messages: [],
                 session: {
-                  id: existingSession?.id,
-                  name: existingSession?.name
+                  name: existingSession?.name // Solo el nombre, no el id
                 },
                 advisor: {
                   id: existingSession?.user.id,
                   name: existingSession?.user.name
                 },
               });
+            } else {
+              // Si existe pero el ObjectId de la sesión cambió, actualiza el id
+              if (
+                existingSession?.id &&
+                (!chatRecord.session.id || chatRecord.session.id.toString() !== existingSession.id.toString())
+              ) {
+                chatRecord.session.id = existingSession.id;
+              }
             }
 
             try {

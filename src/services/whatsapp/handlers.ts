@@ -8,6 +8,7 @@ import { Connection } from 'mongoose';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import { WhatsAppAgentService } from '../agents/WhatsAppAgentService';
+import getIaConfigModel from '../../models/iaConfig.model';
 
 // Initialize the BaseAgent service
 const whatsAppAgentService = new WhatsAppAgentService();
@@ -222,6 +223,11 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   
   console.log(`📊 Generando respuesta consolidada para ${messages.length} mensajes de ${userPhone}`);
   console.log(`🤖 Using BaseAgent system`);
+
+  const sessionModel = getSessionModel(conn);
+  const session = await sessionModel.findOne({ name: sessionName });
+  const IaConfig = getIaConfigModel(conn);
+  const config = await IaConfig.findOne({ _id: session?.IA?.id });
   
   try {
     console.log('🤖 Using BaseAgent system');
@@ -229,6 +235,7 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       company,
       lastMessage.body,
       userPhone,
+      config?._id.toString(),
       conn
     );
     

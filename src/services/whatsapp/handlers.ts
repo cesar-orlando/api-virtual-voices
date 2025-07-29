@@ -7,8 +7,8 @@ import { getSessionModel } from '../../models/whatsappSession.model';
 import { Connection } from 'mongoose';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
-import { WhatsAppAgentService } from '../agents/WhatsAppAgentService';
 import getIaConfigModel from '../../models/iaConfig.model';
+import { WhatsAppAgentService } from '../agents/WhatsAppAgentService';
 
 // Initialize the BaseAgent service
 const whatsAppAgentService = new WhatsAppAgentService();
@@ -150,7 +150,10 @@ async function handleDelayedResponse(
   existingRecord: any,
   conn: Connection
 ) {
-  const DELAY_MS = 15000; // 15 seconds
+  const DELAY_MS = 5000; // Reducido de 15 a 5 segundos para mejor responsividad
+  
+  // Always record the incoming message first
+  await updateChatRecord(company, existingRecord, "inbound", message, "human");
 
   // Check if there's already a pending response for this user
   const existingPending = pendingResponses.get(userPhone);
@@ -223,14 +226,46 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   
   console.log(`📊 Generando respuesta consolidada para ${messages.length} mensajes de ${userPhone}`);
   console.log(`🤖 Using BaseAgent system`);
-
-  const sessionModel = getSessionModel(conn);
-  const session = await sessionModel.findOne({ name: sessionName });
-  const IaConfig = getIaConfigModel(conn);
-  const config = await IaConfig.findOne({ _id: session?.IA?.id });
+  
+  // Debug específico para empresas inmobiliarias
+  if (company === 'grupo-milkasa') {
+    console.log(`🔍 MILKASA DEBUG - Procesando mensajes acumulados`);
+    console.log(`🔍 MILKASA DEBUG - Número de mensajes:`, messages.length);
+    console.log(`🔍 MILKASA DEBUG - Último mensaje:`, lastMessage.body);
+    console.log(`🔍 MILKASA DEBUG - Historial total en BD:`, latestRecord.messages?.length || 0);
+    if (latestRecord.messages?.length > 0) {
+      console.log(`🔍 MILKASA DEBUG - Últimos 3 mensajes del historial:`, 
+        latestRecord.messages.slice(-3).map((m: any) => ({
+          direction: m.direction,
+          body: m.body?.substring(0, 50) + '...',
+          respondedBy: m.respondedBy
+        }))
+      );
+    }
+  }
+  
+  if (company === 'grupokg' || company === 'grupo-kg') {
+    console.log(`🔍 GRUPO-KG DEBUG - Procesando mensajes acumulados`);
+    console.log(`🔍 GRUPO-KG DEBUG - Número de mensajes:`, messages.length);
+    console.log(`🔍 GRUPO-KG DEBUG - Último mensaje:`, lastMessage.body);
+    console.log(`🔍 GRUPO-KG DEBUG - Historial total en BD:`, latestRecord.messages?.length || 0);
+    if (latestRecord.messages?.length > 0) {
+      console.log(`🔍 GRUPO-KG DEBUG - Últimos 3 mensajes del historial:`, 
+        latestRecord.messages.slice(-3).map((m: any) => ({
+          direction: m.direction,
+          body: m.body?.substring(0, 50) + '...',
+          respondedBy: m.respondedBy
+        }))
+      );
+    }
+  }
   
   try {
     console.log('🤖 Using BaseAgent system');
+    
+    // Obtener la configuración de IA de la base de datos
+    const config = await getIaConfigModel(conn).findOne();
+    
     const response = await whatsAppAgentService.processWhatsAppMessage(
       company,
       lastMessage.body,
@@ -238,6 +273,14 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       config?._id.toString(),
       conn
     );
+    
+    // Debug específico para empresas inmobiliarias
+    if (company === 'grupo-milkasa') {
+      console.log(`🔍 MILKASA DEBUG - Respuesta generada:`, response?.substring(0, 100) + '...');
+    }
+    if (company === 'grupokg' || company === 'grupo-kg') {
+      console.log(`🔍 GRUPO-KG DEBUG - Respuesta generada:`, response?.substring(0, 100) + '...');
+    }
     
     // Send the response directly
     await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);

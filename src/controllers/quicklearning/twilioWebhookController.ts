@@ -51,7 +51,10 @@ export class TwilioWebhookController {
       await this.ensureProspectosTable(conn, company);
 
       // Create or get user record
-      const userRecord = await this.getOrCreateUserRecord(conn, company, cleanPhone);
+      const campaign = this.detectCampaign(message);
+      const userRecord = await this.getOrCreateUserRecord(conn, company, cleanPhone, campaign);
+
+      console.log(`🎯 Campaign detected: ${campaign}`);
 
       const config = await getIaConfigModel(conn).findOne();
 
@@ -103,18 +106,68 @@ export class TwilioWebhookController {
   }
 
   /**
+   * Detect campaign based on message content
+   */
+  private detectCampaign(message: string): string {
+    const lowerCaseMessage = message.toLowerCase();
+    
+    // RMKT: Detectar remarketing - tiene "(r)" en el mensaje
+    if (lowerCaseMessage.includes('(r)') || lowerCaseMessage.includes(' r)')) {
+      return 'RMKT';
+    }
+    
+    // VIRTUAL PROMOS: Detectar promos virtuales primero (más específico)
+    if (lowerCaseMessage.includes('promo virtual')) {
+      return 'VIRTUAL PROMOS';
+    }
+    
+    // ONLINE PROMOS: Detectar promos online
+    if (lowerCaseMessage.includes('promo online')) {
+      return 'ONLINE PROMOS';
+    }
+    
+    // PRESENCIAL: Detectar cursos presenciales
+    if (lowerCaseMessage.includes('presencial')) {
+      return 'PRESENCIAL';
+    }
+    
+    // VIRTUAL: Detectar cursos virtuales (después de promos)
+    if (lowerCaseMessage.includes('virtual')) {
+      return 'VIRTUAL';
+    }
+    
+    // ONLINE: Detectar cursos online (después de promos)
+    if (lowerCaseMessage.includes('online')) {
+      return 'ONLINE';
+    }
+    
+    // GENERAL: Por defecto para cualquier mención de cursos de inglés
+    if (lowerCaseMessage.includes('cursos') || 
+        lowerCaseMessage.includes('inglés') || 
+        lowerCaseMessage.includes('ingles') ||
+        lowerCaseMessage.includes('información') ||
+        lowerCaseMessage.includes('info')) {
+      return 'GENERAL';
+    }
+    
+    // Fallback a GENERAL si no coincide con nada específico
+    return 'GENERAL';
+  }
+
+  /**
    * Ensure prospectos table exists
    */
   private async ensureProspectosTable(conn: any, company: string) {
     try {
       const Table = getTableModel(conn);
       
-      const existingTable = await Table.findOne({ 
+      let existingTable = await Table.findOne({ 
         slug: "prospectos", 
         c_name: company 
       });
 
       if (!existingTable) {
+        // Crear nueva tabla con todos los campos
         const newTable = new Table({
           name: "Prospectos",
           slug: "prospectos",
@@ -124,11 +177,26 @@ export class TwilioWebhookController {
           fields: [
             { name: "name", label: "Nombre", type: "text", order: 1 },
             { name: "number", label: "Número", type: "number", order: 2 },
-            { name: "ia", label: "IA", type: "boolean", order: 3 }
+            { name: "ia", label: "IA", type: "boolean", order: 3 },
+            { name: "campana", label: "Campaña", type: "text", order: 4 }
           ]
         });
         await newTable.save();
-        console.log(`✅ Tabla "prospectos" creada para ${company}`);
+        console.log(`✅ Tabla "prospectos" creada para ${company} con campo campaña`);
+      } else {
+        // Verificar si tiene el campo campaña, si no lo tiene, agregarlo
+        const hasCampanaField = existingTable.fields.some((field: any) => field.name === 'campana');
+        
+        if (!hasCampanaField) {
+          existingTable.fields.push({
+            name: "campana", 
+            label: "Campaña", 
+            type: "text", 
+            order: existingTable.fields.length + 1
+          });
+          await existingTable.save();
+          console.log(`✅ Campo "campaña" agregado a tabla prospectos existente para ${company}`);
+        }
       }
     } catch (error) {
       console.error('❌ Error ensuring prospectos table:', error);
@@ -138,7 +206,7 @@ export class TwilioWebhookController {
   /**
    * Get or create user record
    */
-  private async getOrCreateUserRecord(conn: any, company: string, phone: string) {
+  private async getOrCreateUserRecord(conn: any, company: string, phone: string, campaign: string) {
     try {
       const Record = getRecordModel(conn);
       
@@ -153,12 +221,20 @@ export class TwilioWebhookController {
           data: {
             name: "Cliente WhatsApp",
             number: phone,
-            ia: true
+            ia: true,
+            campana: campaign
           },
           createdBy: 'twilio-webhook'
         });
         await existingRecord.save();
-        console.log(`✅ Nuevo registro creado para ${phone} en ${company}`);
+        console.log(`✅ Nuevo registro creado para ${phone} en ${company} con campaña: ${campaign}`);
+      } else {
+        // Si ya existe pero no tiene campaña, actualizarla
+        if (!existingRecord.data.campana) {
+          existingRecord.data.campana = campaign;
+          await existingRecord.save();
+          console.log(`✅ Campaña actualizada para ${phone}: ${campaign}`);
+        }
       }
 
       return existingRecord;

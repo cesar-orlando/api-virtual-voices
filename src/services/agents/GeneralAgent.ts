@@ -12,10 +12,9 @@ export class GeneralAgent extends BaseAgent {
   private customPrompt: string | null = null;
   private companyTools: ITool[] = [];
 
-  constructor(company: string, agentContext: Record<string, any> = {}) {
+  constructor(company: string) {
     console.log(`🔧 GeneralAgent: Constructor called for ${company}`);
     super(company);
-    this.agentContext = agentContext;
     console.log(`🔧 GeneralAgent: Constructor completed for ${company}`);
   }
 
@@ -53,11 +52,38 @@ export class GeneralAgent extends BaseAgent {
       const IaConfig = getIaConfigModel(conn);
       
       // Buscar configuración general de la empresa
-      const config = await IaConfig.findOne({ _id: this.agentContext.iaConfigId });
+      const config = await IaConfig.findOne({ type: 'general' });
+      
+      // Debug específico para empresas inmobiliarias
+      if (this.company === 'grupo-milkasa') {
+        console.log(`🔍 MILKASA DEBUG - Config encontrado:`, config ? 'SÍ' : 'NO');
+        if (config) {
+          console.log(`🔍 MILKASA DEBUG - CustomPrompt length:`, config.customPrompt?.length || 0);
+          console.log(`🔍 MILKASA DEBUG - Config name:`, config.name);
+          console.log(`🔍 MILKASA DEBUG - Config type:`, config.type);
+        }
+      }
+      
+      if (this.company === 'grupokg' || this.company === 'grupo-kg') {
+        console.log(`🔍 GRUPO-KG DEBUG - Config encontrado:`, config ? 'SÍ' : 'NO');
+        if (config) {
+          console.log(`🔍 GRUPO-KG DEBUG - CustomPrompt length:`, config.customPrompt?.length || 0);
+          console.log(`🔍 GRUPO-KG DEBUG - Config name:`, config.name);
+          console.log(`🔍 GRUPO-KG DEBUG - Config type:`, config.type);
+        }
+      }
       
       if (config && config.customPrompt) {
         this.customPrompt = config.customPrompt;
         console.log(`✅ Custom prompt loaded for ${this.company}`);
+        
+        // Debug específico para empresas inmobiliarias
+        if (this.company === 'grupo-milkasa') {
+          console.log(`🔍 MILKASA DEBUG - CustomPrompt cargado exitosamente`);
+        }
+        if (this.company === 'grupokg' || this.company === 'grupo-kg') {
+          console.log(`🔍 GRUPO-KG DEBUG - CustomPrompt cargado exitosamente`);
+        }
       } else {
         console.log(`⚠️ No custom prompt found for ${this.company}, using fallback`);
         this.customPrompt = null;
@@ -279,7 +305,7 @@ export class GeneralAgent extends BaseAgent {
               // Para otras herramientas, usar el ToolExecutor
               const result = await ToolExecutor.execute({
                 toolName: companyTool.name,
-                parameters: { ...params, phoneUser: this.agentContext.phoneUser },
+                parameters: params,
                 c_name: this.company,
                 executedBy: 'GeneralAgent'
               });
@@ -328,10 +354,22 @@ export class GeneralAgent extends BaseAgent {
     // Si hay un prompt personalizado, usarlo; si no, usar el fallback
     if (this.customPrompt) {
       console.log(`🔧 Using custom prompt for ${this.company}`);
+      
+      // Debug específico para grupo-milkasa
+      if (this.company === 'grupo-milkasa') {
+        console.log(`🔍 MILKASA DEBUG - Usando customPrompt de la BD`);
+        console.log(`🔍 MILKASA DEBUG - CustomPrompt preview:`, this.customPrompt.substring(0, 100) + '...');
+      }
+      
       return this.customPrompt;
     }
     
     console.log(`🔧 Using fallback prompt for ${this.company}`);
+    
+    // Debug específico para grupo-milkasa
+    if (this.company === 'grupo-milkasa') {
+      console.log(`🔍 MILKASA DEBUG - Usando prompt fallback (PROBLEMA)`);
+    }
     
     // Prompt específico para britanicomx
     if (this.company === 'britanicomx') {

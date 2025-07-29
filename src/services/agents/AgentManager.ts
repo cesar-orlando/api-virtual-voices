@@ -40,7 +40,7 @@ export class AgentManager {
                   case 'mitsubishi':
                     console.log(`🔧 AgentManager: Creating GeneralAgent for ${company}`);
                     try {
-                        agent = new GeneralAgent(company, agentContext);
+                        agent = new GeneralAgent(company);
                         await agent.initialize();
                         console.log(`🔧 AgentManager: GeneralAgent created successfully for ${company}`);
                     } catch (error) {

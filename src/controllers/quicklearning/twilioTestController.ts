@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { WhatsAppAgentService } from '../../services/agents/WhatsAppAgentService';
 import { getDbConnection } from '../../config/connectionManager';
+import getIaConfigModel from '../../models/iaConfig.model';
 
 export class TwilioTestController {
   private agentService: WhatsAppAgentService;
@@ -36,11 +37,14 @@ export class TwilioTestController {
       // Get database connection
       const conn = await getDbConnection(actualCompany);
 
+      const config = await getIaConfigModel(conn).findOne();
+
       // Process message with new agent system
       const response = await this.agentService.processWhatsAppMessage(
         actualCompany,
         message,
         phone,
+        config?._id.toString(),
         conn,
         chatHistory
       );
@@ -93,6 +97,8 @@ export class TwilioTestController {
 
       const results = [];
 
+      const config = await getIaConfigModel(conn).findOne();
+
       for (const message of messages) {
         const startTime = Date.now();
         
@@ -101,6 +107,7 @@ export class TwilioTestController {
             company,
             message,
             phone,
+            config?._id.toString(),
             conn
           );
 

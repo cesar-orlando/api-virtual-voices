@@ -114,16 +114,22 @@ export abstract class BaseAgent {
       console.log(`🔧 BaseAgent: About to run agent for ${this.company}`);
       console.log(`🔧 BaseAgent: messageWithContext length:`, messageWithContext.length);
       
-                          // SMART CONTEXT: If message is too long, use intelligent context reduction
-       if (messageWithContext.length > 1200) {
-         console.log(`🚨 BaseAgent: Using smart context reduction due to length (${messageWithContext.length})`);
-         const smartContext = this.buildSmartContext(context?.chatHistory || [], message);
-         
-         const result = await run(this.agent, smartContext, {
-           context: agentContext
-         });
-         return result.finalOutput || 'No se pudo generar una respuesta.';
-       }
+      // SMART CONTEXT: If message is too long, use intelligent context reduction
+      // Different thresholds for different companies
+      let contextThreshold = 1200; // Default for QuickLearning
+      if (this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg') {
+        contextThreshold = 4000; // Higher threshold for real estate companies
+      }
+      
+      if (messageWithContext.length > contextThreshold) {
+        console.log(`🚨 BaseAgent: Using smart context reduction due to length (${messageWithContext.length})`);
+        const smartContext = this.buildSmartContext(context?.chatHistory || [], message);
+        
+        const result = await run(this.agent, smartContext, {
+          context: agentContext
+        });
+        return result.finalOutput || 'No se pudo generar una respuesta.';
+      }
       
       const result = await run(this.agent, messageWithContext, {
         context: agentContext
@@ -160,32 +166,71 @@ export abstract class BaseAgent {
       return currentMessage;
     }
     
-    // Extract key information
-    const contextInfo = this.extractContextInfo(chatHistory);
+    // Extract key information based on company type
+    const contextInfo = this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg' 
+      ? this.extractRealEstateContext(chatHistory)
+      : this.extractContextInfo(chatHistory);
     
     // Build intelligent summary
     let smartContext = '';
     
-    // Add context summary
-    if (contextInfo.userName) {
-      smartContext += `CONTEXTO: Usuario es ${contextInfo.userName}. `;
-    }
-    if (contextInfo.chosenModality) {
-      smartContext += `Modalidad elegida: ${contextInfo.chosenModality}. `;
-    }
-    if (contextInfo.currentStage) {
-      smartContext += `Etapa: ${contextInfo.currentStage}. `;
-    }
-    if (contextInfo.providedData.length > 0) {
-      smartContext += `Datos proporcionados: ${contextInfo.providedData.join(', ')}. `;
+    // Add context summary for real estate
+    if (this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg') {
+      const realEstateContext = contextInfo as any; // Cast para evitar errores de tipo
+      if (realEstateContext.userName) {
+        smartContext += `CONTEXTO: Cliente es ${realEstateContext.userName}. `;
+      }
+      if (realEstateContext.greeted) {
+        smartContext += `Ya se realizó el saludo inicial. `;
+      }
+      if (realEstateContext.propertyType) {
+        smartContext += `Busca: ${realEstateContext.propertyType}. `;
+      }
+      if (realEstateContext.location) {
+        smartContext += `Ubicación: ${realEstateContext.location}. `;
+      }
+      if (realEstateContext.operation) {
+        smartContext += `Operación: ${realEstateContext.operation}. `;
+      }
+      if (realEstateContext.budget) {
+        smartContext += `Presupuesto: ${realEstateContext.budget}. `;
+      }
+      if (realEstateContext.currentStage) {
+        smartContext += `Etapa: ${realEstateContext.currentStage}. `;
+      }
+    } else {
+      // Original logic for QuickLearning
+      const quickLearningContext = contextInfo as any; // Cast para evitar errores de tipo  
+      if (quickLearningContext.userName) {
+        smartContext += `CONTEXTO: Usuario es ${quickLearningContext.userName}. `;
+      }
+      if (quickLearningContext.chosenModality) {
+        smartContext += `Modalidad elegida: ${quickLearningContext.chosenModality}. `;
+      }
+      if (quickLearningContext.currentStage) {
+        smartContext += `Etapa: ${quickLearningContext.currentStage}. `;
+      }
+      if (quickLearningContext.providedData && quickLearningContext.providedData.length > 0) {
+        smartContext += `Datos proporcionados: ${quickLearningContext.providedData.join(', ')}. `;
+      }
     }
     
-    // Add only the most recent relevant messages (max 4)
-    const recentMessages = chatHistory.slice(-4);
+    // Add more recent messages for real estate (8 instead of 4)
+    const messageCount = (this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg') ? 8 : 4;
+    const recentMessages = chatHistory.slice(-messageCount);
+    
     if (recentMessages.length > 0) {
       smartContext += '\n\nULTIMOS MENSAJES:\n';
       recentMessages.forEach((msg: any) => {
-        const role = msg.role === 'user' ? 'Usuario' : 'NatalIA';
+        // Usar el nombre correcto según la empresa
+        let assistantName = 'Asistente'; // Fallback
+        if (this.company === 'grupo-milkasa') {
+          assistantName = 'Alejandro';
+        } else if (this.company === 'grupokg' || this.company === 'grupo-kg') {
+          assistantName = 'Kaigi';
+        }
+        
+        const role = msg.role === 'user' ? 'Cliente' : assistantName;
         // Clean and limit message content
         const cleanContent = this.cleanMessageForContext(msg.content);
         smartContext += `${role}: ${cleanContent}\n`;
@@ -193,9 +238,22 @@ export abstract class BaseAgent {
     }
     
     // Add current message
-    smartContext += `\nMENSAJE ACTUAL DEL USUARIO:\n${currentMessage}`;
+    smartContext += `\nMENSAJE ACTUAL DEL CLIENTE:\n${currentMessage}`;
     
     console.log(`🔧 Smart context length: ${smartContext.length} (reduced from original)`);
+    
+    // Debug para grupo-milkasa
+    if (this.company === 'grupo-milkasa') {
+      const realEstateContext = contextInfo as any; // Cast para debug
+      console.log(`🔍 MILKASA DEBUG - Smart context info:`, {
+        userName: realEstateContext.userName,
+        greeted: realEstateContext.greeted,
+        propertyType: realEstateContext.propertyType,
+        location: realEstateContext.location,
+        messageCount: recentMessages.length
+      });
+    }
+    
     return smartContext;
   }
   
@@ -255,6 +313,104 @@ export abstract class BaseAgent {
     }
     
     return { userName, chosenModality, currentStage, providedData };
+  }
+
+  /**
+   * Extract key information for real estate companies
+   */
+  private extractRealEstateContext(chatHistory: any[]): {
+    userName: string | null;
+    greeted: boolean;
+    propertyType: string | null;
+    location: string | null;
+    operation: string | null;
+    budget: string | null;
+    currentStage: string;
+    chosenModality?: string | null;  // Para compatibilidad
+    providedData?: string[];  // Para compatibilidad
+  } {
+    let userName: string | null = null;
+    let greeted = false;
+    let propertyType: string | null = null;
+    let location: string | null = null;
+    let operation: string | null = null;
+    let budget: string | null = null;
+    let currentStage = 'Inicio';
+
+    for (const msg of chatHistory) {
+      if (msg.role === 'user' && msg.content) {
+        const content = msg.content.toLowerCase();
+
+        // Extract user name (likely short responses after greeting)
+        if (!userName && msg.content.length > 2 && msg.content.length < 25 && 
+            !content.includes('hola') && !content.includes('info') &&
+            !content.includes('si') && !content.includes('no') &&
+            !content.includes('?') && !content.includes('@') &&
+            !/\d{5,}/.test(msg.content)) {
+          userName = msg.content.trim();
+        }
+
+        // Check if greeting happened
+        if (content.includes('hola') || content.includes('buenas') || content.includes('buenos días')) {
+          greeted = true;
+        }
+
+        // Extract property type
+        if (content.includes('casa') || content.includes('departamento') || content.includes('depa') || 
+            content.includes('terreno') || content.includes('local') || content.includes('oficina')) {
+          propertyType = content.includes('casa') ? 'casa' : 
+                        content.includes('departamento') || content.includes('depa') ? 'departamento' :
+                        content.includes('terreno') ? 'terreno' : 'propiedad';
+        }
+
+        // Extract location (ciudades de Michoacán)
+        if (content.includes('morelia') || content.includes('uruapan') || content.includes('zamora') ||
+            content.includes('pátzcuaro') || content.includes('patzcuaro') || content.includes('lázaro cárdenas') ||
+            content.includes('apatzingán') || content.includes('zitácuaro') || content.includes('michoacán')) {
+          location = msg.content.trim();
+        }
+
+        // Extract operation
+        if (content.includes('comprar') || content.includes('compra') || content.includes('venta')) {
+          operation = 'compra';
+        } else if (content.includes('rentar') || content.includes('renta') || content.includes('alquiler')) {
+          operation = 'renta';
+        } else if (content.includes('inversión') || content.includes('inversion')) {
+          operation = 'inversión';
+        }
+
+        // Extract budget
+        if (content.includes('presupuesto') || content.includes('$') || content.includes('pesos') ||
+            content.includes('millones') || content.includes('mil') || /\d+[\d,]*/.test(content)) {
+          budget = msg.content.substring(0, 50); // Limitar longitud
+        }
+
+        // Determine current stage
+        if (userName && propertyType && location && operation) {
+          currentStage = 'Búsqueda de propiedades';
+        } else if (userName && (propertyType || location || operation)) {
+          currentStage = 'Recolección de datos';
+        } else if (userName) {
+          currentStage = 'Identificación completada';
+        } else if (greeted) {
+          currentStage = 'Saludo completado';
+        }
+      }
+      
+      // Check if assistant already greeted
+      if (msg.role === 'assistant' && msg.content) {
+        const assistantContent = msg.content.toLowerCase();
+        // Detectar saludo según la empresa
+        const greetingPattern = this.company === 'grupokg' || this.company === 'grupo-kg' ? 'soy kaigi' : 'soy alejandro';
+        
+        if (assistantContent.includes('¿con quién tengo el gusto?') || 
+            assistantContent.includes(greetingPattern)) {
+          greeted = true;
+        }
+      }
+    }
+
+    return { userName, greeted, propertyType, location, operation, budget, currentStage };
   }
   
   /**

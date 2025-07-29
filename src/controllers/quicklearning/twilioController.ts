@@ -11,6 +11,7 @@ import FormData from "form-data";
 import { getEnvironmentConfig } from "../../config/environments";
 import getUserModel from "../../core/users/user.model";
 import { Server as SocketIOServer } from "socket.io";
+import getIaConfigModel from "../../models/iaConfig.model";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
@@ -302,12 +303,15 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       const combinedMessage = buffer.messages.join("\n");
       
       console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser} con NUEVO SISTEMA DE AGENTES`);
+
+      const config = await getIaConfigModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
       const aiResponse = await whatsAppAgentService.processWhatsAppMessage(
         'quicklearning',
         combinedMessage,
         phoneUser,
+        config?._id.toString(),
         conn
       );
 
@@ -461,6 +465,57 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
 }
 
 /**
+ * Detect campaign based on message content
+ */
+function detectCampaign(message: string): string {
+  if (!message) return 'GENERAL';
+  
+  const lowerCaseMessage = message.toLowerCase();
+  
+  // RMKT: Detectar remarketing - tiene "(r)" en el mensaje
+  if (lowerCaseMessage.includes('(r)') || lowerCaseMessage.includes(' r)')) {
+    return 'RMKT';
+  }
+  
+  // VIRTUAL PROMOS: Detectar promos virtuales primero (más específico)
+  if (lowerCaseMessage.includes('promo virtual')) {
+    return 'VIRTUAL PROMOS';
+  }
+  
+  // ONLINE PROMOS: Detectar promos online
+  if (lowerCaseMessage.includes('promo online')) {
+    return 'ONLINE PROMOS';
+  }
+  
+  // PRESENCIAL: Detectar cursos presenciales
+  if (lowerCaseMessage.includes('presencial')) {
+    return 'PRESENCIAL';
+  }
+  
+  // VIRTUAL: Detectar cursos virtuales (después de promos)
+  if (lowerCaseMessage.includes('virtual')) {
+    return 'VIRTUAL';
+  }
+  
+  // ONLINE: Detectar cursos online (después de promos)
+  if (lowerCaseMessage.includes('online')) {
+    return 'ONLINE';
+  }
+  
+  // GENERAL: Por defecto para cualquier mención de cursos de inglés
+  if (lowerCaseMessage.includes('cursos') || 
+      lowerCaseMessage.includes('inglés') || 
+      lowerCaseMessage.includes('ingles') ||
+      lowerCaseMessage.includes('información') ||
+      lowerCaseMessage.includes('info')) {
+    return 'GENERAL';
+  }
+  
+  // Fallback a GENERAL si no coincide con nada específico
+  return 'GENERAL';
+}
+
+/**
  * Buscar o crear cliente en la base de datos
  */
 async function findOrCreateCustomer(phone: string, profileName: string, body: string, conn: any) {
@@ -503,6 +558,9 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       }
 
       // Crear nuevo cliente en tabla prospectos con la estructura correcta
+      const detectedCampaign = detectCampaign(body);
+      console.log(`🎯 Campaña detectada para ${phone}: ${detectedCampaign}`);
+      
       customer = new DynamicRecord({
         tableSlug: "prospectos",
         c_name: "quicklearning",
@@ -515,7 +573,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
           medio: "Meta",
           curso: null,
           ciudad: null,
-          campana: "RMKT",
+          campana: detectedCampaign,
           comentario: null,
           asesor: asesorRandom,
           ultimo_mensaje: body || null,
@@ -526,7 +584,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         },
       });
       await customer.save();
-      console.log(`✅ Nuevo cliente creado: ${phone}`);
+      console.log(`✅ Nuevo cliente creado: ${phone} con campaña: ${detectedCampaign}`);
     }
 
     return customer;

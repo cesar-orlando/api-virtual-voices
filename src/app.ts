@@ -8,6 +8,9 @@ import iaConfigRoutes from "./routes/iaConfig.routes";
 import toolRoutes from "./routes/tool.routes";
 import uploadRoutes from "./routes/upload.routes";
 import googleCalendarRoutes from "./routes/googleCalendar.routes";
+import chatMetricsRoutes from "./routes/chatMetrics.routes";
+import metaMessengerWebhook from './routes/meta.routes';
+
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -116,6 +119,8 @@ app.use("/api/google-calendar", googleCalendarRoutes);
 // import { handleGoogleCallback } from "./controllers/googleCalendar.controller";
 // app.get("/auth/google/callback", handleGoogleCallback);
 
+app.use("/api/chat-metrics", chatMetricsRoutes);
+
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);
 
@@ -127,6 +132,8 @@ app.use('/api/test', twilioTestRoutes);
 
 // Rutas de webhook para Twilio
 app.use('/api/webhook', twilioWebhookRoutes);
+
+app.use(metaMessengerWebhook);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

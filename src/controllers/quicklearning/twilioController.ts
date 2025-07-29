@@ -311,8 +311,8 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
         'quicklearning',
         combinedMessage,
         phoneUser,
+        conn,
         config?._id.toString(),
-        conn
       );
 
       // Enviar respuesta

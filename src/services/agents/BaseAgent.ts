@@ -11,6 +11,7 @@ export abstract class BaseAgent {
   protected agent: Agent<AgentContext>;
   protected company: string;
   protected openaiApiKey: string;
+  protected agentContext: Record<string, any> = {};
 
     constructor(company: string) {
     this.company = company;

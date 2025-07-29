@@ -2,12 +2,13 @@ import dotenv from "dotenv";
 import app from "./app";
 import http from 'http';
 import { Server } from 'socket.io';
-import { connectDB, getAllSessionsFromAllDatabases } from "./config/database";
+import { connectDB, getAllFacebookConfigsFromAllDatabases, getAllSessionsFromAllDatabases } from "./config/database";
 import { startWhatsappBot } from "./services/whatsapp";
 import { getEnvironmentConfig } from "./config/environments";
 import { cleanupInactiveConnections } from "./config/connectionManager";
 import fs from 'fs';
 import path from 'path';
+import { loadRecentFacebookMessages } from './services/meta/messenger';
 
 dotenv.config();
 
@@ -98,7 +99,12 @@ async function main() {
     setInterval(() => {
       cleanupInactiveConnections();
     }, 5 * 60 * 1000);
-    
+
+    const fbConfigs = await getAllFacebookConfigsFromAllDatabases();
+
+    for (const config of fbConfigs) {
+      loadRecentFacebookMessages(config, 10);
+    }
     
   } catch (error) {
     console.error('❌ Error starting server:', error);

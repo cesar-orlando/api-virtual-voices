@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { getDbConnection, getBaseMongoUri } from "../config/connectionManager";
 import { getSessionModel } from "../models/whatsappSession.model";
+import getCompanyModel from "../models/company.model";
 import { getEnvironmentConfig, logEnvironmentInfo, validateEnvironmentConfig } from "./environments";
 
 export async function connectDB() {
@@ -88,6 +89,42 @@ export async function getAllSessionsFromAllDatabases() {
 
   // Aplana el array de arrays
   return allSessionsArrays.flat();
+}
+
+export async function getAllFacebookConfigsFromAllDatabases() {
+  if (!mongoose.connection.db) {
+    throw new Error("MongoDB connection is not established.");
+  }
+  const admin = mongoose.connection.db.admin();
+  const dbs = await admin.listDatabases();
+
+  // Filtra solo las bases de datos de empresas (para no incluir admin o local)
+  const companyDbs = dbs.databases.filter(
+    dbInfo => dbInfo.name !== "admin" && dbInfo.name !== "local"
+  );
+
+  // Ejecuta las consultas en paralelo
+  const allFacebookConfigsArrays = await Promise.all(
+    companyDbs.map(async (dbInfo) => {
+      const dbName = dbInfo.name;
+      try {
+        const conn = await getDbConnection(dbName);
+        const Company = getCompanyModel(conn);
+        // Busca todas las compañías que tengan datos de facebook configurados
+        const companies = await Company.find({ "facebook.pageId": { $exists: true, $ne: null } });
+        return companies.map(company => ({
+          companyDb: dbName,
+          facebook: company.facebook
+        }));
+      } catch (err) {
+        console.error(`Error fetching facebook configs from ${dbName}:`, err);
+        return [];
+      }
+    })
+  );
+
+  // Aplana el array de arrays
+  return allFacebookConfigsArrays.flat();
 }
 
 // Función para obtener información de la base de datos actual

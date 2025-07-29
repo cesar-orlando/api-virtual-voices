@@ -370,7 +370,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
                 name: chat.name || chat.id._serialized,
                 messages: [],
                 session: {
-                  name: existingSession?.name // Solo el nombre, no el id
+                  id: existingSession?.id,
+                  name: existingSession?.name
                 },
                 advisor: {
                   id: existingSession?.user.id,

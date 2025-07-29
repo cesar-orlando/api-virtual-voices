@@ -56,3 +56,28 @@ export const getCompany = async (req: Request, res: Response) => {
     return;
   }
 };
+
+export const updateCompany = async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const { address, phone, facebook } = req.body;
+
+    const conn = await getConnectionByCompanySlug(name);
+    const Company = getCompanyModel(conn);
+
+    const updatedCompany = await Company.findOneAndUpdate(
+      { name },
+      { address, phone, facebook },
+      { new: true }
+    );
+
+    if (!updatedCompany) {
+      res.status(404).json({ message: "Company not found" });
+      return;
+    }
+
+    res.status(200).json(updatedCompany);
+  } catch (error) {
+    res.status(500).json({ message: "Error updating company", error });
+  }
+};

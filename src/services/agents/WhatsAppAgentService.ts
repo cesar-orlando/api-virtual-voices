@@ -17,37 +17,11 @@ export class WhatsAppAgentService {
     company: string, 
     message: string, 
     phoneUser: string,
+    iaConfigId: string,
     conn: Connection,
     providedChatHistory?: any[]
   ): Promise<string> {
     try {
-      // Check if AI is enabled for this user
-      try {
-        let aiEnabled = true;
-        if (company === 'quicklearning') {
-          const getQuickLearningChatModel = (await import('../../models/quicklearning/chat.model')).default;
-          const ChatModel = getQuickLearningChatModel(conn);
-          const chat = await ChatModel.findOne({ phone: phoneUser });
-          aiEnabled = chat?.aiEnabled !== false;
-        } else {
-          const { getWhatsappChatModel } = await import('../../models/whatsappChat.model');
-          const WhatsappChat = getWhatsappChatModel(conn);
-          const chat = await WhatsappChat.findOne({ phone: phoneUser });
-          aiEnabled = chat?.botActive !== false;
-        }
-
-        console.log(`🔍 AI habilitada para ${phoneUser}: ${aiEnabled}`);
-        
-        if (!aiEnabled) {
-          console.log(`🚫 IA desactivada para ${phoneUser}, no procesando mensaje`);
-          return "Ya pasé tu consulta a uno de mis compañeros. Te contactará muy pronto para ayudarte.";
-        }
-      } catch (error) {
-        console.error(`❌ Error verificando aiEnabled para ${phoneUser}:`, error);
-        // En caso de error, continuar con el procesamiento
-      }
-
-      // console.log(`🤖 Processing WhatsApp message for ${company} - ${phoneUser}`);
       
       // Use provided chat history or get from database
       let chatHistory: any[];
@@ -69,7 +43,8 @@ export class WhatsAppAgentService {
           const response = await this.agentManager.processMessage(company, message, {
             phoneUser,
             chatHistory,
-            company
+            company,
+            iaConfigId,
           });
           console.log(`🤖 Agent response received: ${response.substring(0, 50)}...`);
           

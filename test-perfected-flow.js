@@ -283,9 +283,9 @@ const COMPANY_CONFIGS = {
     name: "Quick Learning",
     description: "Escuela de inglés con cursos virtuales, presenciales y online",
     testScenarios: {
-      //Escenario especial para testing
-      especial: [
-        { userMessage: "Hola. Quisiera más información de cursos de inglés. (RMKT)", expectedStage: "Saludo inicial" },
+      // Escenario REAL que me pediste mantener
+      cliente_real_productivo: [
+        { userMessage: "Hola. Quisiera más información de cursos de inglés. (r)", expectedStage: "Saludo inicial" },
         { userMessage: "Cesar", expectedStage: "Pide información" },
         { userMessage: "Si", expectedStage: "Da nombre corto" },
         { userMessage: "No", expectedStage: "Confirma interés" },
@@ -294,6 +294,37 @@ const COMPANY_CONFIGS = {
         { userMessage: "2", expectedStage: "Elige modalidad" },
         { userMessage: "Si", expectedStage: "Confirma interés" },
         { userMessage: "SI", expectedStage: "Si quiere inscribirse" },
+      ],
+      // Estudiante mexicano típico
+      estudiante_mexican: [
+        { userMessage: "hola", expectedStage: "Saludo casual" },
+        { userMessage: "info de inglés", expectedStage: "Pide info" },
+        { userMessage: "ana", expectedStage: "Nombre corto" },
+        { userMessage: "sip", expectedStage: "Confirma" },
+        { userMessage: "nel", expectedStage: "No conoce" },
+        { userMessage: "órale", expectedStage: "Acepta" },
+        { userMessage: "online", expectedStage: "Elige modalidad" },
+        { userMessage: "está caro?", expectedStage: "Pregunta precio" },
+      ],
+      // Profesionista
+      profesionista: [
+        { userMessage: "buenas", expectedStage: "Saludo" },
+        { userMessage: "necesito inglés para el trabajo", expectedStage: "Motivo" },
+        { userMessage: "roberto", expectedStage: "Nombre" },
+        { userMessage: "si", expectedStage: "Confirma" },
+        { userMessage: "no lo conozco", expectedStage: "No conoce" },
+        { userMessage: "perfecto", expectedStage: "Acepta" },
+        { userMessage: "presencial", expectedStage: "Elige modalidad" },
+      ],
+      // Mamá mexicana
+      mama_mexicana: [
+        { userMessage: "hola", expectedStage: "Saludo" },
+        { userMessage: "es para mi hijo", expectedStage: "Para hijo" },
+        { userMessage: "carmen", expectedStage: "Nombre mamá" },
+        { userMessage: "si le urge", expectedStage: "Necesidad" },
+        { userMessage: "no sabía", expectedStage: "No conoce" },
+        { userMessage: "suena bien", expectedStage: "Acepta" },
+        { userMessage: "virtual para jóvenes", expectedStage: "Modalidad joven" },
       ],
       /*   // Escenario 1: Usuario super informal (como en la vida real)
       informal_basico: [
@@ -421,7 +452,7 @@ const COMPANY_CONFIGS = {
   },
   grupokg: {
     name: "Grupo KG",
-    description: "Empresa de bienes raíces y servicios inmobiliarios",
+    description: "Empresa de bienes raíces y servicios inmobiliarios en Guadalajara",
     testScenarios: {
       asesor_web: [
         {
@@ -435,12 +466,34 @@ const COMPANY_CONFIGS = {
           expectedStage: "Pregunta comisión asesor",
         },
       ],
-      venta1: [
-        {
-          userMessage: "Hola, me puedes dar información de la casa gomez farias",
-          expectedStage: "Mensaje de cliente preguntando por una casa",
-        },
-        { userMessage: "zona medrina", expectedStage: "Dice zona" },
+      // Cliente tapatío típico
+      cliente_providencia: [
+        { userMessage: "que onda", expectedStage: "Saludo tapatío" },
+        { userMessage: "busco casa en providencia", expectedStage: "Zona premium GDL" },
+        { userMessage: "patricia", expectedStage: "Nombre simple" },
+        { userMessage: "comprar", expectedStage: "Una palabra" },
+        { userMessage: "4 millones", expectedStage: "Presupuesto directo" },
+        { userMessage: "que tienen?", expectedStage: "Pregunta directa" },
+        { userMessage: "hay fotos?", expectedStage: "Quiere ver" },
+      ],
+      // Joven de GDL buscando depa
+      joven_gdl: [
+        { userMessage: "hola kaigi", expectedStage: "Saludo con nombre" },
+        { userMessage: "busco depa", expectedStage: "Súper directo" },
+        { userMessage: "alex", expectedStage: "Nombre corto" },
+        { userMessage: "rentar", expectedStage: "Una palabra" },
+        { userMessage: "chapultepec", expectedStage: "Zona joven GDL" },
+        { userMessage: "maximo 20 mil", expectedStage: "Presupuesto" },
+        { userMessage: "con estacionamiento", expectedStage: "Requisito" },
+      ],
+      // Asesor de Guadalajara
+      asesor_gdl: [
+        { userMessage: "buenas", expectedStage: "Saludo mexicano" },
+        { userMessage: "soy asesor", expectedStage: "Directo" },
+        { userMessage: "manuel de century 21", expectedStage: "Datos básicos" },
+        { userMessage: "tengo cliente chapalita", expectedStage: "Cliente y zona" },
+        { userMessage: "compartes comision?", expectedStage: "Pregunta clave" },
+        { userMessage: "cuanto es?", expectedStage: "Pregunta porcentaje" },
       ],
       /*       venta: [
         { userMessage: 'Hola', expectedStage: 'Saludo inicial' },
@@ -491,102 +544,155 @@ const COMPANY_CONFIGS = {
         { userMessage: '¿Qué opciones tienes?', expectedStage: 'Solicita opciones' }
       ] */
     },
+    // Escenario 1: Cliente interesado en Eclipse Cross (SUV popular en México)
+    cliente_eclipse_cross: [
+      { userMessage: "Hola, buenas tardes", expectedStage: "Saludo inicial" },
+      { userMessage: "Información del Eclipse Cross", expectedStage: "Solicita información" },
+      { userMessage: "Me llamo Roberto Hernández", expectedStage: "Proporciona nombre" },
+      { userMessage: "¿Cuánto cuesta?", expectedStage: "Pregunta precio" },
+      { userMessage: "¿Qué versiones manejan?", expectedStage: "Pregunta versiones" },
+      { userMessage: "¿Hacen planes de financiamiento?", expectedStage: "Pregunta financiamiento" },
+      { userMessage: "¿Puedo apartar uno?", expectedStage: "Muestra interés compra" },
+    ],
+
+    // Escenario 2: Cliente preguntando por Outlander (familia mexicana)
+    familia_outlander: [
+      { userMessage: "Hola", expectedStage: "Saludo inicial" },
+      { userMessage: "¿Tienen Outlander disponible?", expectedStage: "Pregunta disponibilidad" },
+      { userMessage: "Soy María González", expectedStage: "Proporciona nombre" },
+      { userMessage: "Es para mi familia", expectedStage: "Especifica uso" },
+      { userMessage: "¿Cuánto rinde de gasolina?", expectedStage: "Pregunta rendimiento" },
+      { userMessage: "¿Tiene garantía?", expectedStage: "Pregunta garantía" },
+      { userMessage: "¿Puedo hacer una prueba de manejo?", expectedStage: "Solicita test drive" },
+    ],
+
+    // Escenario 3: Cliente buscando pickup (muy común en México)
+    cliente_l200: [
+      { userMessage: "Buenos días", expectedStage: "Saludo formal" },
+      { userMessage: "Me interesa la L200", expectedStage: "Solicita pickup" },
+      { userMessage: "Carlos Jiménez", expectedStage: "Proporciona nombre" },
+      { userMessage: "Para trabajo", expectedStage: "Especifica uso comercial" },
+      { userMessage: "¿Cuánto puede cargar?", expectedStage: "Pregunta capacidad" },
+      { userMessage: "¿Viene con aire acondicionado?", expectedStage: "Pregunta equipamiento" },
+      { userMessage: "¿Qué plan de pago manejan?", expectedStage: "Pregunta planes pago" },
+    ],
+
+    // Escenario 4: Cliente preguntando por servicio (post-venta)
+    servicio_postventa: [
+      { userMessage: "Hola", expectedStage: "Saludo inicial" },
+      { userMessage: "Tengo un Mirage 2020", expectedStage: "Menciona vehículo propio" },
+      { userMessage: "Ana Martínez", expectedStage: "Proporciona nombre" },
+      { userMessage: "Necesito servicio", expectedStage: "Solicita servicio" },
+      { userMessage: "¿Qué horarios manejan?", expectedStage: "Pregunta horarios servicio" },
+      { userMessage: "¿Hacen cita?", expectedStage: "Pregunta citas" },
+    ],
+
+    // Escenario 5: Cliente joven interesado en Mirage (económico)
+    joven_mirage: [
+      { userMessage: "qué tal", expectedStage: "Saludo informal" },
+      { userMessage: "info del mirage", expectedStage: "Solicita info informal" },
+      { userMessage: "diego", expectedStage: "Nombre corto" },
+      { userMessage: "cuánto sale?", expectedStage: "Pregunta precio informal" },
+      { userMessage: "está muy caro", expectedStage: "Objeción precio" },
+      { userMessage: "que descuentos hay?", expectedStage: "Pregunta descuentos" },
+      { userMessage: "lo puedo ver?", expectedStage: "Solicita ver vehículo" },
+    ],
+
+    // Escenario 6: Cliente empresario interesado en flota
+    empresario_flota: [
+      { userMessage: "Buenas tardes", expectedStage: "Saludo formal" },
+      { userMessage: "Soy Ing. Luis Ramírez", expectedStage: "Proporciona nombre profesional" },
+      { userMessage: "Manejo una constructora", expectedStage: "Especifica empresa" },
+      { userMessage: "Necesito 5 L200", expectedStage: "Solicita flota" },
+      { userMessage: "¿Hay descuento por volumen?", expectedStage: "Pregunta descuento empresarial" },
+      { userMessage: "¿Manejan facturación?", expectedStage: "Pregunta facturación" },
+    ],
+  },
+  mitsubishi: {
+    name: "Mitsubishi Motors México",
+    description: "Concesionario oficial de vehículos Mitsubishi en México",
+    testScenarios: {
+      // Cliente mexicano real preguntando por Eclipse Cross
+      cliente_eclipse_cross: [
+        { userMessage: "hola", expectedStage: "Saludo casual" },
+        { userMessage: "info del eclipse cross", expectedStage: "Pregunta informal" },
+        { userMessage: "roberto", expectedStage: "Nombre corto" },
+        { userMessage: "cuanto sale?", expectedStage: "Pregunta precio directo" },
+        { userMessage: "que versiones hay?", expectedStage: "Pregunta versiones" },
+        { userMessage: "puedo financiar?", expectedStage: "Pregunta financiamiento" },
+        { userMessage: "lo puedo ver?", expectedStage: "Quiere verlo" },
+      ],
+      // Familia mexicana típica
+      familia_outlander: [
+        { userMessage: "buenas", expectedStage: "Saludo mexicano" },
+        { userMessage: "tienen outlander?", expectedStage: "Pregunta directa" },
+        { userMessage: "maria", expectedStage: "Nombre simple" },
+        { userMessage: "para la familia", expectedStage: "Especifica uso" },
+        { userMessage: "cuanto gasta de gasolina?", expectedStage: "Pregunta rendimiento mexicana" },
+        { userMessage: "trae garantia?", expectedStage: "Pregunta garantía casual" },
+        { userMessage: "puedo manejarlo?", expectedStage: "Test drive informal" },
+      ],
+      // Trabajador mexicano buscando pickup
+      trabajador_l200: [
+        { userMessage: "que tal", expectedStage: "Saludo trabajador" },
+        { userMessage: "la L200", expectedStage: "Pregunta directa pickup" },
+        { userMessage: "carlos", expectedStage: "Nombre trabajador" },
+        { userMessage: "para el trabajo", expectedStage: "Uso laboral" },
+        { userMessage: "cuanto carga?", expectedStage: "Capacidad trabajo" },
+        { userMessage: "viene con clima?", expectedStage: "Aire acondicionado mexicano" },
+        { userMessage: "como le puedo hacer para pagarlo?", expectedStage: "Forma de pago mexicana" },
+      ],
+    },
   },
   "grupo-milkasa": {
     name: "Grupo Milkasa",
     description: "Inmobiliaria líder en Michoacán especializada en propiedades residenciales",
     testScenarios: {
-      // Escenario 1: Cliente básico buscando casa
-      cliente_basico: [
-        { userMessage: "Hola", expectedStage: "Saludo inicial" },
-        { userMessage: "Busco una casa", expectedStage: "Solicita información" },
-        { userMessage: "Me llamo María González", expectedStage: "Proporciona nombre" },
-        { userMessage: "Para comprar", expectedStage: "Especifica operación" },
-        { userMessage: "En Uruapan", expectedStage: "Proporciona ciudad" },
-        { userMessage: "Tengo un presupuesto de 2 millones", expectedStage: "Proporciona presupuesto" },
-        { userMessage: "¿Qué opciones tienes?", expectedStage: "Solicita opciones" },
-        { userMessage: "Me interesa la primera", expectedStage: "Muestra interés" },
-        { userMessage: "¿Puedo verla mañana?", expectedStage: "Solicita cita" },
+      // Como realmente llegan los clientes mexicanos
+      cliente_casa_gomez_farias: [
+        {
+          userMessage: "Hola, me puedes dar información de la casa gomez farias",
+          expectedStage: "Pregunta específica real",
+        },
+        { userMessage: "zona medrina", expectedStage: "Especifica zona como llega" },
       ],
-
-      // Escenario 2: Cliente buscando departamento en renta
-      departamento_renta: [
-        { userMessage: "Hola Alejandro", expectedStage: "Saludo con nombre" },
-        { userMessage: "Busco departamento en renta", expectedStage: "Solicita renta" },
-        { userMessage: "Soy Luis Hernández", expectedStage: "Proporciona nombre" },
-        { userMessage: "En Morelia", expectedStage: "Proporciona ciudad" },
-        { userMessage: "Máximo 15 mil pesos", expectedStage: "Proporciona presupuesto" },
-        { userMessage: "2 recámaras", expectedStage: "Especifica recámaras" },
-        { userMessage: "¿Tienes algo disponible?", expectedStage: "Pregunta disponibilidad" },
+      // Cliente típico michoacano
+      cliente_uruapan: [
+        { userMessage: "hola", expectedStage: "Saludo simple" },
+        { userMessage: "busco casa", expectedStage: "Directo al punto" },
+        { userMessage: "maria", expectedStage: "Nombre simple" },
+        { userMessage: "comprar", expectedStage: "Una palabra" },
+        { userMessage: "uruapan", expectedStage: "Solo la ciudad" },
+        { userMessage: "2 millones", expectedStage: "Presupuesto directo" },
+        { userMessage: "que hay?", expectedStage: "Pregunta casual" },
       ],
-
-      // Escenario 3: Cliente con presupuesto específico
-      presupuesto_especifico: [
-        { userMessage: "Hola", expectedStage: "Saludo inicial" },
-        { userMessage: "Información", expectedStage: "Solicita información" },
-        { userMessage: "Ana Martínez", expectedStage: "Proporciona nombre" },
-        { userMessage: "Quiero comprar", expectedStage: "Especifica compra" },
-        { userMessage: "Pátzcuaro", expectedStage: "Proporciona ciudad" },
-        { userMessage: "Entre 1.5 y 3 millones", expectedStage: "Rango presupuesto" },
-        { userMessage: "Casa de campo", expectedStage: "Tipo específico" },
-        { userMessage: "¿Qué me recomiendas?", expectedStage: "Solicita recomendación" },
+      // Cliente buscando depa para rentar
+      depa_renta: [
+        { userMessage: "buenas alejandro", expectedStage: "Saludo conocido" },
+        { userMessage: "busco depa para rentar", expectedStage: "Directo" },
+        { userMessage: "luis", expectedStage: "Nombre corto" },
+        { userMessage: "morelia", expectedStage: "Ciudad" },
+        { userMessage: "maximo 15 mil", expectedStage: "Presupuesto claro" },
+        { userMessage: "2 recamaras", expectedStage: "Especificación" },
+        { userMessage: "hay algo?", expectedStage: "Pregunta mexicana" },
       ],
-
-      // Escenario 4: Asesor inmobiliario
-      asesor_inmobiliario: [
-        { userMessage: "Hola", expectedStage: "Saludo inicial" },
-        { userMessage: "Soy asesor inmobiliario", expectedStage: "Se identifica asesor" },
-        { userMessage: "Roberto Silva de Century 21", expectedStage: "Proporciona datos" },
-        { userMessage: "Tengo cliente interesado", expectedStage: "Menciona cliente" },
-        { userMessage: "Casa en Uruapan", expectedStage: "Especifica búsqueda" },
-        { userMessage: "¿Compartes comisión?", expectedStage: "Pregunta comisión" },
-        { userMessage: "Estoy registrado en AMPI", expectedStage: "Indica registro" },
-        { userMessage: "¿Cuánto es la comisión?", expectedStage: "Pregunta porcentaje" },
+      // Asesor que llega
+      asesor_real: [
+        { userMessage: "hola", expectedStage: "Saludo" },
+        { userMessage: "soy asesor", expectedStage: "Se identifica simple" },
+        { userMessage: "roberto de century 21", expectedStage: "Datos básicos" },
+        { userMessage: "tengo cliente", expectedStage: "Menciona cliente" },
+        { userMessage: "casa uruapan", expectedStage: "Especifica corto" },
+        { userMessage: "compartes comision?", expectedStage: "Pregunta directa" },
       ],
-
-      // Escenario 5: Cliente preguntando por propiedad específica
-      propiedad_especifica: [
-        { userMessage: "Hola", expectedStage: "Saludo inicial" },
-        { userMessage: "Me llamo Carmen López", expectedStage: "Proporciona nombre" },
-        { userMessage: "Vi una casa en Valle Imperial", expectedStage: "Menciona propiedad" },
-        { userMessage: "¿Sigue disponible?", expectedStage: "Pregunta disponibilidad" },
-        { userMessage: "¿Cuánto cuesta?", expectedStage: "Pregunta precio" },
-        { userMessage: "¿Acepta mascotas?", expectedStage: "Pregunta mascotas" },
-        { userMessage: "¿Puedo agendar cita?", expectedStage: "Solicita cita" },
-      ],
-
-      // Escenario 6: Cliente buscando terreno
-      terreno_inversion: [
-        { userMessage: "Hola Alejandro", expectedStage: "Saludo con nombre" },
-        { userMessage: "Busco terreno", expectedStage: "Solicita terreno" },
-        { userMessage: "Diego Ramírez", expectedStage: "Proporciona nombre" },
-        { userMessage: "Para inversión", expectedStage: "Especifica propósito" },
-        { userMessage: "En Uruapan o alrededores", expectedStage: "Proporciona zona" },
-        { userMessage: "Presupuesto flexible", expectedStage: "Menciona presupuesto" },
-        { userMessage: "¿Qué opciones tienes?", expectedStage: "Solicita opciones" },
-      ],
-
-      // Escenario 7: Cliente informal con mensajes cortos
-      cliente_informal: [
-        { userMessage: "hola", expectedStage: "Saludo informal" },
-        { userMessage: "info", expectedStage: "Solicita info corta" },
-        { userMessage: "pedro", expectedStage: "Nombre corto" },
-        { userMessage: "casa", expectedStage: "Tipo corto" },
-        { userMessage: "uruapan", expectedStage: "Ciudad corta" },
-        { userMessage: "1 millon", expectedStage: "Presupuesto corto" },
-        { userMessage: "ok", expectedStage: "Confirmación corta" },
-      ],
-
-      // Escenario 8: Cliente con muchas preguntas
-      cliente_detallado: [
-        { userMessage: "Hola, buenos días", expectedStage: "Saludo formal" },
-        { userMessage: "Me llamo Patricia Morales", expectedStage: "Proporciona nombre completo" },
-        { userMessage: "Estoy buscando casa en venta", expectedStage: "Especifica búsqueda" },
-        { userMessage: "En Morelia", expectedStage: "Proporciona ciudad" },
-        { userMessage: "3 recámaras mínimo", expectedStage: "Especifica recámaras" },
-        { userMessage: "¿Tienen con jardín?", expectedStage: "Pregunta jardín" },
-        { userMessage: "¿Aceptan crédito bancario?", expectedStage: "Pregunta financiamiento" },
-        { userMessage: "¿Cuáles son los precios?", expectedStage: "Pregunta precios" },
+      // Cliente informal típico
+      cliente_mexicano_real: [
+        { userMessage: "que tal", expectedStage: "Saludo mexicano" },
+        { userMessage: "info", expectedStage: "Súper corto" },
+        { userMessage: "pedro", expectedStage: "Nombre" },
+        { userMessage: "casa", expectedStage: "Tipo" },
+        { userMessage: "pátzcuaro", expectedStage: "Ciudad" },
+        { userMessage: "cuanto sale?", expectedStage: "Pregunta precio mexicana" },
       ],
     },
   },

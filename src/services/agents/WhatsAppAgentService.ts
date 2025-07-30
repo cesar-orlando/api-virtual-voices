@@ -17,8 +17,9 @@ export class WhatsAppAgentService {
     company: string, 
     message: string, 
     phoneUser: string,
-    iaConfigId: string,
     conn: Connection,
+    iaConfigId?: string,
+    sessionId?: string,
     providedChatHistory?: any[]
   ): Promise<string> {
     try {
@@ -44,6 +45,7 @@ export class WhatsAppAgentService {
             phoneUser,
             chatHistory,
             company,
+            sessionId,
             iaConfigId,
           });
           console.log(`🤖 Agent response received: ${response.substring(0, 50)}...`);

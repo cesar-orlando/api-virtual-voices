@@ -183,26 +183,29 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         return;
       }
 
-      const existing = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': num });
-      if (existing) {
-        return;
-      }
-
       const userData = await User.findOne({ _id: user_id });
 
-      const newProspect = new Record({
-        tableSlug: 'prospectos',
-        c_name: company,
-        createdBy: 'whatsapp-bot',
-        data: {
-          name: name || '',
-          number: num,
-          ia: activateIA === true, // Si se pasa activateIA true, se activa la IA
-          asesor: { id: user_id, name: userData.name } // Asignar asesor por defecto
-        }
-      });
-      await newProspect.save();
-      console.log(`✅ Prospecto guardado: ${num}`);
+      // Atomic upsert: only insert if not exists
+      const result = await Record.findOneAndUpdate(
+        { tableSlug: 'prospectos', c_name: company, 'data.number': num },
+        {
+          $setOnInsert: {
+            tableSlug: 'prospectos',
+            c_name: company,
+            createdBy: 'whatsapp-bot',
+            data: {
+              name: name || '',
+              number: num,
+              ia: activateIA === true,
+              asesor: { id: user_id, name: userData?.name }
+            }
+          }
+        },
+        { upsert: true, new: false } // new: false returns the pre-existing doc if found, null if inserted
+      );
+      if (!result) {
+        console.log(`✅ Prospecto guardado: ${num}`);
+      }
     } catch (err) {
       console.error('Error guardando prospecto:', err);
     }
@@ -367,7 +370,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
                 name: chat.name || chat.id._serialized,
                 messages: [],
                 session: {
-                  name: existingSession?.name // Solo el nombre, no el id
+                  id: existingSession?.id,
+                  name: existingSession?.name
                 },
                 advisor: {
                   id: existingSession?.user.id,
@@ -444,24 +448,23 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       try {
         // 0 = pendiente, 1 = enviado, 2 = entregado, 3 = leído, 4 = reproducido (audio)
         if (ack === 3) {
-          // Buscar el chat correspondiente en la base de datos
           const conn = await getDbConnection(company);
           const WhatsappChat = getWhatsappChatModel(conn);
-
-          // Buscar el chat por número y sesión
-          const chatRecord = await WhatsappChat.findOne({
-            phone: msg.to || msg.from, // depende si es enviado o recibido
-            "session.name": sessionName
-          });
-
-          if (chatRecord) {
-            // Buscar el mensaje por msgId
-            const message = chatRecord.messages.find((m: any) => m.msgId === msg.id.id);
-            if (message && message.status !== 'leído') {
-              message.status = 'leído';
-              await chatRecord.save();
+          // Actualiza el status del mensaje a 'leído' solo si no lo está ya
+          await WhatsappChat.findOneAndUpdate(
+            {
+              phone: msg.from,
+              "session.name": sessionName,
+              "messages.msgId": msg.id.id,
+              "messages.status": { $ne: "leído" }
+            },
+            {
+              $set: { "messages.$[targetMsg].status": "leído" }
+            },
+            {
+              arrayFilters: [ { "targetMsg.msgId": msg.id.id, "targetMsg.status": { $ne: "leído" } } ]
             }
-          }
+          );
         }
       } catch (err) {
         console.error('Error actualizando estado de mensaje:', err);

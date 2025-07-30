@@ -230,8 +230,9 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
         c_name,
         lastUserMessage,
         'test-frontend-user', // Phone number para testing
-        aiConfig?._id.toString(),
         conn,
+        aiConfig?._id.toString(),
+        aiConfig?.name,
         chatHistory
       );
 

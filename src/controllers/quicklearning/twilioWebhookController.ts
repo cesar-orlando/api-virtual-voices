@@ -63,8 +63,8 @@ export class TwilioWebhookController {
         company,
         message,
         cleanPhone,
+        conn,
         config?._id.toString(),
-        conn
       );
 
       console.log(`✅ Agent response: ${response}`);

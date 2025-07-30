@@ -44,43 +44,52 @@ export async function updateChatRecord(
   company: string,
   chatRecord: any,
   direction: string,
-  message: Message | string,
+  message: Message,
   respondedBy: string,
 ) {
-  const messageId = typeof message === 'string' ? '' : message.id?.id;
-  const messageBody = typeof message === 'string' ? message : message.body;
-
-  if (messageId && chatRecord.messages) {
-    const existingMessage = chatRecord.messages.find((msg: any) => msg.msgId === messageId);
-    if (existingMessage) {
-      console.log(`⚠️  Mensaje duplicado detectado, omitiendo: ${messageId}`);
-      return;
-    }
-  }
-
-  // Si el mensaje es outbound/outbound-api, marca todos los mensajes previos no enviados por mí como 'leído'
-  if (direction === "outbound" || direction === "outbound-api") {
-    chatRecord.messages.forEach((msg: any) => {
-      if (
-        msg.direction === "inbound"  &&
-        msg.status !== "leído"
-      ) {
-        msg.status = "leído";
-      }
-    });
-  }
-
-  chatRecord.messages.push({
-    msgId: messageId,
-    direction: direction,
-    body: messageBody,
-    respondedBy: respondedBy,
-    createdAt: new Date(),
-  });
+  const WhatsappChat = chatRecord.constructor; // Get the model from the document instance
 
   try {
-    await chatRecord.save();
-    io.emit(`whatsapp-message-${company}`, chatRecord);
+    let updatedChat = null;
+    // Step 1: Mark inbound messages as read if outbound
+    if (direction === "outbound" || direction === "outbound-api") {
+      await WhatsappChat.updateOne(
+        { _id: chatRecord._id },
+        {
+          $set: { "messages.$[inboundMsg].status": "leído" }
+        },
+        {
+          arrayFilters: [
+            { "inboundMsg.direction": "inbound", "inboundMsg.status": { $ne: "leído" } }
+          ]
+        }
+      );
+    }
+
+    // Step 2: Push the new message if not duplicate
+    const newMessage = {
+      msgId: message.id?.id,
+      direction: direction,
+      body: message.body,
+      respondedBy: respondedBy,
+      createdAt: new Date(),
+    };
+
+    // Only push if not duplicate
+    updatedChat = await WhatsappChat.findOneAndUpdate(
+      { _id: chatRecord._id, ...(message.id?.id ? { "messages.msgId": { $ne: message.id?.id } } : {}) },
+      { $push: { messages: newMessage } },
+      { new: true }
+    );
+
+    if (!updatedChat) {
+      // Duplicate message or chat not found
+      if (message.id?.id) {
+        console.log(`⚠️  Mensaje duplicado detectado o chat no encontrado, omitiendo: ${message.id?.id}`);
+      }
+      return;
+    }
+    io.emit(`whatsapp-message-${company}`, updatedChat);
   } catch (saveError) {
     console.error("❌ Error guardando mensaje:", saveError);
   }

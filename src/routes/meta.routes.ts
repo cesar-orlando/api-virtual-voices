@@ -1,10 +1,11 @@
 import express from 'express';
 import { handleMessengerWebhook } from '../services/meta/messenger';
+import { getFacebookChatMessages, getFacebookUsers, sendFacebookMessageController } from '../controllers/meta.controller';
 
 const router = express.Router();
 
 // Verificación del webhook (GET)
-router.get('/meta/messenger', (req, res) => {
+router.get('/messenger', (req, res) => {
   const VERIFY_TOKEN = 'virtual_voices_test';
 
   const mode = req.query['hub.mode'];
@@ -20,6 +21,11 @@ router.get('/meta/messenger', (req, res) => {
 });
 
 // Recepción de mensajes y eventos (POST)
-router.post('/meta/messenger', handleMessengerWebhook);
+router.post('/messenger', handleMessengerWebhook);
+router.post('/messenger/send-message', (req, res, next) => {
+  Promise.resolve(sendFacebookMessageController(req, res)).catch(next);
+});
+router.get('/messenger/usuarios/:c_name/:user_id', getFacebookUsers);
+router.get("/messenger/messages/:c_name/:sessionId/:userId", getFacebookChatMessages);
 
 export default router;

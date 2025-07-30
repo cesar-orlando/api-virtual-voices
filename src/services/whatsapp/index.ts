@@ -6,7 +6,7 @@ import { Types } from 'mongoose';
 import fs from "fs";
 import path from "path";
 import { getDbConnection } from '../../config/connectionManager';
-import { getSessionModel } from '../../models/whatsappSession.model';
+import { getSessionModel } from '../../models/session.model';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';

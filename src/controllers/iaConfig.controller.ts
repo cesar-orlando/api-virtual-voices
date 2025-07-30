@@ -4,6 +4,7 @@ import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { generateResponse, openai, preparePrompt } from "../services/openai";
 import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
+import { MessagingAgentService } from "../services/agents/MessagingAgentService";
 import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
 
 // 🔥 Crear configuración inicial si no existe
@@ -219,8 +220,7 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
 
     try {
       // Usar el nuevo sistema de agentes
-      const { WhatsAppAgentService } = require('../services/agents/WhatsAppAgentService');
-      const agentService = new WhatsAppAgentService();
+      const agentService = new MessagingAgentService();
       
       // Obtener conexión a la base de datos
       const conn = await getConnectionByCompanySlug(c_name);

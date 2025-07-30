@@ -1,15 +1,15 @@
 import { Request, Response } from 'express';
-import { WhatsAppAgentService } from '../../services/agents/WhatsAppAgentService';
+import { MessagingAgentService } from '../../services/agents/MessagingAgentService';
 import { getDbConnection } from '../../config/connectionManager';
 import getRecordModel from '../../models/record.model';
 import getTableModel from '../../models/table.model';
 import getIaConfigModel from '../../models/iaConfig.model';
 
 export class TwilioWebhookController {
-  private agentService: WhatsAppAgentService;
+  private agentService: MessagingAgentService;
 
   constructor() {
-    this.agentService = new WhatsAppAgentService();
+    this.agentService = new MessagingAgentService();
   }
 
   /**

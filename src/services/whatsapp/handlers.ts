@@ -3,15 +3,15 @@ import { createNewChatRecord, updateChatRecord, sendAndRecordBotResponse } from 
 import { handleAudioMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
-import { getSessionModel } from '../../models/whatsappSession.model';
+import { getSessionModel } from '../../models/session.model';
 import { Connection } from 'mongoose';
 import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import getIaConfigModel from '../../models/iaConfig.model';
-import { WhatsAppAgentService } from '../agents/WhatsAppAgentService';
+import { MessagingAgentService } from '../agents/MessagingAgentService';
 
-// Initialize the BaseAgent service
-const whatsAppAgentService = new WhatsAppAgentService();
+// Initialize the MessagingAgent service
+const messagingAgentService = new MessagingAgentService();
 
 // Store pending timeouts for each user
 const pendingResponses = new Map<string, {
@@ -270,7 +270,7 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
     const IaConfig = getIaConfigModel(conn);
     const config = await IaConfig.findOne({ _id: session?.IA?.id });
     
-    const response = await whatsAppAgentService.processWhatsAppMessage(
+    const response = await messagingAgentService.processWhatsAppMessage(
       company,
       lastMessage.body,
       userPhone,

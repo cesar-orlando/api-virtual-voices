@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
-import { WhatsAppAgentService } from '../../services/agents/WhatsAppAgentService';
+import { MessagingAgentService } from '../../services/agents/MessagingAgentService';
 import { getDbConnection } from '../../config/connectionManager';
 import getIaConfigModel from '../../models/iaConfig.model';
 
 export class TwilioTestController {
-  private agentService: WhatsAppAgentService;
+  private agentService: MessagingAgentService;
 
   constructor() {
-    this.agentService = new WhatsAppAgentService();
+    this.agentService = new MessagingAgentService();
   }
 
   /**

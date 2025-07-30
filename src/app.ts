@@ -9,8 +9,8 @@ import toolRoutes from "./routes/tool.routes";
 import uploadRoutes from "./routes/upload.routes";
 import googleCalendarRoutes from "./routes/googleCalendar.routes";
 import chatMetricsRoutes from "./routes/chatMetrics.routes";
-import metaMessengerWebhook from './routes/meta.routes';
-
+import metaRoutes from './routes/meta.routes';
+import sessionRoutes from "./routes/session.routes";
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -133,7 +133,10 @@ app.use('/api/test', twilioTestRoutes);
 // Rutas de webhook para Twilio
 app.use('/api/webhook', twilioWebhookRoutes);
 
-app.use(metaMessengerWebhook);
+app.use('/api/meta', metaRoutes);
+
+// Rutas de sesiones
+app.use('/api/sessions', sessionRoutes);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

@@ -23,6 +23,10 @@ export interface IFacebookChat extends Document {
     respondedBy: string;
     msgId: string;
   }[];
+  session?: {
+    id: mongoose.Types.ObjectId;
+    name?: string;
+  };
 }
 
 // Esquema principal
@@ -30,7 +34,11 @@ const FacebookChatSchema: Schema = new Schema(
   {
     userId: { type: String, required: true }, // ID del usuario de Facebook
     name: { type: String, required: false },
-    messages: { type: [facebookMessageSchema], required: true }
+    messages: { type: [facebookMessageSchema], required: true },
+    session: {
+      id: { type: Schema.Types.ObjectId, ref: "Session", required: false },
+      name: { type: String, required: false }
+    }
   },
   {
     timestamps: true,

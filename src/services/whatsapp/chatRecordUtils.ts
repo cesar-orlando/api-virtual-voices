@@ -1,7 +1,7 @@
 import { Connection, Model } from 'mongoose';
 import { generateResponse, openai, preparePrompt } from '../openai';
 import { Message, Client } from 'whatsapp-web.js';
-import { getSessionModel, IWhatsappSession } from '../../models/whatsappSession.model';
+import { getSessionModel, ISession } from '../../models/session.model';
 import { getWhatsappChatModel, IWhatsappChat } from '../../models/whatsappChat.model';
 import { io } from '../../server';
 import getIaConfigModel from '../../models/iaConfig.model';
@@ -13,7 +13,7 @@ export async function createNewChatRecord(
   tableSlug: string,
   phone: string,
   message: Message,
-  session: IWhatsappSession | null
+  session: ISession | null
 ) {
   const newChat = new WhatsappChat({
     tableSlug: tableSlug,

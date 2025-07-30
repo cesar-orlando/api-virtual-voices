@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
 import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
-import { WhatsAppAgentService } from "../../services/agents/WhatsAppAgentService";
+import { MessagingAgentService } from "../../services/agents/MessagingAgentService";
 import { getConnectionByCompanySlug, executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
 import getRecordModel from "../../models/record.model";
@@ -17,7 +17,7 @@ import getIaConfigModel from "../../models/iaConfig.model";
 const envConfig = getEnvironmentConfig();
 
 // Instancia del nuevo sistema de agentes
-const whatsAppAgentService = new WhatsAppAgentService();
+const messagingAgentService = new MessagingAgentService();
 
 // Buffer de mensajes para agrupar mensajes rápidos
 const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Timeout }>();
@@ -307,7 +307,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       const config = await getIaConfigModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
-      const aiResponse = await whatsAppAgentService.processWhatsAppMessage(
+      const aiResponse = await messagingAgentService.processWhatsAppMessage(
         'quicklearning',
         combinedMessage,
         phoneUser,
@@ -468,12 +468,14 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
  * Detect campaign based on message content
  */
 function detectCampaign(message: string): string {
-  if (!message) return 'GENERAL';
+  if (!message) return 'LEAD';
   
   const lowerCaseMessage = message.toLowerCase();
   
-  // RMKT: Detectar remarketing - tiene "(r)" en el mensaje
-  if (lowerCaseMessage.includes('(r)') || lowerCaseMessage.includes(' r)')) {
+  // RMKT: Detectar remarketing - tiene "(r)" o "(rmkt)" en el mensaje
+  if (lowerCaseMessage.includes('(r)') || 
+      lowerCaseMessage.includes(' r)') || 
+      lowerCaseMessage.includes('(rmkt)')) {
     return 'RMKT';
   }
   
@@ -511,8 +513,8 @@ function detectCampaign(message: string): string {
     return 'GENERAL';
   }
   
-  // Fallback a GENERAL si no coincide con nada específico
-  return 'GENERAL';
+  // Fallback a LEAD si no coincide con nada específico
+  return 'LEAD';
 }
 
 /**
@@ -1112,7 +1114,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
         // El asesor actual sigue activo, mantenerlo
         console.log(`👨‍💼 Asesor actual ${currentAdvisor.name} sigue activo para ${phoneUser}. Manteniendo asignación.`);
         
-        const message = `Tu consulta sigue asignada a ${currentAdvisor.name}, tu asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
+        const message = `Tu consulta sigue asignada a un asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
         
         return { advisor: currentAdvisor, message };
       } else {
@@ -1129,7 +1131,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
     }).select('_id name email');
 
     const currentHour = new Date().getHours();
-    const isAfterHours = currentHour >= 21; // Después de las 9 PM
+    const isAfterHours = currentHour >= 21 || currentHour < 8; // Después de las 9 PM O antes de las 8 AM
 
     if (availableAdvisors.length === 0) {
       // No hay asesores disponibles - LIMPIAR asignación anterior
@@ -1181,7 +1183,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
 
     console.log(`👨‍💼 Asesor asignado: ${selectedAdvisor.name} (${selectedAdvisor.email}) para ${phoneUser}`);
     
-    const message = `Tu consulta ha sido transferida a ${selectedAdvisor.name}, uno de nuestros asesores especializados. Se pondrá en contacto contigo en breve para ayudarte.`;
+    const message = `Tu consulta ha sido transferida a un asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
     
     return { advisor: selectedAdvisor, message };
 
@@ -1189,7 +1191,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
     console.error(`❌ Error asignando asesor para ${phoneUser}:`, error);
     
     const currentHour = new Date().getHours();
-    const isAfterHours = currentHour >= 21;
+    const isAfterHours = currentHour >= 21 || currentHour < 8; // Después de las 9 PM O antes de las 8 AM
     
     const message = isAfterHours 
       ? "Gracias por tu interés. Mañana temprano un asesor se pondrá en contacto contigo para ayudarte. ¡Que tengas buena noche!"
@@ -1198,3 +1200,4 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
     return { advisor: null, message };
   }
 }
+

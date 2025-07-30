@@ -1,10 +1,12 @@
 import { Schema, Document, Connection, Model, Types } from "mongoose";
 
 // Define la interfaz para la tabla
-export interface IWhatsappSession extends Document {
+export interface ISession extends Document {
   name: string; // Nombre de la tabla
   icon: string; // Ícono asociado a la tabla
+  phone?: { type: String, unique: true },
   status: string;
+  platform?: 'whatsapp' | 'facebook'; // Plataforma de la sesión
   sessionData?: any; // Datos de la sesión de WhatsApp
   IA: {
     id: Types.ObjectId; // Referencia al IA asociado
@@ -22,6 +24,7 @@ const SessionSchema: Schema = new Schema(
     name: { type: String, required: true },
     icon: { type: String, default: "" }, // Campo opcional para el ícono
     phone: { type: String, unique: true },
+    platform: { type: String, enum: ['whatsapp', 'facebook'] }, // Plataforma de la sesión
     status: { type: String, enum:['connected','disconnected','pending','error']},
     sessionData: { type: Schema.Types.Mixed }, // Campo para almacenar datos de sesión de WhatsApp
     IA: {
@@ -39,6 +42,6 @@ const SessionSchema: Schema = new Schema(
 );
 
 // Exporta el modelo
-export function getSessionModel(conn: Connection): Model<IWhatsappSession>{
-  return conn.model<IWhatsappSession>("Session", SessionSchema);
+export function getSessionModel(conn: Connection): Model<ISession>{
+  return conn.model<ISession>("Session", SessionSchema);
 }

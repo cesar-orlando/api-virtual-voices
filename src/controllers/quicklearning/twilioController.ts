@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
 import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
-import { WhatsAppAgentService } from "../../services/agents/WhatsAppAgentService";
+import { MessagingAgentService } from "../../services/agents/MessagingAgentService";
 import { getConnectionByCompanySlug, executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
 import getRecordModel from "../../models/record.model";
@@ -17,7 +17,7 @@ import getIaConfigModel from "../../models/iaConfig.model";
 const envConfig = getEnvironmentConfig();
 
 // Instancia del nuevo sistema de agentes
-const whatsAppAgentService = new WhatsAppAgentService();
+const messagingAgentService = new MessagingAgentService();
 
 // Buffer de mensajes para agrupar mensajes rápidos
 const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Timeout }>();
@@ -307,7 +307,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       const config = await getIaConfigModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
-      const aiResponse = await whatsAppAgentService.processWhatsAppMessage(
+      const aiResponse = await messagingAgentService.processWhatsAppMessage(
         'quicklearning',
         combinedMessage,
         phoneUser,

@@ -39,6 +39,7 @@ export class AgentManager {
                   case 'grupo-milkasa':
                   case 'britanicomx':
                   case 'mitsubishi':
+                  case 'simple-green':
                     console.log(`🔧 AgentManager: Creating GeneralAgent for ${company}`);
                     try {
                         agent = new GeneralAgent(company, agentContext);

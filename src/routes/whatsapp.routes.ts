@@ -3,10 +3,6 @@ import {
   getAllWhatsappMessages,
   getWhatsappUsers,
   getWhatsappUserByPhone,
-  createWhatsappSession,
-  getAllWhatsappSessions,
-  updateWhatsappSession,
-  deleteWhatsappSession,
   MessageToAll,
   sendWhatsappMessage,
   getChatMessages,
@@ -19,11 +15,7 @@ router.get("/messages/:c_name/:sessionId/:phone", getChatMessages);
 router.get("/messages/:c_name", getAllWhatsappMessages);
 router.get("/usuarios/:c_name/:user_id", getWhatsappUsers);
 router.get("/usuarios/:c_name/:phone", getWhatsappUserByPhone);
-router.get("/session/:c_name/:user_id", getAllWhatsappSessions);
-router.post("/session", createWhatsappSession);
-router.put("/session/:c_name", updateWhatsappSession);
 router.post("/session/:c_name/:sessionId", sendWhatsappMessage);
-router.delete("/session/:c_name/:sessionId", deleteWhatsappSession);
 router.post("/messageAll/:c_name/:sessionId", MessageToAll);
 router.post('/enviar-ficha-tecnica', enviarFichaTecnica);
 

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { getDbConnection, getBaseMongoUri } from "../config/connectionManager";
-import { getSessionModel } from "../models/whatsappSession.model";
+import { getSessionModel } from "../models/session.model";
 import getCompanyModel from "../models/company.model";
 import { getEnvironmentConfig, logEnvironmentInfo, validateEnvironmentConfig } from "./environments";
 
@@ -74,7 +74,8 @@ export async function getAllSessionsFromAllDatabases() {
       try {
         const conn = await getDbConnection(dbName);
         const Session = getSessionModel(conn);
-        const sessions = await Session.find();
+        // Excluir sesiones de la plataforma Facebook
+        const sessions = await Session.find({ platform: { $ne: 'facebook' } });
         return sessions.map(session => ({
           name: session.name,
           company: dbName,
@@ -109,12 +110,12 @@ export async function getAllFacebookConfigsFromAllDatabases() {
       const dbName = dbInfo.name;
       try {
         const conn = await getDbConnection(dbName);
-        const Company = getCompanyModel(conn);
+        const Session = getSessionModel(conn);
         // Busca todas las compañías que tengan datos de facebook configurados
-        const companies = await Company.find({ "facebook.pageId": { $exists: true, $ne: null } });
-        return companies.map(company => ({
+        const sessions = await Session.find({ platform: 'facebook', "sessionData.facebook.pageId": { $exists: true, $ne: null } });
+        return sessions.map(session => ({
           companyDb: dbName,
-          facebook: company.facebook
+          session: session
         }));
       } catch (err) {
         console.error(`Error fetching facebook configs from ${dbName}:`, err);

@@ -468,12 +468,14 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
  * Detect campaign based on message content
  */
 function detectCampaign(message: string): string {
-  if (!message) return 'GENERAL';
+  if (!message) return 'LEAD';
   
   const lowerCaseMessage = message.toLowerCase();
   
-  // RMKT: Detectar remarketing - tiene "(r)" en el mensaje
-  if (lowerCaseMessage.includes('(r)') || lowerCaseMessage.includes(' r)')) {
+  // RMKT: Detectar remarketing - tiene "(r)" o "(rmkt)" en el mensaje
+  if (lowerCaseMessage.includes('(r)') || 
+      lowerCaseMessage.includes(' r)') || 
+      lowerCaseMessage.includes('(rmkt)')) {
     return 'RMKT';
   }
   
@@ -511,8 +513,8 @@ function detectCampaign(message: string): string {
     return 'GENERAL';
   }
   
-  // Fallback a GENERAL si no coincide con nada específico
-  return 'GENERAL';
+  // Fallback a LEAD si no coincide con nada específico
+  return 'LEAD';
 }
 
 /**
@@ -1112,7 +1114,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
         // El asesor actual sigue activo, mantenerlo
         console.log(`👨‍💼 Asesor actual ${currentAdvisor.name} sigue activo para ${phoneUser}. Manteniendo asignación.`);
         
-        const message = `Tu consulta sigue asignada a ${currentAdvisor.name}, tu asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
+        const message = `Tu consulta sigue asignada a un asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
         
         return { advisor: currentAdvisor, message };
       } else {
@@ -1181,7 +1183,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
 
     console.log(`👨‍💼 Asesor asignado: ${selectedAdvisor.name} (${selectedAdvisor.email}) para ${phoneUser}`);
     
-    const message = `Tu consulta ha sido transferida a ${selectedAdvisor.name}, uno de nuestros asesores especializados. Se pondrá en contacto contigo en breve para ayudarte.`;
+    const message = `Tu consulta ha sido transferida a un asesor especializado. Se pondrá en contacto contigo en breve para ayudarte.`;
     
     return { advisor: selectedAdvisor, message };
 
@@ -1198,3 +1200,4 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
     return { advisor: null, message };
   }
 }
+

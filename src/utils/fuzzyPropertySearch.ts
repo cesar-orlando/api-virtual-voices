@@ -56,6 +56,7 @@ export function fuzzyPropertySearch({ query, propiedades }: FuzzySearchOptions) 
     .replace(/(\d+)\s*rec[aá]maras?/gi, '')
     .replace(/de|por|en|a|la|el|una|un/gi, '')
     .trim();
+  
   // Si el query limpio queda vacío y hay candidatas, devolver la mejor
   if (queryLimpio.length === 0 && candidatas.length > 0) {
     return { match: candidatas[0], score: 0 };
@@ -201,6 +202,7 @@ function registroCoincide(registro: any, query: string): boolean {
     });
   });
 }
+
 
 function obtenerValoresUnicos(registros: any[]): Record<string, string[]> {
   const valores: Record<string, Set<string>> = {};

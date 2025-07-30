@@ -1131,7 +1131,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
     }).select('_id name email');
 
     const currentHour = new Date().getHours();
-    const isAfterHours = currentHour >= 21; // Después de las 9 PM
+    const isAfterHours = currentHour >= 21 || currentHour < 8; // Después de las 9 PM O antes de las 8 AM
 
     if (availableAdvisors.length === 0) {
       // No hay asesores disponibles - LIMPIAR asignación anterior
@@ -1191,7 +1191,7 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
     console.error(`❌ Error asignando asesor para ${phoneUser}:`, error);
     
     const currentHour = new Date().getHours();
-    const isAfterHours = currentHour >= 21;
+    const isAfterHours = currentHour >= 21 || currentHour < 8; // Después de las 9 PM O antes de las 8 AM
     
     const message = isAfterHours 
       ? "Gracias por tu interés. Mañana temprano un asesor se pondrá en contacto contigo para ayudarte. ¡Que tengas buena noche!"

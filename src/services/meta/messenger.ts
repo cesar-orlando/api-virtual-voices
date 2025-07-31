@@ -57,7 +57,7 @@ export async function getUserInfoFromFacebook(config, senderId: string) {
       `https://graph.facebook.com/${senderId}`,
       {
         params: {
-          access_token: config.facebook.pageAccessToken,
+          access_token: config.sessionData.facebook.pageAccessToken,
           fields: 'first_name,last_name,profile_pic'
         }
       }
@@ -109,14 +109,14 @@ async function processMessengerEntry(entry: any, res: any) {
   }
 
   // Obtener información del usuario desde la Graph API
-  const userInfo = await getUserInfoFromFacebook(session.companyDb, senderId);
+  const userInfo = await getUserInfoFromFacebook(session.session, senderId);
   const conn = await getDbConnection(session.companyDb);
   const FacebookChat = getFacebookChatModel(conn);
   const filter = { userId: senderId };
   const existingChat = await FacebookChat.findOne(filter);
   const newMsgId = webhookEvent.message.mid || '';
   const alreadyExists = existingChat && existingChat.messages.some((m: any) => m.msgId === newMsgId);
-
+  
   if (!alreadyExists) {
     await saveIncomingFacebookMessage({
       FacebookChat,
@@ -130,7 +130,7 @@ async function processMessengerEntry(entry: any, res: any) {
     });
   }
 
-  if (webhookEvent.message.is_echo || !session) return;
+  if (webhookEvent.message.is_echo || !session || session.session.status !== 'connected') return;
 
   await processAndRespondFacebookMessage({
     FacebookChat,
@@ -169,6 +169,10 @@ async function saveIncomingFacebookMessage({ FacebookChat, filter, webhookEvent,
       id: session?._id.toString(),
       name: session?.name,
     };
+    // Elimina session de $setOnInsert para evitar conflicto
+    if (update.$setOnInsert && update.$setOnInsert.session) {
+      delete update.$setOnInsert.session;
+    }
   }
 
   const sentMessage = await FacebookChat.findOneAndUpdate(
@@ -188,7 +192,7 @@ async function saveIncomingFacebookMessage({ FacebookChat, filter, webhookEvent,
 
 async function processAndRespondFacebookMessage({ FacebookChat, filter, webhookEvent, session, conn }: any) {
   const IaConfig = getIaConfigModel(conn);
-  const config = await IaConfig.findOne({ _id: session?.IA?.id });
+  const config = await IaConfig.findOne({ _id: session.session?.IA?.id });
   const response = await messagingAgentService.processFacebookMessage(
     session.companyDb,
     webhookEvent.message.text,

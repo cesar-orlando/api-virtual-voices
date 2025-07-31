@@ -313,6 +313,9 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
         phoneUser,
         conn,
         config?._id.toString(),
+        conn,
+        undefined, // providedChatHistory
+        false // isCalendarFallback
       );
 
       // Enviar respuesta

@@ -11,6 +11,8 @@ import googleCalendarRoutes from "./routes/googleCalendar.routes";
 import chatMetricsRoutes from "./routes/chatMetrics.routes";
 import metaRoutes from './routes/meta.routes';
 import sessionRoutes from "./routes/session.routes";
+import calendarAssistantRoutes from "./routes/calendarAssistant.routes";
+import calendarEventRoutes from './routes/calendarEvent.routes';
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -75,14 +77,15 @@ app.use(detectCompanyFromToken);
 // Inicializar proyectos al arrancar
 initializeProjects();
 
-// OAuth inicial token access y refresh
-fetch('http://localhost:3001/api/google-calendar/auto-refresh-token', {
+// Initialize Google Calendar token management
+fetch('http://localhost:3001/api/google-calendar/ensure-valid-token', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' }
 }).then(() => {
-  console.log('✅ Initial token refresh completed');
+  console.log('✅ Google Calendar token management initialized');
 }).catch(err => {
-  console.log('⚠️ Initial token refresh failed:', err.message);
+  console.log('⚠️ Google Calendar token initialization warning:', err.message);
+  console.log('   This is normal if Google Calendar credentials are not configured yet');
 });
 
 // ========================================
@@ -120,6 +123,12 @@ app.use("/api/google-calendar", googleCalendarRoutes);
 // app.get("/auth/google/callback", handleGoogleCallback);
 
 app.use("/api/chat-metrics", chatMetricsRoutes);
+
+// Calendar Assistant routes
+app.use("/api/calendar-assistant", calendarAssistantRoutes);
+
+// Calendar Event management routes
+app.use("/api/calendar-events", calendarEventRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);

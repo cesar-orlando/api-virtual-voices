@@ -9,9 +9,90 @@ import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import getIaConfigModel from '../../models/iaConfig.model';
 import { MessagingAgentService } from '../agents/MessagingAgentService';
+import { Assistant } from '../agents/Assistant';
 
 // Initialize the MessagingAgent service
 const messagingAgentService = new MessagingAgentService();
+
+// Store Calendar Assistant instances per company
+const calendarAssistants = new Map<string, Assistant>();
+
+// Calendar keywords to detect calendar-related messages
+const CALENDAR_KEYWORDS = [
+  // Spanish calendar terms
+  'cita', 'reunión', 'evento', 'calendario', 'agendar', 'programar', 'reservar',
+  'cancelar', 'editar', 'modificar', 'cambiar', 'reprogramar', 'mover',
+  'cita médica', 'junta', 'llamada', 'videollamada', 'zoom', 'meet',
+  'crear evento', 'nuevo evento', 'eliminar evento', 'borrar evento',
+  // English equivalents
+  'meeting', 'appointment', 'event', 'calendar', 'schedule', 'book',
+  'cancel', 'edit', 'modify', 'change', 'reschedule', 'move',
+  'call', 'videocall', 'create event', 'new event', 'delete event'
+];
+
+// Time keywords that need to be combined with action words
+const TIME_KEYWORDS = [
+  'hora', 'fecha', 'día', 'semana', 'mes',
+  'mañana', 'hoy', 'pasado mañana', 'ayer', 'ahora', 'tarde', 'noche',
+  'próxima semana', 'la semana que viene', 'el próximo', 'la próxima',
+  'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo',
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  'time', 'date', 'tomorrow', 'today', 'yesterday', 'now',
+  'next week', 'next', 'monday', 'tuesday', 'wednesday', 'thursday',
+  'friday', 'saturday', 'sunday'
+];
+
+// Action verbs for calendar operations
+const ACTION_KEYWORDS = [
+  'quiero', 'necesito', 'puedes', 'agenda', 'programa', 'crea', 'elimina', 'borra',
+  'want', 'need', 'can you', 'create', 'delete', 'schedule', 'book'
+];
+
+function isCalendarRelatedMessage(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+  
+  // Direct calendar keywords (strong indicators)
+  const hasDirectCalendarKeyword = CALENDAR_KEYWORDS.some(keyword => 
+    lowerMessage.includes(keyword.toLowerCase())
+  );
+  
+  if (hasDirectCalendarKeyword) {
+    return true;
+  }
+  
+  // Check for combination of action + time keywords
+  const hasActionKeyword = ACTION_KEYWORDS.some(keyword => 
+    lowerMessage.includes(keyword.toLowerCase())
+  );
+  
+  const hasTimeKeyword = TIME_KEYWORDS.some(keyword => 
+    lowerMessage.includes(keyword.toLowerCase())
+  );
+  
+  // Return true only if we have both action and time keywords
+  return hasActionKeyword && hasTimeKeyword;
+}
+
+function getCalendarAssistant(company: string): Assistant {
+  if (!calendarAssistants.has(company)) {
+    const assistant = new Assistant(company);
+    calendarAssistants.set(company, assistant);
+  }
+  return calendarAssistants.get(company)!;
+}
+
+async function initializeCalendarAssistant(company: string): Promise<Assistant> {
+  const assistant = getCalendarAssistant(company);
+  
+  try {
+    await assistant.initialize();
+    return assistant;
+  } catch (error) {
+    console.error(`❌ Failed to initialize Calendar Assistant for company ${company}:`, error);
+    throw new Error(`Calendar Assistant initialization failed for ${company}: ${error.message}`);
+  }
+}
 
 // Store pending timeouts for each user
 const pendingResponses = new Map<string, {
@@ -172,7 +253,7 @@ async function handleDelayedResponse(
     existingPending.existingRecord = existingRecord;
   } else {
     // First message from this user, start the delay
-    console.log(`⏰ Iniciando delay de 15s para ${userPhone}`);
+    console.log(`⏰ Iniciando delay de 5s para ${userPhone}`);
     
     // Store the pending response data
     pendingResponses.set(userPhone, {
@@ -270,6 +351,60 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
     const IaConfig = getIaConfigModel(conn);
     const config = await IaConfig.findOne({ _id: session?.IA?.id });
     
+  
+  // Check if any of the messages are calendar-related
+  const isCalendarMessage = messages.some(msg => isCalendarRelatedMessage(msg.body));
+  
+  if (isCalendarMessage) {
+    console.log(`📅 Calendar-related message detected for ${userPhone}`);
+    console.log(`📝 Message content: ${messages.map(msg => msg.body).join(' ').substring(0, 100)}...`);
+    
+    try {
+      console.log(`🔧 Step 1: Attempting to initialize Calendar Assistant for company: ${company}`);
+      const calendarAssistant = await initializeCalendarAssistant(company);
+      console.log(`✅ Step 1 Complete: Calendar Assistant initialized successfully`);
+      
+      // Combine all messages into context for the Calendar Assistant
+      const combinedMessage = messages.map(msg => msg.body).join(' ');
+      
+      console.log(`� Step 2: Processing calendar request: "${combinedMessage}"`);
+      
+      const response = await calendarAssistant.processMessage(combinedMessage, {
+        company,
+        phoneUser: userPhone.replace('@c.us', ''),
+        chatHistory: [] // You could populate this with recent chat history if needed
+      });
+      
+      console.log(`✅ Step 2 Complete: Calendar Assistant response: ${response.substring(0, 100)}...`);
+      
+      console.log(`🔧 Step 3: Sending calendar assistant response`);
+      // Send the calendar assistant response
+      await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);
+      console.log(`✅ Step 3 Complete: Response sent successfully`);
+      
+      console.log(`🎯 Calendar message processing completed successfully. Returning early.`);
+      return; // CRITICAL: Return early to prevent regular agent processing
+      
+    } catch (error) {
+      console.error(`❌ Calendar Assistant Error for ${userPhone}:`, error);
+      console.error(`❌ Calendar Assistant error type:`, error.constructor.name);
+      console.error(`❌ Calendar Assistant error message:`, error.message);
+      
+      // Fallback to regular agent instead of showing error
+      console.log(`🔄 Calendar Assistant failed, falling back to regular WhatsApp agent`);
+      // Don't return here - let it fall through to regular agent processing
+    }
+  }
+  
+  console.log(`🤖 Using BaseAgent system for non-calendar message`);
+  
+  try {
+    console.log(`🔧 Step 4: Using regular WhatsApp agent for ${userPhone}`);
+    
+    // Add a flag to indicate this is a calendar fallback
+    const isCalendarFallback = isCalendarMessage;
+    console.log(`📅 Calendar fallback mode: ${isCalendarFallback}`);
+    
     const response = await messagingAgentService.processWhatsAppMessage(
       company,
       lastMessage.body,
@@ -277,7 +412,11 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       conn,
       config?._id.toString(),
       session?._id.toString(),
+      undefined, // providedChatHistory
+      isCalendarFallback // Add calendar fallback flag
     );
+    
+    console.log(`✅ Step 4 Complete: Regular agent response: ${response.substring(0, 100)}...`);
     
     // Debug específico para empresas inmobiliarias
     if (company === 'grupo-milkasa') {
@@ -293,6 +432,11 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   } catch (error) {
     console.error(`❌ Error with BaseAgent system:`, error);
     // Fallback response
+    await sendCustomResponse(client, lastMessage, "Disculpa, hubo un problema técnico. Un asesor se pondrá en contacto contigo.", company, sessionName, latestRecord, conn);
+  }
+  } catch (error) {
+    console.error(`❌ Error in processAccumulatedMessages:`, error);
+    // Final fallback response
     await sendCustomResponse(client, lastMessage, "Disculpa, hubo un problema técnico. Un asesor se pondrá en contacto contigo.", company, sessionName, latestRecord, conn);
   }
 }

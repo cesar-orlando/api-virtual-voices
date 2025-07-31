@@ -172,138 +172,6 @@ export class GeneralAgent extends BaseAgent {
             console.log(`🔧 Executing tool ${companyTool.name} with params:`, params);
             
             try {
-              // Para obtener_propiedades, manejar el mapeo de campos
-              if (companyTool.name === 'obtener_propiedades') {
-                // Mapear el parámetro al nombre correcto del campo en la DB
-                const mappedParams = { ...params };
-                if (params.Renta_Venta_Inversion) {
-                  mappedParams['renta_venta_inversión '] = params.Renta_Venta_Inversion;
-                  delete mappedParams.Renta_Venta_Inversion;
-                }
-                
-                console.log(`🔧 Mapped params for ${companyTool.name}:`, mappedParams);
-                
-                // Ejecutar la búsqueda directamente aquí
-                const conn = await getConnectionByCompanySlug(this.company);
-                const Record = getRecordModel(conn);
-                
-                // Construir query de búsqueda
-                const query: any = {
-                  tableSlug: 'propiedades',
-                  c_name: this.company
-                };
-                
-                // Función para crear regex que funcione con y sin acentos
-                const createFlexibleRegex = (text: string): RegExp => {
-                  const normalized = text
-                    .toLowerCase()
-                    .replace(/á/g, '[áa]')
-                    .replace(/é/g, '[ée]')
-                    .replace(/í/g, '[íi]')
-                    .replace(/ó/g, '[óo]')
-                    .replace(/ú/g, '[úu]')
-                    .replace(/ñ/g, '[ñn]')
-                    .replace(/a/g, '[áa]')
-                    .replace(/e/g, '[ée]')
-                    .replace(/i/g, '[íi]')
-                    .replace(/o/g, '[óo]')
-                    .replace(/u/g, '[úu]')
-                    .replace(/n/g, '[ñn]')
-                    .replace(/\s+/g, '\\s*'); // Espacios flexibles
-                  
-                  return new RegExp(normalized, 'i');
-                };
-
-                // Agregar filtros basados en los parámetros (con búsqueda flexible)
-                const orConditions: any[] = [];
-                
-                if (mappedParams['renta_venta_inversión ']) {
-                  query['data.renta_venta_inversión '] = createFlexibleRegex(mappedParams['renta_venta_inversión ']);
-                }
-                
-                // Para búsquedas de ubicación, usar $or para buscar en múltiples campos
-                if (mappedParams.colonia) {
-                  const flexibleRegex = createFlexibleRegex(mappedParams.colonia);
-                  orConditions.push(
-                    { 'data.colonia': flexibleRegex },
-                    { 'data.domicilio': flexibleRegex },
-                    { 'data.titulo': flexibleRegex },
-                    { 'data.zona': flexibleRegex }
-                  );
-                }
-                
-                if (orConditions.length > 0) {
-                  query['$or'] = orConditions;
-                }
-                if (mappedParams.titulo) {
-                  const flexibleRegex = createFlexibleRegex(mappedParams.titulo);
-                  if (!query['$or']) {
-                    query['$or'] = [];
-                  }
-                  query['$or'].push(
-                    { 'data.titulo': flexibleRegex },
-                    { 'data.colonia': flexibleRegex },
-                    { 'data.domicilio': flexibleRegex }
-                  );
-                }
-                if (mappedParams.domicilio) {
-                  const flexibleRegex = createFlexibleRegex(mappedParams.domicilio);
-                  if (!query['$or']) {
-                    query['$or'] = [];
-                  }
-                  query['$or'].push(
-                    { 'data.domicilio': flexibleRegex },
-                    { 'data.colonia': flexibleRegex },
-                    { 'data.titulo': flexibleRegex }
-                  );
-                }
-                
-                console.log(`🔧 Query for ${companyTool.name}:`, query);
-                
-                // Buscar propiedades
-                const records = await Record.find(query).limit(5).lean();
-                
-                console.log(`✅ Found ${records.length} properties`);
-                
-                if (records.length === 0) {
-                  return {
-                    success: true,
-                    message: "No encontré propiedades con esos criterios. ¿Podrías darme más detalles o buscar en otra zona?",
-                    properties: []
-                  };
-                }
-                
-                // Formatear las propiedades para el agente
-                const properties = records.map((record: any) => ({
-                  titulo: record.data.titulo || 'Sin título',
-                  colonia: record.data.colonia || 'Sin especificar',
-                  precio: record.data.precio || 'Consultar',
-                  tipo: record.data['renta_venta_inversión '] || 'No especificado',
-                  recamaras: record.data.recamaras || 'No especificado',
-                  banos: record.data.banos || 'No especificado',
-                  metros_construccion: record.data['metros_de_construccion '] || 'No especificado',
-                  metros_terreno: record.data.mts_de_terreno || 'No especificado',
-                  estacionamiento: record.data.estacionamiento || 'No especificado',
-                  mascotas: record.data.mascotas || 'No especificado',
-                  disponibilidad: record.data.disponibilidad || 'Disponible',
-                  telefono_asesor: record.data.telefono_del_asesor || '33 1711 9650',
-                  comision_compartida: record.data.comparte_comision || 'No',
-                  comision_asesor_registrado: record.data.comision_para_asesor_registrado || '0%',
-                  dias_especiales_cita: record.data.dias_especiales_para_cita || '',
-                  descripcion: record.data.descripcion || '',
-                  domicilio: record.data.domicilio || '',
-                  entre_calles: record.data.entre_calles || '',
-                  link_ficha: record.data.link_ficha_tecnica || ''
-                }));
-                
-                return {
-                  success: true,
-                  properties,
-                  message: `Encontré ${properties.length} propiedades que podrían interesarte.`
-                };
-              }
-              
-              // Para otras herramientas, usar el ToolExecutor
               const result = await ToolExecutor.execute({
                 toolName: companyTool.name,
                 parameters: params,
@@ -347,7 +215,39 @@ export class GeneralAgent extends BaseAgent {
         }
       })
     );
-    
+
+    if (this.company === 'grupo-milkasa') {
+      // Agregar tool específica para crear eventos de calendario
+      dynamicTools.push(
+        tool({
+          name: 'create_calendar_event',
+          description: 'Crear un evento/cita en el calendario',
+          parameters: z.object({
+            query: z.string().describe('Qué información se está solicitando')
+          }) as any,
+        execute: async (params) => {
+
+          console.log(`📅 Creating calendar event for user: ${this.agentContext.phoneUser}`);
+          const conn = await getConnectionByCompanySlug(this.company);
+          const Record = getRecordModel(conn);
+          await Record.updateOne(
+            {
+              tableSlug: 'prospectos',
+              'data.number': Number(this.agentContext.phoneUser.replace('@c.us','')),
+            },
+            { $set: { 'data.ia': false } }
+          );
+
+          return {
+            message: `Muchas gracias por tu interés en crear una cita. Te pasaremos a un asesor que te ayudará a completar el proceso.`,
+            data: `Muchas gracias por tu interés en crear una cita. Te pasaremos a un asesor que te ayudará a completar el proceso.`,
+            success: true
+          };
+        },
+        })
+      );
+    }
+
     return dynamicTools;
   }
 
@@ -673,4 +573,4 @@ Cierra la conversación de manera profesional y amigable.
 ${this.companyTools.length > 0 ? this.companyTools.map(t => `- **${t.name}**: ${t.description}`).join('\n') : '- **get_company_info**: Obtiene información básica de la empresa'}
 `;
   }
-} 
+}

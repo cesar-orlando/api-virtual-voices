@@ -73,7 +73,8 @@ export const getFacebookUsers = async (req: Request, res: Response) => {
           direction: lastMsg.direction,
           respondedBy: lastMsg.respondedBy,
           date: lastMsg.createdAt || new Date(),
-          msgId: lastMsg.msgId
+          msgId: lastMsg.msgId,
+          createdAt: lastMsg.createdAt
         };
       }
       return {

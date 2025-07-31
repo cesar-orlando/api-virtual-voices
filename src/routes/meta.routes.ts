@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Verificación del webhook (GET)
 router.get('/messenger', (req, res) => {
-  const VERIFY_TOKEN = 'virtual_voices_test';
+  const VERIFY_TOKEN = 'virtual_voices';
 
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];

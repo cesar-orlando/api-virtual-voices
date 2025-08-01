@@ -143,7 +143,10 @@ export const deleteFacebookSession = async (req: Request, res: Response) => {
       return;
     }
 
-    res.status(200).json({ message: "Session deleted successfully" });
+    const FacebookChat = getFacebookChatModel(conn);
+    await FacebookChat.deleteMany({ 'session.id': sessionId });
+
+    res.status(200).json({ message: "Session and related Facebook chats deleted successfully" });
   } catch (error) {
     console.error("Error deleting Facebook session:", error);
     res.status(500).json({ message: "Error deleting Facebook session", error });

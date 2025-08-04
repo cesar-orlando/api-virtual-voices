@@ -28,6 +28,7 @@ export class AgentManager {
     let agent: BaseAgent;
 
                     // Create company-specific agent
+                console.log(`🔧 AgentManager: Creating agent for company: "${company}" (lowercase: "${company.toLowerCase()}")`);
                 switch (company.toLowerCase()) {
                   case 'quicklearning':
                   case 'quick-learning':
@@ -40,6 +41,8 @@ export class AgentManager {
                   case 'britanicomx':
                   case 'mitsubishi':
                   case 'simple-green':
+                  case 'virtualvoices':
+                  case 'virtual-voices':
                     console.log(`🔧 AgentManager: Creating GeneralAgent for ${company}`);
                     try {
                         agent = new GeneralAgent(company, agentContext);
@@ -51,6 +54,7 @@ export class AgentManager {
                     }
                     break;
                   default:
+                    console.log(`❌ No matching case found for company: "${company}" (lowercase: "${company.toLowerCase()}")`);
                     throw new Error(`❌ No agent configured for company: ${company}`);
                 }
 

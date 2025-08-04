@@ -9,11 +9,13 @@ import {
   duplicateTable,
   exportTable,
   importTable,
+  bulkCreateFromExcel,
   deleteTable,
   updateTable,
   getTableFields,
   getTableFieldsBySlug,
 } from "../controllers/table.controller";
+import { validateBulkTableCreation } from "../middlewares/table.middleware";
 
 const router = Router();
 
@@ -24,6 +26,7 @@ router.get("/:c_name/:slug", getTableBySlug);
 router.patch("/:c_name/:id/structure", updateTableStructure);
 router.post("/:c_name/:id/duplicate", duplicateTable);
 router.post("/:c_name/import", importTable);
+router.post("/:c_name/bulk-create-from-excel", validateBulkTableCreation, bulkCreateFromExcel);
 
 // Rutas generales
 router.post("/", createTable);

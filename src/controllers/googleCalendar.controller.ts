@@ -1,82 +1,31 @@
 import { Request, Response } from "express";
+import { getValidGoogleToken, forceRefreshGoogleToken, tokenManager } from "../services/google/tokenManager";
 
 /**
  * Get fresh access token using client credentials from environment
- * This endpoint uses the client ID, secret, and refresh token from .env to get a fresh access token
+ * This endpoint uses the token manager to get a fresh access token
  */
 export const getAccessTokenWithCredentials = async (req: Request, res: Response): Promise<void> => {
   try {
-
-    const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
-    const refreshToken = process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;
-
-    if (!clientId || !clientSecret || !refreshToken) {
-      console.log('❌ Missing required credentials in environment variables');
-      res.status(400).json({
-        success: false,
-        message: "Missing required Google OAuth credentials in environment variables",
-        required: ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_CALENDAR_REFRESH_TOKEN"]
-      });
-      return;
-    }
-
-    // Prepare the request body for Google OAuth token endpoint
-    const tokenRequestBody = new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token'
-    });
-
-    console.log('📤 Making request to Google OAuth endpoint...');
-
-    // Make request to Google OAuth token endpoint
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: tokenRequestBody.toString()
-    });
-
-    const responseData = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Google OAuth API Error:', responseData);
-      res.status(response.status).json({
-        success: false,
-        message: "Failed to get access token from Google",
-        error: responseData.error_description || responseData.error || 'Unknown error',
-        details: responseData
-      });
-      return;
-    }
-
-    console.log('✅ Successfully obtained new access token from Google!');
-
-    // Calculate expiry date
-    const expiryDate = new Date(Date.now() + (responseData.expires_in * 1000));
-
-    const tokenData = {
-      access_token: responseData.access_token,
-      token_type: responseData.token_type || 'Bearer',
-      expires_in: responseData.expires_in,
-      expiry_date: expiryDate.toISOString(),
-      scope: responseData.scope,
-      // Keep the same refresh token (Google usually doesn't send a new one unless specifically requested)
-      refresh_token: refreshToken
-    };
+    // Use the token manager to get a fresh token
+    const accessToken = await forceRefreshGoogleToken();
+    const tokenInfo = tokenManager.getTokenInfo();
 
     res.status(200).json({
       success: true,
       message: "Successfully obtained new access token",
-      data: tokenData,
+      data: {
+        access_token: accessToken,
+        token_type: 'Bearer',
+        expires_at: tokenInfo.expires_at,
+        expires_in_seconds: tokenInfo.expires_in_seconds,
+        expires_in_minutes: tokenInfo.expires_in_minutes,
+        status: tokenInfo.status
+      },
       instructions: {
         usage: "Use the access_token in Authorization header as 'Bearer YOUR_ACCESS_TOKEN'",
-        expiry: `Token expires at ${tokenData.expiry_date}`,
-        autoRefresh: "You can call this endpoint again to get a fresh token when needed"
+        expiry: `Token expires at ${tokenInfo.expires_at}`,
+        autoRefresh: "Token is automatically managed and refreshed when needed by calendar operations"
       }
     });
 
@@ -89,3 +38,470 @@ export const getAccessTokenWithCredentials = async (req: Request, res: Response)
     });
   }
 };
+
+/**
+ * Get current token status and information
+ */
+export const getTokenStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tokenInfo = tokenManager.getTokenInfo();
+    
+    res.status(200).json({
+      success: true,
+      message: "Token status retrieved successfully",
+      data: tokenInfo
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error getting token status:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while getting token status",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Ensure we have a valid token, refreshing if necessary
+ */
+export const ensureValidToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const accessToken = await getValidGoogleToken();
+    const tokenInfo = tokenManager.getTokenInfo();
+    
+    res.status(200).json({
+      success: true,
+      message: "Valid token ensured",
+      data: {
+        has_valid_token: true,
+        token_info: tokenInfo,
+        access_token: accessToken.substring(0, 20) + '...' // Partial token for verification
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error ensuring valid token:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while ensuring valid token",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Create a new Google Calendar event
+ */
+export const createCalendarEvent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { 
+      summary, 
+      description, 
+      startDateTime, 
+      endDateTime, 
+      timeZone = 'America/Mexico_City',
+      attendees = [],
+      location,
+      calendarId = 'primary'
+    } = req.body;
+
+    // Validate required fields
+    if (!summary || !startDateTime || !endDateTime) {
+      res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+        required: ["summary", "startDateTime", "endDateTime"]
+      });
+      return;
+    }
+
+    // Validate date format
+    const isValidDate = (dateString: string) => {
+      try {
+        const date = new Date(dateString);
+        return !isNaN(date.getTime());
+      } catch {
+        return false;
+      }
+    };
+
+    if (!isValidDate(startDateTime) || !isValidDate(endDateTime)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:mm:ss or YYYY-MM-DD HH:mm:ss)",
+        example: "2025-07-29T10:00:00 or 2025-07-29 10:00:00"
+      });
+      return;
+    }
+
+    // Validate that end time is after start time
+    if (new Date(startDateTime) >= new Date(endDateTime)) {
+      res.status(400).json({
+        success: false,
+        message: "End time must be after start time"
+      });
+      return;
+    }
+
+    // Get access token using token manager
+    const accessToken = await getValidGoogleToken();
+
+    // Robust date time formatting function
+    const formatDateTime = (dateTime: string, defaultTimeZone: string = 'America/Mexico_City') => {
+      try {
+        // Check if the input already has timezone information
+        const hasTimezone = dateTime.includes('Z') || dateTime.includes('+') || dateTime.includes('-', 10);
+        
+        if (hasTimezone) {
+          // Input already has timezone, use as-is
+          const date = new Date(dateTime);
+          if (isNaN(date.getTime())) {
+            throw new Error(`Invalid date: ${dateTime}`);
+          }
+          return date.toISOString();
+        }
+        
+        // Input is timezone-naive, treat as local time in the specified timezone
+        let dateTimeForParsing = dateTime;
+        
+        // Normalize the format for parsing
+        if (dateTime.includes(' ')) {
+          // Convert "2025-08-03 23:00:00" to "2025-08-03T23:00:00"
+          dateTimeForParsing = dateTime.replace(' ', 'T');
+        } else if (dateTime.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          // Date only format: 2025-08-03 (default to noon to avoid timezone issues)
+          dateTimeForParsing = dateTime + 'T12:00:00';
+        }
+        
+        // Parse the date components
+        const match = dateTimeForParsing.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+        if (!match) {
+          throw new Error(`Invalid date format: ${dateTimeForParsing}`);
+        }
+        
+        const [, year, month, day, hour, minute, second] = match;
+        
+        // Create a date in the target timezone using local interpretation
+        // This approach treats the input as if it's already in the target timezone
+        const localDate = new Date(
+          parseInt(year), 
+          parseInt(month) - 1, // JavaScript months are 0-indexed
+          parseInt(day), 
+          parseInt(hour), 
+          parseInt(minute), 
+          parseInt(second)
+        );
+        
+        // Convert to ISO string (this will be in the local system timezone)
+        return localDate.toISOString();
+        
+      } catch (error) {
+        console.error(`❌ Error formatting date "${dateTime}":`, error);
+        throw new Error(`Invalid date format: ${dateTime}. Please use YYYY-MM-DD HH:mm:ss or ISO 8601 format.`);
+      }
+    };
+
+    // Prepare event data
+    const eventData: any = {
+      summary,
+      start: {
+        dateTime: formatDateTime(startDateTime, timeZone),
+        timeZone
+      },
+      end: {
+        dateTime: formatDateTime(endDateTime, timeZone),
+        timeZone
+      }
+    };
+
+    // Only add optional fields if they have values
+    if (description) eventData.description = description;
+    if (location) eventData.location = location;
+    if (attendees && attendees.length > 0) {
+      // Validate email addresses before adding them
+      const validEmails = attendees.filter((email: string) => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+      });
+      
+      if (validEmails.length > 0) {
+        eventData.attendees = validEmails.map((email: string) => ({ 
+          email: email.trim(),
+          responseStatus: 'needsAction'
+        }));
+      }
+    }
+
+    // Ensure proper visibility and transparency settings
+    eventData.visibility = 'default';
+    eventData.transparency = 'opaque';
+
+    console.log('📅 Creating Google Calendar event:', summary);
+
+    // Create the event
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(eventData)
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Google Calendar API Error:', responseData);
+      res.status(response.status).json({
+        success: false,
+        message: "Failed to create calendar event",
+        error: responseData.error?.message || 'Unknown error',
+        details: responseData,
+        sentData: eventData
+      });
+      return;
+    }
+
+    // Generate alternative URL formats for better compatibility
+    const primaryUrl = responseData.htmlLink;
+    const alternativeUrl = `https://calendar.google.com/calendar/event?eid=${responseData.id}`;
+    const calendarUrl = `https://calendar.google.com/calendar/u/0/r/eventedit/${responseData.id}`;
+
+    res.status(201).json({
+      success: true,
+      message: "Calendar event created successfully",
+      data: {
+        eventId: responseData.id,
+        htmlLink: primaryUrl,
+        alternativeUrl: alternativeUrl,
+        editUrl: calendarUrl,
+        summary: responseData.summary,
+        start: responseData.start,
+        end: responseData.end,
+        created: responseData.created,
+        status: responseData.status,
+        attendees: responseData.attendees || [],
+        visibility: responseData.visibility,
+        transparency: responseData.transparency
+      },
+      debug: {
+        calendarId: calendarId,
+        originalRequest: {
+          summary,
+          startDateTime,
+          endDateTime,
+          attendees: attendees || []
+        }
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error creating calendar event:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while creating calendar event",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Edit an existing Google Calendar event
+ */
+export const editCalendarEvent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { eventId } = req.params;
+    const { 
+      summary, 
+      description, 
+      startDateTime, 
+      endDateTime, 
+      timeZone = 'America/Mexico_City',
+      attendees = [],
+      location,
+      calendarId = 'primary'
+    } = req.body;
+
+    if (!eventId) {
+      res.status(400).json({
+        success: false,
+        message: "Event ID is required"
+      });
+      return;
+    }
+
+    // Get access token using token manager
+    const accessToken = await getValidGoogleToken();
+
+    // Robust date time formatting function (same as create function)
+    const formatDateTime = (dateTime: string, defaultTimeZone: string = 'America/Mexico_City') => {
+      try {
+        // Check if the input already has timezone information
+        const hasTimezone = dateTime.includes('Z') || dateTime.includes('+') || dateTime.includes('-', 10);
+        
+        if (hasTimezone) {
+          // Input already has timezone, use as-is
+          const date = new Date(dateTime);
+          if (isNaN(date.getTime())) {
+            throw new Error(`Invalid date: ${dateTime}`);
+          }
+          return date.toISOString();
+        }
+        
+        // Input is timezone-naive, treat as local time in the specified timezone
+        let dateTimeForParsing = dateTime;
+        
+        // Normalize the format for parsing
+        if (dateTime.includes(' ')) {
+          // Convert "2025-08-03 23:00:00" to "2025-08-03T23:00:00"
+          dateTimeForParsing = dateTime.replace(' ', 'T');
+        } else if (dateTime.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          // Date only format: 2025-08-03 (default to noon to avoid timezone issues)
+          dateTimeForParsing = dateTime + 'T12:00:00';
+        }
+        
+        // Parse the date components
+        const match = dateTimeForParsing.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+        if (!match) {
+          throw new Error(`Invalid date format: ${dateTimeForParsing}`);
+        }
+        
+        const [, year, month, day, hour, minute, second] = match;
+        
+        // Create a date in the target timezone using local interpretation
+        // This approach treats the input as if it's already in the target timezone
+        const localDate = new Date(
+          parseInt(year), 
+          parseInt(month) - 1, // JavaScript months are 0-indexed
+          parseInt(day), 
+          parseInt(hour), 
+          parseInt(minute), 
+          parseInt(second)
+        );
+        
+        // Convert to ISO string (this will be in the local system timezone)
+        return localDate.toISOString();
+        
+      } catch (error) {
+        console.error(`❌ Error formatting date "${dateTime}":`, error);
+        throw new Error(`Invalid date format: ${dateTime}. Please use YYYY-MM-DD HH:mm:ss or ISO 8601 format.`);
+      }
+    };
+
+    // Prepare updated event data (only include fields that are provided)
+    const eventData: any = {};
+    
+    if (summary) eventData.summary = summary;
+    if (description) eventData.description = description;
+    if (location) eventData.location = location;
+    if (startDateTime) eventData.start = { dateTime: formatDateTime(startDateTime, timeZone), timeZone };
+    if (endDateTime) eventData.end = { dateTime: formatDateTime(endDateTime, timeZone), timeZone };
+    if (attendees && attendees.length > 0) {
+      eventData.attendees = attendees.map((email: string) => ({ email }));
+    }
+
+    // Update the event
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(eventData)
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Google Calendar API Error:', responseData);
+      res.status(response.status).json({
+        success: false,
+        message: "Failed to update calendar event",
+        error: responseData.error?.message || 'Unknown error',
+        details: responseData
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Calendar event updated successfully",
+      data: {
+        eventId: responseData.id,
+        htmlLink: responseData.htmlLink,
+        summary: responseData.summary,
+        start: responseData.start,
+        end: responseData.end,
+        updated: responseData.updated,
+        status: responseData.status
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error updating calendar event:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while updating calendar event",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Delete a Google Calendar event
+ */
+export const deleteCalendarEvent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { eventId } = req.params;
+    const { calendarId = 'primary' } = req.body;
+
+    if (!eventId) {
+      res.status(400).json({
+        success: false,
+        message: "Event ID is required"
+      });
+      return;
+    }
+
+    // Get access token using token manager
+    const accessToken = await getValidGoogleToken();
+
+    // Delete the event
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!response.ok) {
+      const responseData = await response.json().catch(() => ({}));
+      console.error('❌ Google Calendar API Error:', responseData);
+      res.status(response.status).json({
+        success: false,
+        message: "Failed to delete calendar event",
+        error: responseData.error?.message || 'Unknown error',
+        details: responseData
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Calendar event deleted successfully",
+      data: {
+        eventId,
+        deleted: true
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error deleting calendar event:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while deleting calendar event",
+      error: error.message
+    });
+  }
+}

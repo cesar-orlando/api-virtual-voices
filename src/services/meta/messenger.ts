@@ -112,7 +112,7 @@ async function processMessengerEntry(entry: any, res: any) {
   const userInfo = await getUserInfoFromFacebook(session.session, senderId);
   const conn = await getDbConnection(session.companyDb);
   const FacebookChat = getFacebookChatModel(conn);
-  const filter = { userId: senderId };
+  const filter = { userId: senderId, 'session.id': session.session._id.toString() };
   const existingChat = await FacebookChat.findOne(filter);
   const newMsgId = webhookEvent.message.mid || '';
   const alreadyExists = existingChat && existingChat.messages.some((m: any) => m.msgId === newMsgId);
@@ -163,7 +163,7 @@ async function saveIncomingFacebookMessage({ FacebookChat, filter, webhookEvent,
     },
   };
 
-  if (!existingChat.session || existingChat.session.id !== session?._id.toString()) {
+  if (!existingChat || !existingChat.session || existingChat.session.id !== session?._id.toString()) {
     if (!update.$set) update.$set = {};
     update.$set.session = {
       id: session?._id.toString(),

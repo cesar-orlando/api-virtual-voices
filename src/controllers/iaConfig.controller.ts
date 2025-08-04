@@ -233,7 +233,8 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
         conn,
         aiConfig?._id.toString(),
         aiConfig?.name,
-        chatHistory
+        chatHistory,
+        false // isCalendarFallback
       );
 
       aiResponse = response || defaultResponse;

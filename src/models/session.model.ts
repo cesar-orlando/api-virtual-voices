@@ -23,7 +23,7 @@ const SessionSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     icon: { type: String, default: "" }, // Campo opcional para el ícono
-    phone: { type: String, unique: true },
+    phone: { type: String },
     platform: { type: String, enum: ['whatsapp', 'facebook'] }, // Plataforma de la sesión
     status: { type: String, enum:['connected','disconnected','pending','error']},
     sessionData: { type: Schema.Types.Mixed }, // Campo para almacenar datos de sesión de WhatsApp

@@ -9,6 +9,12 @@ const ALLOWED_FIELD_TYPES = ['text', 'email', 'number', 'date', 'boolean', 'sele
 
 // Función para validar la estructura de un campo
 const validateField = (field: any, index: number): { isValid: boolean; error?: string } => {
+  // Normalizar campo: si tiene 'key' pero no 'name', usar 'key' como 'name'
+  if (!field.name && field.key) {
+    field.name = field.key;
+    console.log(`[DEBUG] Normalized field ${index}: using 'key' as 'name' (${field.key})`);
+  }
+  
   if (!field.name || typeof field.name !== 'string') {
     return { isValid: false, error: `Field ${index}: name is required and must be a string` };
   }
@@ -34,10 +40,24 @@ const validateField = (field: any, index: number): { isValid: boolean; error?: s
 
 // Función para asignar orden automático a campos
 const assignFieldOrders = (fields: any[]): any[] => {
-  return fields.map((field, index) => ({
-    ...field,
-    order: field.order !== undefined ? field.order : index + 1
-  }));
+  return fields.map((field, index) => {
+    // Normalizar campo: si tiene 'key' pero no 'name', usar 'key' como 'name'
+    if (!field.name && field.key) {
+      field.name = field.key;
+    }
+    
+    // Limpiar propiedades redundantes
+    const cleanField = {
+      name: field.name,
+      label: field.label,
+      type: field.type,
+      required: field.required || false,
+      order: field.order !== undefined ? field.order : index + 1,
+      ...(field.options && { options: field.options })
+    };
+    
+    return cleanField;
+  });
 };
 
 // Función para validar nombres únicos de campos
@@ -81,8 +101,24 @@ function slugify(text: string): string {
 export const createTable = async (req: Request, res: Response): Promise<void> => {
   const { name, slug, icon, c_name, createdBy, fields, isActive = true } = req.body;
 
+  console.log(`[DEBUG] createTable called with:`, {
+    name,
+    slug,
+    c_name,
+    createdBy,
+    fieldsCount: fields?.length,
+    fields: fields?.slice(0, 2) // Log first 2 fields for debugging
+  });
+
   // Validaciones básicas
   if (!name || !slug || !c_name || !createdBy || !fields) {
+    console.log(`[ERROR] Missing required fields:`, {
+      hasName: !!name,
+      hasSlug: !!slug,
+      hasCName: !!c_name,
+      hasCreatedBy: !!createdBy,
+      hasFields: !!fields
+    });
     res.status(400).json({ 
       message: "Name, slug, c_name, createdBy and fields are required" 
     });
@@ -91,6 +127,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 
   // Validar que fields sea un array y tenga al menos un elemento
   if (!Array.isArray(fields) || fields.length === 0) {
+    console.log(`[ERROR] Invalid fields array:`, { isArray: Array.isArray(fields), length: fields?.length });
     res.status(400).json({ 
       message: "Fields must be a non-empty array" 
     });
@@ -99,8 +136,10 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 
   // Validar estructura de cada campo
   for (let i = 0; i < fields.length; i++) {
+    console.log(`[DEBUG] Validating field ${i + 1}:`, fields[i]);
     const validation = validateField(fields[i], i + 1);
     if (!validation.isValid) {
+      console.log(`[ERROR] Field validation failed for field ${i + 1}:`, validation.error);
       res.status(400).json({ message: validation.error });
       return;
     }
@@ -108,10 +147,12 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 
   // Asignar orden automático si no se especifica
   const fieldsWithOrders = assignFieldOrders(fields);
+  console.log(`[DEBUG] Fields after normalization:`, fieldsWithOrders);
 
   // Validar nombres únicos
   const nameValidation = validateUniqueFieldNames(fieldsWithOrders);
   if (!nameValidation.isValid) {
+    console.log(`[ERROR] Field name validation failed:`, nameValidation.error);
     res.status(400).json({ message: nameValidation.error });
     return;
   }
@@ -119,6 +160,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
   // Validar órdenes únicos
   const orderValidation = validateUniqueFieldOrders(fieldsWithOrders);
   if (!orderValidation.isValid) {
+    console.log(`[ERROR] Field order validation failed:`, orderValidation.error);
     res.status(400).json({ message: orderValidation.error });
     return;
   }
@@ -130,6 +172,7 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
     // Verifica si ya existe una tabla con el mismo slug en la misma empresa
     const existingTable = await Table.findOne({ slug, c_name });
     if (existingTable) {
+        console.log(`[ERROR] Table with slug ${slug} already exists for company ${c_name}`);
         res.status(400).json({ 
           message: "A table with this slug already exists in this company" 
         });
@@ -148,11 +191,19 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
     });
     await newTable.save();
 
+    console.log(`[SUCCESS] Table created successfully:`, {
+      id: newTable._id,
+      name: newTable.name,
+      slug: newTable.slug,
+      fieldsCount: newTable.fields.length
+    });
+
     res.status(201).json({ 
       message: "Table created successfully", 
       table: newTable 
     });
   } catch (error) {
+    console.log(`[ERROR] Database error while creating table:`, error);
     res.status(500).json({ message: "Error creating table", error });
   }
 };
@@ -775,5 +826,139 @@ export const importTable = async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Error importing table", error });
+  }
+};
+
+// Bulk create tables from Excel with multiple sheets
+export const bulkCreateFromExcel = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { companySlug } = req.params;
+    const { tables } = req.body;
+
+    // El middleware ya validó la estructura básica, aquí solo procesamos
+    const conn = await getConnectionByCompanySlug(companySlug);
+    const Table = getTableModel(conn);
+    const Record = getRecordModel(conn);
+
+    // Resultados de la operación
+    const results: any[] = [];
+    const errors: any[] = [];
+    let totalRecords = 0;
+
+    // Procesar cada tabla
+    for (let i = 0; i < tables.length; i++) {
+      const tableData = tables[i];
+      
+      try {
+        // Asignar órdenes a los campos
+        const fieldsWithOrders = assignFieldOrders(tableData.fields);
+
+        // Crear la tabla
+        const newTable = new Table({
+          name: tableData.name,
+          slug: tableData.slug,
+          icon: tableData.icon || "📊",
+          description: tableData.description || `Datos de ${tableData.name} desde Excel`,
+          c_name: companySlug,
+          createdBy: tableData.createdBy || "excel-import",
+          isActive: true,
+          fields: fieldsWithOrders
+        });
+
+        const savedTable = await newTable.save();
+
+        // Crear registros si se proporcionan
+        let recordsCreated = 0;
+        if (tableData.records && Array.isArray(tableData.records) && tableData.records.length > 0) {
+          const recordsToCreate = tableData.records.map((record: any) => ({
+            tableSlug: tableData.slug,
+            c_name: companySlug,
+            createdBy: tableData.createdBy || "excel-import",
+            data: record.data || record
+          }));
+
+          const createdRecords = await Record.insertMany(recordsToCreate);
+          recordsCreated = createdRecords.length;
+          totalRecords += recordsCreated;
+        }
+
+        // Agregar resultado exitoso
+        results.push({
+          table: {
+            _id: savedTable._id,
+            name: savedTable.name,
+            slug: savedTable.slug,
+            icon: savedTable.icon,
+            fieldsCount: savedTable.fields.length
+          },
+          recordsCreated
+        });
+
+      } catch (error: any) {
+        errors.push({
+          tableIndex: i,
+          tableName: tableData.name || `Tabla ${i + 1}`,
+          error: error.message || "Error desconocido al crear la tabla"
+        });
+      }
+    }
+
+    // Preparar respuesta
+    const successful = results.length;
+    const failed = errors.length;
+    const totalTables = tables.length;
+
+    // Si hay errores pero también éxitos, es éxito parcial
+    if (successful > 0 && failed > 0) {
+      res.status(207).json({
+        success: true,
+        message: `Se crearon ${successful} de ${totalTables} tablas exitosamente`,
+        results,
+        errors,
+        summary: {
+          totalTables,
+          totalRecords,
+          successful,
+          failed,
+          partialSuccess: true
+        }
+      });
+    }
+    // Solo éxitos
+    else if (successful > 0 && failed === 0) {
+      res.status(201).json({
+        success: true,
+        message: `Se crearon ${successful} tablas exitosamente`,
+        results,
+        summary: {
+          totalTables,
+          totalRecords,
+          successful,
+          failed
+        }
+      });
+    }
+    // Solo errores
+    else {
+      res.status(400).json({
+        success: false,
+        message: `No se pudo crear ninguna tabla. ${failed} errores encontrados`,
+        errors,
+        summary: {
+          totalTables,
+          totalRecords: 0,
+          successful: 0,
+          failed
+        }
+      });
+    }
+
+  } catch (error: any) {
+    console.error('❌ Error in bulkCreateFromExcel:', error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor al crear tablas en lote",
+      error: error.message
+    });
   }
 };

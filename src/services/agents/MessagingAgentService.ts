@@ -26,43 +26,6 @@ export class MessagingAgentService {
     isCalendarFallback: boolean = false
   ): Promise<string> {
     try {
-      // Check if AI is enabled for this user (skip for calendar fallback)
-      if (!isCalendarFallback) {
-        try {
-          console.log(`🔧 Checking AI status for ${phoneUser} in company ${company}`);
-          let aiEnabled = true;
-        if (company === 'quicklearning') {
-          const getQuickLearningChatModel = (await import('../../models/quicklearning/chat.model')).default;
-          const ChatModel = getQuickLearningChatModel(conn);
-          const chat = await ChatModel.findOne({ phone: phoneUser });
-          aiEnabled = chat?.aiEnabled !== false;
-          console.log(`📊 QuickLearning chat record found:`, chat ? 'YES' : 'NO');
-          console.log(`📊 QuickLearning aiEnabled value:`, chat?.aiEnabled);
-        } else {
-          const { getWhatsappChatModel } = await import('../../models/whatsappChat.model');
-          const WhatsappChat = getWhatsappChatModel(conn);
-          const chat = await WhatsappChat.findOne({ phone: phoneUser });
-          aiEnabled = chat?.botActive !== true;
-          console.log(`📊 WhatsApp chat record found:`, chat ? 'YES' : 'NO');
-          console.log(`� WhatsApp botActive value:`, chat?.botActive);
-        }
-
-        console.log(`🔍 Final AI status for ${phoneUser}: ${aiEnabled}`);
-        
-        if (!aiEnabled) {
-          console.log(`🚫 IA desactivada para ${phoneUser}, returning transfer message`);
-          return "Ya pasé tu consulta a uno de mis compañeros. Te contactará muy pronto para ayudarte.";
-        }
-      } catch (error) {
-        console.error(`❌ Error verificando aiEnabled para ${phoneUser}:`, error);
-        console.log(`⚠️ Due to AI check error, continuing with processing`);
-        // En caso de error, continuar con el procesamiento
-      }
-      } else {
-        console.log(`📅 Skipping AI check for calendar fallback message`);
-      }
-
-      // console.log(`🤖 Processing WhatsApp message for ${company} - ${phoneUser}`);
       
       // Use provided chat history or get from database
       let chatHistory: any[];

@@ -170,11 +170,28 @@ export class GeneralAgent extends BaseAgent {
           parameters: z.object(parameterSchema) as any,
           execute: async (params: any) => {
             console.log(`🔧 Executing tool ${companyTool.name} with params:`, params);
+
+            function cleanParams(input: any) {
+              const result: any = {};
+              for (const [key, value] of Object.entries(input)) {
+                if (
+                  value !== undefined &&
+                  value !== null &&
+                  value !== '' &&
+                  !(typeof value === 'number' && value === 0)
+                ) {
+                  result[key] = value;
+                }
+              }
+              return result;
+            }
             
             try {
               const result = await ToolExecutor.execute({
                 toolName: companyTool.name,
-                parameters: params,
+                parameters: { ...cleanParams(params), 
+                  number: this.agentContext.phoneUser.replace('@c.us', ''), 
+                  sessionId: this.agentContext.sessionId },
                 c_name: this.company,
                 executedBy: 'GeneralAgent'
               });

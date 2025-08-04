@@ -58,7 +58,7 @@ export class ToolExecutor {
         console.log('[TOOL EXECUTOR] Parámetros recibidos:', parameters);
 
         // 1. Ejecutar request HTTP a la URL base (sin filtros)
-        executionResult = await this.executeHttpRequest(tool, {}); // No pasar parámetros para evitar filtros en la URL
+        executionResult = await this.executeHttpRequest(tool, parameters); // No pasar parámetros para evitar filtros en la URL
 
         // LOG 2: Cantidad de registros obtenidos
         if (Array.isArray(executionResult.data)) {
@@ -193,12 +193,32 @@ export class ToolExecutor {
       // Construir URL
       let url = config.endpoint;
       if (config.method === 'GET' && Object.keys(parameters).length > 0) {
+        // Only include filter keys in filters param
+        const { page, limit, sortBy, sortOrder, ...filterParams } = parameters;
         const searchParams = new URLSearchParams();
-        Object.entries(parameters).forEach(([key, value]) => {
-          searchParams.append(key, String(value));
-        });
+
+        // Add pagination/sorting if present
+        if (page !== undefined) searchParams.append('page', String(page));
+        if (limit !== undefined) searchParams.append('limit', String(limit));
+        if (sortBy !== undefined) searchParams.append('sortBy', String(sortBy));
+        if (sortOrder !== undefined) searchParams.append('sortOrder', String(sortOrder));
+
+        // Add all other params as a single filters param
+        if (Object.keys(filterParams).length > 0) {
+          searchParams.append('filters', JSON.stringify(filterParams));
+        }
+
         url += (url.includes('?') ? '&' : '?') + searchParams.toString();
       }
+
+      // Reemplazar cualquier parámetro dinámico en el endpoint
+      url = url.replace(/{{(\w+)}}/g, (match, paramName) => {
+        if (parameters[paramName] !== undefined) {
+          return parameters[paramName];
+        } else {
+          throw new Error(`Missing parameter '${paramName}' for endpoint`);
+        }
+      });
 
       console.log(`Executing tool: ${tool.name} (${config.method}) - URL: ${url}`);
 
@@ -238,7 +258,9 @@ export class ToolExecutor {
       // Preparar body para POST/PUT
       let body: string | undefined;
       if (['POST', 'PUT'].includes(config.method) && Object.keys(parameters).length > 0) {
-        body = JSON.stringify(parameters);
+        const { c_name, updatedBy, ...rest } = parameters;
+        body = JSON.stringify({ c_name, updatedBy, data: { ...rest } });
+        console.log('[TOOL EXECUTOR] Body enviado:', body);
       }
 
       // Ejecutar request

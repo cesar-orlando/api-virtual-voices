@@ -1133,8 +1133,13 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
       companySlug: 'quicklearning'
     }).select('_id name email');
 
-    const currentHour = new Date().getHours();
-    const isAfterHours = currentHour >= 21 || currentHour < 8; // Después de las 9 PM O antes de las 8 AM
+    // Usar hora de México (UTC-6 o UTC-5 según horario de verano)
+    const now = new Date();
+    const mexicoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Mexico_City"}));
+    const currentHour = mexicoTime.getHours();
+    const isAfterHours = currentHour >= 21 || currentHour <= 8; // Después de las 9 PM O hasta las 7 AM (8 AM ya es horario normal)
+    
+    console.log(`🕐 Hora México detectada: ${currentHour}:${mexicoTime.getMinutes()} (${mexicoTime.toLocaleString()}) - isAfterHours: ${isAfterHours}`);
 
     if (availableAdvisors.length === 0) {
       // No hay asesores disponibles - LIMPIAR asignación anterior
@@ -1193,8 +1198,13 @@ async function assignAvailableAdvisor(phoneUser: string, conn: any): Promise<{ad
   } catch (error) {
     console.error(`❌ Error asignando asesor para ${phoneUser}:`, error);
     
-    const currentHour = new Date().getHours();
-    const isAfterHours = currentHour >= 21 || currentHour < 8; // Después de las 9 PM O antes de las 8 AM
+    // Usar hora de México (UTC-6 o UTC-5 según horario de verano)
+    const now = new Date();
+    const mexicoTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Mexico_City"}));
+    const currentHour = mexicoTime.getHours();
+    const isAfterHours = currentHour >= 21 || currentHour <= 8; // Después de las 9 PM O hasta las 7 AM (8 AM ya es horario normal)
+    
+    console.log(`🕐 Hora México detectada: ${currentHour}:${mexicoTime.getMinutes()} (${mexicoTime.toLocaleString()}) - isAfterHours: ${isAfterHours}`);
     
     const message = isAfterHours 
       ? "Gracias por tu interés. Mañana temprano un asesor se pondrá en contacto contigo para ayudarte. ¡Que tengas buena noche!"

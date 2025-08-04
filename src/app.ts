@@ -13,6 +13,7 @@ import metaRoutes from './routes/meta.routes';
 import sessionRoutes from "./routes/session.routes";
 import calendarAssistantRoutes from "./routes/calendarAssistant.routes";
 import calendarEventRoutes from './routes/calendarEvent.routes';
+import taskRoutes from './routes/task.routes';
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -146,6 +147,9 @@ app.use('/api/meta', metaRoutes);
 
 // Rutas de sesiones
 app.use('/api/sessions', sessionRoutes);
+
+// Rutas de tareas (estilo Trello)
+app.use('/api/tasks', taskRoutes);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

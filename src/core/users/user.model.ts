@@ -5,7 +5,7 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  role: 'Administrador' | 'Gerente' | 'Marketing' | 'Asesor' | 'Asistente';
+  role: 'SuperAdmin' | 'Administrador' | 'Gerente' | 'Marketing' | 'Asesor' | 'Asistente';
   companySlug?: string;
   status: 'active' | 'inactive' | 'eliminado';
   permissions?: string[];
@@ -23,7 +23,7 @@ const UserSchema: Schema = new Schema(
     role: { 
       type: String, 
       required: true, 
-      enum: ['Administrador', 'Gerente', 'Marketing', 'Asesor', 'Asistente']
+      enum: ['SuperAdmin', 'Administrador', 'Gerente', 'Marketing', 'Asesor', 'Asistente']
     },
     companySlug: { type: String, required: false },
     status: {
@@ -46,8 +46,20 @@ UserSchema.index({ status: 1 });
 
 // Método para verificar permisos
 UserSchema.methods.hasPermission = function(permission: string): boolean {
+  if (this.role === 'SuperAdmin') return true; // SuperAdmin tiene todos los permisos
   if (this.role === 'Administrador') return true;
   return this.permissions?.includes(permission) || false;
+};
+
+// Método para verificar si es admin supremo
+UserSchema.methods.isSuperAdmin = function(): boolean {
+  return this.role === 'SuperAdmin';
+};
+
+// Método para verificar si puede ver otras empresas
+UserSchema.methods.canViewAllCompanies = function(): boolean {
+  return this.role === 'SuperAdmin' || 
+         (this.companySlug && this.companySlug.toLowerCase() === 'virtualvoices');
 };
 
 // Método para verificar si el usuario está activo

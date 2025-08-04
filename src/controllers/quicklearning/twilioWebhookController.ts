@@ -65,6 +65,9 @@ export class TwilioWebhookController {
         cleanPhone,
         conn,
         config?._id.toString(),
+        undefined, // sessionId not available in webhook
+        undefined, // providedChatHistory
+        false // isCalendarFallback
       );
 
       console.log(`✅ Agent response: ${response}`);

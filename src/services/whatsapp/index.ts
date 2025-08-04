@@ -69,10 +69,21 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     console.log(`❌ No se encontró sesión previa en: ${sessionPath}`);
   }
 
+  // Sanitizar clientId para que solo contenga caracteres válidos
+  const sanitizeForClientId = (str: string): string => {
+    return str.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+  };
+  
+  const sanitizedCompany = sanitizeForClientId(company);
+  const sanitizedSessionName = sanitizeForClientId(sessionName);
+  const clientId = `${sanitizedCompany}_${sanitizedSessionName}`;
+  
+  console.log(`📱 Iniciando WhatsApp bot con clientId: ${clientId}`);
+
   // Usar LocalAuth con configuración optimizada para Render
   const whatsappClient = new Client({
     authStrategy: new LocalAuth({ 
-      clientId: `${company}-${sessionName}`,
+      clientId: clientId,
       dataPath: authDir
     }),
     puppeteer: {

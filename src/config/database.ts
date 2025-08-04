@@ -128,6 +128,9 @@ export async function getAllFacebookConfigsFromAllDatabases() {
   return allFacebookConfigsArrays.flat();
 }
 
+// Exportar funciones del connection manager para compatibilidad
+export { getConnectionByCompanySlug as getCompanyConnection, getDbConnection as getMainConnection } from "./connectionManager";
+
 // Función para obtener información de la base de datos actual
 export function getDatabaseInfo() {
   const config = getEnvironmentConfig();

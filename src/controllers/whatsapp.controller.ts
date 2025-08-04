@@ -306,3 +306,40 @@ export async function enviarFichaTecnica(req: Request, res: Response): Promise<a
     return res.status(500).json({ success: false, message: 'Error interno al enviar ficha técnica' });
   }
 }
+
+export async function updateChatRecord(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name } = req.params;
+    const { data } = req.body;
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    const WhatsappChat = getWhatsappChatModel(conn);
+    const UserConfig = getUserModel(conn);
+    const allUsers = await UserConfig.find({ role: 'Asesor' }).lean();
+
+    if (allUsers.length === 0) {
+      res.status(404).json({ message: "No hay asesores disponibles" });
+      return;
+    }
+
+    const user = allUsers.length > 0 ? allUsers[Math.floor(Math.random() * allUsers.length)] : null;
+
+    const chat = await WhatsappChat.findOneAndUpdate(
+      { "session.id": data.sessionId, "phone": `${data.number}@c.us` },
+      { $set: { advisor: { id: user._id, name: user.name } } },
+      { new: true }
+    ).lean();
+
+    if (!chat) {
+      res.status(404).json({ message: "Chat no encontrado", data: { phone: data.number } });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Se ha asignado el chat al asesor ${user.name}`,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error updating chat record", error });
+  }
+}

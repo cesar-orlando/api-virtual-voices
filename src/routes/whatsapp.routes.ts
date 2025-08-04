@@ -6,7 +6,8 @@ import {
   MessageToAll,
   sendWhatsappMessage,
   getChatMessages,
-  enviarFichaTecnica
+  enviarFichaTecnica,
+  updateChatRecord
 } from "../controllers/whatsapp.controller";
 
 const router = Router();
@@ -18,5 +19,6 @@ router.get("/usuarios/:c_name/:phone", getWhatsappUserByPhone);
 router.post("/session/:c_name/:sessionId", sendWhatsappMessage);
 router.post("/messageAll/:c_name/:sessionId", MessageToAll);
 router.post('/enviar-ficha-tecnica', enviarFichaTecnica);
+router.put("/change-user/:c_name", updateChatRecord)
 
 export default router;

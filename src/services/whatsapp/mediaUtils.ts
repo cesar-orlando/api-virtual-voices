@@ -4,6 +4,8 @@ import { openai } from '../openai';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import axios from 'axios';
+import { s3 } from '../../config/aws';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 export async function handleAudioMessage(message: Message, statusText?: string): Promise<Message> {
   // Asegura el directorio de audios
@@ -46,19 +48,31 @@ export async function handleImageMessage(message: Message, statusText?: string):
   const filePath = `${imageDir}/${message.id.id}.${extension}`;
   const binaryData = Buffer.from(media.data, 'base64');
   fs.writeFileSync(filePath, binaryData);
+
+  // Subir a AWS S3
+  const bucketName = process.env.AWS_BUCKET_NAME;
+  const s3Key = `whatsapp-images/${message.id.id}.${extension}`;
+  const uploadParams = {
+    Bucket: bucketName,
+    Key: s3Key,
+    Body: fs.createReadStream(filePath),
+    ContentType: media.mimetype,
+  };
+  await s3.send(new PutObjectCommand(uploadParams));
+  const s3Url = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+
+  // Elimina el archivo después del análisis
+  fs.unlink(filePath, (err) => {
+    if (err) console.warn(`⚠️  No se pudo eliminar el archivo de imagen: ${filePath}`, err);
+    else console.log(`🗑️  Archivo de imagen eliminado: ${filePath}`);
+  });
+
   const imageAnalysis = await analyzeImage(media.data, media.mimetype);
   console.log(`🖼️ Imagen analizada: ${imageAnalysis.description}`);
-  // Elimina el archivo después del análisis
-  try {
-    fs.unlinkSync(filePath);
-    console.log(`🗑️  Archivo de imagen eliminado: ${filePath}`);
-  } catch (deleteError) {
-    console.warn(`⚠️  No se pudo eliminar el archivo de imagen: ${filePath}`, deleteError);
-  }
   if (statusText) {
-    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}`;
+    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
   } else {
-    message.body = `Imagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}`;
+    message.body = `Imagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
   }
   return message;
 }
@@ -363,7 +377,7 @@ export async function transcribeAudio(filePath: string): Promise<string> {
 export async function getImageFromUrl({ imageUrls, i }: {
   imageUrls: string,
   i: number
-}): Promise<MessageMedia> {
+}): Promise<{ media: MessageMedia; filePath: string } | undefined> {
   try {
     const imgUrl = imageUrls;
     const ext = imgUrl.split('.').pop()?.split('?')[0] || 'jpg';
@@ -376,7 +390,8 @@ export async function getImageFromUrl({ imageUrls, i }: {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
     }
     fs.writeFileSync(filePath, imgResp.data);
-    return MessageMedia.fromFilePath(filePath);
+    const media = MessageMedia.fromFilePath(filePath);
+    return { media, filePath };
   } catch (err) {
     console.error('Error sending image:', err);
   }

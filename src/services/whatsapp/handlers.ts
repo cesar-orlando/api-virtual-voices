@@ -10,6 +10,7 @@ import getRecordModel from '../../models/record.model';
 import getIaConfigModel from '../../models/iaConfig.model';
 import { MessagingAgentService } from '../agents/MessagingAgentService';
 import { Assistant } from '../agents/Assistant';
+import * as fs from 'node:fs';
 
 // Initialize the MessagingAgent service
 const messagingAgentService = new MessagingAgentService();
@@ -467,25 +468,16 @@ async function sendCustomResponse(
       });
 
       for (let i = 0; i < foundImages.length; i++) {
-        const imgFile = await getImageFromUrl({ imageUrls: foundImages[i], i });
+        const result = await getImageFromUrl({ imageUrls: foundImages[i], i });
         // Enviar imagen desde archivo local
-        let sentMessage = await client.sendMessage(message.from, imgFile, { caption: i === 0 ? textOnly : undefined });
+        let sentMessage = await client.sendMessage(message.from, result.media, { caption: i === 0 ? textOnly : undefined });
         sentMessage.body = (sentMessage.body || '') + '\n' + foundImages[i];
         await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
-      }
-
-      // Delete all files in src/media/images after sending images (recursive, concise)
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const imagesDir = path.join('src', 'media', 'images');
-        if (fs.existsSync(imagesDir)) {
-          fs.rmSync(imagesDir, { recursive: true, force: true });
-          fs.mkdirSync(imagesDir, { recursive: true });
-          console.log(`🗑️ Todas las imágenes en ${imagesDir} han sido eliminadas (recursivo).`);
-        }
-      } catch (err) {
-        console.warn('Error deleting images in src/media/images:', err);
+        fs.unlink(result.filePath, (err) => {
+          if (err) {
+            console.error(`Error deleting file ${result.filePath}:`, err);
+          }
+        });
       }
 
       console.log(`✅ Custom response with images sent successfully for ${company}`);

@@ -343,3 +343,221 @@ export async function updateChatRecord(req: Request, res: Response): Promise<voi
     res.status(500).json({ message: "Error updating chat record", error });
   }
 }
+
+// Endpoint modificado - permite asignación manual específica
+export async function assignChatToAdvisor(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name } = req.params;
+    const { data } = req.body; // { sessionId, number, advisorId?, isVisibleToAll? }
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    const WhatsappChat = getWhatsappChatModel(conn);
+    const UserConfig = getUserModel(conn);
+
+    // Si no se especifica advisorId, desasignar (poner null)
+    let advisor = null;
+    
+    if (data.advisorId) {
+      // Buscar el asesor específico
+      const targetUser = await UserConfig.findById(data.advisorId).lean();
+      
+      if (!targetUser || targetUser.role !== 'Asesor') {
+        res.status(404).json({ 
+          success: false, 
+          message: "Asesor no encontrado o no válido" 
+        });
+        return;
+      }
+      
+      advisor = { id: targetUser._id, name: targetUser.name };
+    }
+
+    // Actualizar el chat con el asesor asignado (o null para desasignar)
+    const chat = await WhatsappChat.findOneAndUpdate(
+      { "session.id": data.sessionId, "phone": `${data.number}@c.us` },
+      { 
+        $set: { 
+          advisor: advisor,
+          isVisibleToAll: data.isVisibleToAll || false,
+          assignedAt: new Date(),
+          assignedBy: 'system' // Valor por defecto sin auth
+        } 
+      },
+      { new: true }
+    ).lean();
+
+    if (!chat) {
+      res.status(404).json({ 
+        success: false, 
+        message: "Chat no encontrado", 
+        data: { phone: data.number } 
+      });
+      return;
+    }
+
+    const message = advisor 
+      ? `Chat asignado correctamente a ${advisor.name}`
+      : 'Chat desasignado correctamente';
+
+    res.status(200).json({
+      success: true,
+      message,
+      data: {
+        phone: data.number,
+        advisor: advisor,
+        isVisibleToAll: data.isVisibleToAll || false
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error assigning chat:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error al asignar chat", 
+      error 
+    });
+  }
+}
+
+// Endpoint para obtener todos los asesores disponibles
+export async function getAvailableAdvisors(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name } = req.params;
+    
+    const conn = await getConnectionByCompanySlug(c_name);
+    const UserConfig = getUserModel(conn);
+    
+    const advisors = await UserConfig.find({ 
+      role: 'Asesor',
+      status: { $ne: 'inactive' } // Excluir usuarios inactivos
+    })
+    .select('name email role')
+    .sort({ name: 1 })
+    .lean();
+
+    res.status(200).json({
+      success: true,
+      data: advisors.map(advisor => ({
+        id: advisor._id.toString(),
+        name: advisor.name,
+        email: advisor.email,
+        role: advisor.role
+      }))
+    });
+    
+  } catch (error) {
+    console.error("Error getting advisors:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener asesores" 
+    });
+  }
+}
+
+// Endpoint para obtener chats con filtros por permisos
+export async function getFilteredChats(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name } = req.params;
+    const { showAll, userId, userRole } = req.query; // Obtener desde query parameters
+    
+    // Validar que se proporcionen los parámetros necesarios
+    if (!userId || !userRole) {
+      res.status(400).json({ 
+        success: false, 
+        message: 'userId y userRole son requeridos en query parameters' 
+      });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    const WhatsappChat = getWhatsappChatModel(conn);
+
+    let filter: any = {};
+
+    // Si no es admin y no quiere ver todos, filtrar por asignación
+    if (userRole !== 'Administrador' && userRole !== 'Gerente') {
+      filter = {
+        $or: [
+          { 'advisor.id': userId }, // Chats asignados al usuario
+          { isVisibleToAll: true },  // Chats visibles para todos
+          { advisor: { $exists: false } }, // Chats sin asignar
+          { advisor: null } // Chats explícitamente desasignados
+        ]
+      };
+    } else if (userRole === 'Administrador' && showAll !== 'true') {
+      // Admin puede elegir ver solo los suyos
+      filter = { 'advisor.id': userId };
+    }
+    // Si es admin y showAll=true, no aplicar filtro (ver todos)
+
+    const chats = await WhatsappChat.find(filter)
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: chats,
+      total: chats.length
+    });
+    
+  } catch (error) {
+    console.error("Error getting filtered chats:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener chats" 
+    });
+  }
+}
+
+// Endpoint para obtener todas las asignaciones de chat (sin filtros de usuario)
+export async function getChatAssignments(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name } = req.params;
+    
+    const conn = await getConnectionByCompanySlug(c_name);
+    const WhatsappChat = getWhatsappChatModel(conn);
+
+    // Obtener todos los chats con información de asignación
+    const chats = await WhatsappChat.find({})
+      .select('phone name advisor updatedAt createdAt messages tableSlug botActive')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // Clasificar chats
+    const assigned = chats.filter(chat => chat.advisor && chat.advisor.id);
+    const unassigned = chats.filter(chat => !chat.advisor || !chat.advisor.id);
+
+    // Agregar información adicional a cada chat
+    const enrichedChats = chats.map(chat => ({
+      _id: chat._id,
+      phone: chat.phone,
+      name: chat.name || 'Sin nombre',
+      tableSlug: chat.tableSlug,
+      botActive: chat.botActive,
+      lastMessageCount: chat.messages ? chat.messages.length : 0,
+      assignmentStatus: chat.advisor?.id ? 'assigned' : 'unassigned',
+      advisorName: chat.advisor?.name || null,
+      advisorId: chat.advisor?.id || null,
+      updatedAt: (chat as any).updatedAt,
+      createdAt: (chat as any).createdAt
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: enrichedChats,
+      summary: {
+        total: chats.length,
+        assigned: assigned.length,
+        unassigned: unassigned.length
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error getting chat assignments:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener asignaciones de chat",
+      error: error.message
+    });
+  }
+}

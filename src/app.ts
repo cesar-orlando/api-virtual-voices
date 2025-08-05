@@ -21,6 +21,7 @@ import quickLearningRoutes from "./projects/quicklearning/routes";
 import quickLearningTwilioRoutes from "./routes/quicklearning/twilioRoutes";
 import twilioTestRoutes from "./routes/quicklearning/twilioTestRoutes";
 import twilioWebhookRoutes from "./routes/quicklearning/twilioWebhookRoutes";
+import quickLearningMetricsRoutes from "./routes/quicklearning/metricsRoutes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -136,6 +137,9 @@ app.use('/api/projects/quicklearning', quickLearningRoutes);
 
 // Rutas de Twilio para Quick Learning
 app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
+
+// Rutas de métricas para Quick Learning
+app.use('/api/quicklearning', quickLearningMetricsRoutes);
 
 // Rutas de prueba para el nuevo sistema de agentes
 app.use('/api/test', twilioTestRoutes);

@@ -195,6 +195,17 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
   } = req.query;
 
   try {
+    const allowedParams = ['page', 'limit', 'sortBy', 'sortOrder', 'filters'];
+    const extraFilters = Object.keys(req.query).filter(key => !allowedParams.includes(key));
+
+    if (extraFilters.length > 0) {
+      res.status(400).json({
+        message: "All filters must be sent in the 'filters' query parameter as a JSON string.",
+        invalidParams: extraFilters
+      });
+      return;
+    }
+
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
@@ -279,7 +290,22 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             orDateFilters.push({[fieldName]: parsedRange })
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
           } else {
-            otherFilters.push({ [`data.${fieldName}`]: value });
+            // Check if value is a number or can be converted to a number
+            function isNumberOrConvertible(val: any): boolean {
+              if (typeof val === 'number' && !isNaN(val)) return true;
+              if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) return true;
+              return false;
+            }
+
+            if (isNumberOrConvertible(value)) {
+              // Add both string and number versions for flexible matching
+              otherFilters.push({ $or: [
+                { [`data.${fieldName}`]: value },
+                { [`data.${fieldName}`]: Number(value) }
+              ] });
+            } else {
+              otherFilters.push({ [`data.${fieldName}`]: { $regex: value, $options: 'i' } });
+            }
           }
         }
       } catch (error) {
@@ -287,23 +313,28 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
         return;
       }
     }
-    const andFilters: any[] = [];
+
+    // Agrupar los filtros de texto en un solo $or, y los de fecha como $and
+    const andGroup: any[] = [];
 
     if (orTextFilters.length > 0) {
-      andFilters.push({ $or: orTextFilters });
+      andGroup.push({ $or: orTextFilters });
     }
-
+    // Agrupar los filtros de fecha en un solo $or si hay más de uno
     if (orDateFilters.length > 0) {
-      andFilters.push({ $or: orDateFilters });
+      if (orDateFilters.length === 1) {
+        andGroup.push(orDateFilters[0]);
+      } else {
+        andGroup.push({ $or: orDateFilters });
+      }
     }
-
     if (otherFilters.length > 0) {
-      andFilters.push(...otherFilters);
+      andGroup.push({ $or: otherFilters });
     }
 
-    // Si hay filtros combinados, agregarlos con $and
-    if (andFilters.length > 0) {
-      queryFilter.$and = andFilters;
+    // Si hay filtros, agruparlos en $and
+    if (andGroup.length > 0) {
+      queryFilter.$and = andGroup;
     }
 
     // Configurar paginación y ordenamiento
@@ -321,8 +352,37 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     // Contar total de registros
     const total = await Record.countDocuments(queryFilter);
 
+    // Scoring logic: rank records by number of filter matches (partial/fuzzy matching)
+    let scoredRecords: (typeof records[0] & { matchScore: number })[] = records as any;
+    if (filters && typeof filters === 'string') {
+      try {
+        const parsedFilters = JSON.parse(filters);
+        scoredRecords = records.map(record => {
+          let score = 0;
+          for (const [fieldName, value] of Object.entries(parsedFilters)) {
+            if (value !== undefined && value !== null && value !== '') {
+              const fieldValue = record.data[fieldName];
+              if (typeof value === 'string' && typeof fieldValue === 'string') {
+                if (fieldValue.toLowerCase() === value.toLowerCase()) {
+                  score += 2; // Exact match
+                } else if (fieldValue.toLowerCase().includes(value.toLowerCase())) {
+                  score += 1; // Partial match
+                }
+              } else if (fieldValue == value) {
+                score += 2; // Exact match for non-string
+              }
+            }
+          }
+          return { ...record, matchScore: score };
+        });
+        scoredRecords.sort((a, b) => b.matchScore - a.matchScore);
+      } catch (error) {
+        // If filters can't be parsed, fallback to unsorted
+      }
+    }
+
     res.json({
-      records,
+      records: scoredRecords,
       pagination: {
         page: Number(page),
         limit: Number(limit),

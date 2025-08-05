@@ -1,6 +1,6 @@
 import { Message, Client } from 'whatsapp-web.js';
 import { createNewChatRecord, updateChatRecord, sendAndRecordBotResponse } from './chatRecordUtils';
-import { handleAudioMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
+import { getImageFromUrl, handleAudioMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import { getSessionModel } from '../../models/session.model';
@@ -456,14 +456,45 @@ async function sendCustomResponse(
   try {
     console.log(`📤 Sending custom response for ${company}: ${response.substring(0, 50)}...`);
     
-    // Send the message
-    const sentMessage = await client.sendMessage(message.from, response);
-    
-    // Record the bot response in the chat
-    await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
-    
-    console.log(`✅ Custom response sent successfully for ${company}`);
-    
+    // Detect image URLs from amazonaws in the response
+    const imageRegex = /(https?:\/\/[^\s]+amazonaws[^\s]+\.(jpg|jpeg|png|gif))/gi;
+    const foundImages = typeof response === 'string' ? response.match(imageRegex) : [];
+    let textOnly = response;
+    if (foundImages && foundImages.length > 0) {
+      // Remove image URLs from the text response
+      foundImages.forEach(url => {
+        textOnly = textOnly.replace(url, '').trim();
+      });
+
+      for (let i = 0; i < foundImages.length; i++) {
+        const imgFile = await getImageFromUrl({ imageUrls: foundImages[i], i });
+        // Enviar imagen desde archivo local
+        let sentMessage = await client.sendMessage(message.from, imgFile, { caption: i === 0 ? textOnly : undefined });
+        sentMessage.body = (sentMessage.body || '') + '\n' + foundImages[i];
+        await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
+      }
+
+      // Delete all files in src/media/images after sending images (recursive, concise)
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const imagesDir = path.join('src', 'media', 'images');
+        if (fs.existsSync(imagesDir)) {
+          fs.rmSync(imagesDir, { recursive: true, force: true });
+          fs.mkdirSync(imagesDir, { recursive: true });
+          console.log(`🗑️ Todas las imágenes en ${imagesDir} han sido eliminadas (recursivo).`);
+        }
+      } catch (err) {
+        console.warn('Error deleting images in src/media/images:', err);
+      }
+
+      console.log(`✅ Custom response with images sent successfully for ${company}`);
+    } else {
+      // Send the message as text only
+      const sentMessage = await client.sendMessage(message.from, response);
+      await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
+      console.log(`✅ Custom response sent successfully for ${company}`);
+    }
   } catch (error) {
     console.error(`❌ Error sending custom response for ${company}:`, error);
     throw error;

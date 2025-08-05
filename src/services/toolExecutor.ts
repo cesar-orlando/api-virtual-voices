@@ -58,7 +58,7 @@ export class ToolExecutor {
         console.log('[TOOL EXECUTOR] Parámetros recibidos:', parameters);
 
         // 1. Ejecutar request HTTP a la URL base (sin filtros)
-        executionResult = await this.executeHttpRequest(tool, parameters); // No pasar parámetros para evitar filtros en la URL
+        executionResult = await this.executeHttpRequest(tool, parameters);
 
         // LOG 2: Cantidad de registros obtenidos
         if (Array.isArray(executionResult.data)) {

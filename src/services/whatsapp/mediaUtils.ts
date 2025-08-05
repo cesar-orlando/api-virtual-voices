@@ -1,7 +1,9 @@
 // Modular media handlers for WhatsApp messages
-import { Message } from 'whatsapp-web.js';
+import { Message, MessageMedia } from 'whatsapp-web.js';
 import { openai } from '../openai';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import axios from 'axios';
 
 export async function handleAudioMessage(message: Message, statusText?: string): Promise<Message> {
   // Asegura el directorio de audios
@@ -354,5 +356,28 @@ export async function transcribeAudio(filePath: string): Promise<string> {
     }
     
     throw error;
+  }
+}
+
+// Utility to download and send images from URLs via WhatsApp
+export async function getImageFromUrl({ imageUrls, i }: {
+  imageUrls: string,
+  i: number
+}): Promise<MessageMedia> {
+  try {
+    const imgUrl = imageUrls;
+    const ext = imgUrl.split('.').pop()?.split('?')[0] || 'jpg';
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+    const imgResp = await axios.get(imgUrl, { responseType: 'arraybuffer' });
+    const fileName = `whatsapp_img_${Date.now()}_${i}.${ext}`;
+    const filePath = path.join('src/media/images', fileName);
+    // Crear carpeta si no existe
+    if (!fs.existsSync(path.dirname(filePath))) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    }
+    fs.writeFileSync(filePath, imgResp.data);
+    return MessageMedia.fromFilePath(filePath);
+  } catch (err) {
+    console.error('Error sending image:', err);
   }
 }

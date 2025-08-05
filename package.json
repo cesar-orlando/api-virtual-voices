@@ -72,7 +72,7 @@
     "socket.io": "^4.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "twilio": "^5.7.1",
+    "twilio": "^5.8.0",
     "whatsapp-web.js": "^1.31.0",
     "zod": "^3.25.67"
   },

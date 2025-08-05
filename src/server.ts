@@ -29,7 +29,6 @@ export const io = new Server(server, {
 
 // Manejar eventos de Socket.IO
 io.on('connection', (socket) => {
-  console.log(`🔌 Cliente conectado: ${socket.id}`);
   
   // Enviar información de estado al cliente
   socket.emit('server_status', {
@@ -44,7 +43,7 @@ io.on('connection', (socket) => {
   
   // Manejar desconexión
   socket.on('disconnect', (reason) => {
-    console.log(`🔌 Cliente desconectado: ${socket.id} - Razón: ${reason}`);
+    // console.log(`🔌 Cliente desconectado: ${socket.id} - Razón: ${reason}`);
   });
   
   // Manejar errores de socket

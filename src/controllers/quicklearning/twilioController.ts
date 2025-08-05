@@ -558,7 +558,8 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       if (!asesorRandom) {
         asesorRandom = JSON.stringify({
           name: "Luisa Nohemi Jiménez Gutiérrez",
-          _id: "68217a92960180b66cfe6da7"
+          _id: "686eaa90cb5c849172b31e8d",
+          email: "ljimenez@quicklearning.com"
         });
       }
 

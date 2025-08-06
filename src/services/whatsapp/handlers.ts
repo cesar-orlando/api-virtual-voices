@@ -195,16 +195,21 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     const Record = getRecordModel(conn);
     const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': { $in: [cleanUserPhone, Number(cleanUserPhone)] } });
+    const Session = getSessionModel(conn);
+    const session = await Session.findOne({ name: sessionName });
 
     // Crea un nuevo chat si no existe
     if (!existingRecord) {
       console.log(`📞 No se encontró chat existente para ${userPhone} con [${company}:${sessionName}], creando uno nuevo...`);
-      const Session = getSessionModel(conn);
-      const session = await Session.findOne({ name: sessionName });
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
     } else {
       console.log(`📞 Chat existente encontrado para ${userPhone} con [${company}:${sessionName}]`);
       await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
+    }
+
+    if (session.status !== 'connected') {
+      console.log(`🚫 AI desconectada para ${company}:${session.name}, ignorando mensaje.`);
+      return;
     }
 
     // --- FIN VALIDACIÓN DE IA ---

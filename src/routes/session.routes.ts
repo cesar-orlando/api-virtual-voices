@@ -14,7 +14,7 @@ const router = Router();
 
 router.post("/whatsapp", createWhatsappSession);
 router.get("/whatsapp/:c_name/:user_id", getAllWhatsappSessions);
-router.put("/whatsapp/:id", updateWhatsappSession);
+router.put("/whatsapp/:c_name", updateWhatsappSession);
 router.delete("/whatsapp/:id", deleteWhatsappSession);
 router.get('/messenger/:c_name/:user_id', getAllFacebookSessions);
 router.post('/messenger', createFacebookSession);

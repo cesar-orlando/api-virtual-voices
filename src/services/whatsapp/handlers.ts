@@ -239,8 +239,8 @@ async function handleDelayedResponse(
   existingRecord: any,
   conn: Connection
 ) {
-  const DELAY_MS = 5000; // Reducido de 15 a 5 segundos para mejor responsividad
-  
+  const DELAY_MS = 10000; // Reducido de 15 a 10 segundos para mejor responsividad
+
   // Always record the incoming message first
   await updateChatRecord(company, existingRecord, "inbound", message, "human");
 
@@ -259,8 +259,8 @@ async function handleDelayedResponse(
     existingPending.existingRecord = existingRecord;
   } else {
     // First message from this user, start the delay
-    console.log(`⏰ Iniciando delay de 5s para ${userPhone}`);
-    
+    console.log(`⏰ Iniciando delay de 10s para ${userPhone}`);
+
     // Store the pending response data
     pendingResponses.set(userPhone, {
       timeout: setTimeout(() => {}, DELAY_MS), // Will be replaced immediately

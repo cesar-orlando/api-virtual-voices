@@ -252,7 +252,7 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
       return path.join(process.cwd(), '.wwebjs_auth');
     };
     const authDir = getAuthDir();
-    const sessionFolder = path.join(authDir, `session-${c_name}_${sessionName}`);
+    const sessionFolder = path.join(authDir, `session-${c_name.toLowerCase()}_${sessionName.toLowerCase()}`);
     // Verificar existencia y validez
     if (!fs.existsSync(sessionFolder)) {
       console.log(`No se encontró la carpeta de sesión en: ${sessionFolder}`);

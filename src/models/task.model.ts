@@ -2,6 +2,8 @@ import { Schema, Document, Connection, Model } from "mongoose";
 
 export interface ITaskComment {
   userId: string;
+  userRole: string; // Added user role
+  userCompany: string; // Added user company
   userName: string;
   comment: string;
   createdAt: Date;

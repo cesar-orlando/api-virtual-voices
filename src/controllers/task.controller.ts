@@ -288,10 +288,10 @@ export class TaskController {
   static async addComment(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { comment } = req.body;
+      const { comment, userId, userName } = req.body;
       const companySlug = req.headers['x-company-slug'] as string;
-      const userId = 'system';
-      const userName = 'Sistema';
+      const userRole = req.headers['x-user-role'] as string;
+      const userCompany = req.headers['x-user-company'] as string;
 
       if (!companySlug || !comment) {
         res.status(400).json({ message: "Datos requeridos faltantes" });
@@ -308,10 +308,12 @@ export class TaskController {
       }
 
       task.comments.push({
-        userId,
-        userName,
+        userRole,
+        userCompany,
         comment,
-        createdAt: new Date()
+        createdAt: new Date(),
+        userId,
+        userName
       });
       await task.save();
       res.json(task);

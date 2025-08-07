@@ -471,6 +471,7 @@ export async function getFilteredChats(req: Request, res: Response): Promise<voi
 
     const conn = await getConnectionByCompanySlug(c_name);
     const WhatsappChat = getWhatsappChatModel(conn);
+    const Record = getRecordModel(conn);
 
     let filter: any = {};
 
@@ -494,10 +495,38 @@ export async function getFilteredChats(req: Request, res: Response): Promise<voi
       .sort({ updatedAt: -1 })
       .lean();
 
+    // Buscar los records de prospectos que matchean con los chats
+    const prospectPhones = chats
+      .map(chat => {
+        // Limpiar el número de teléfono para buscar
+        return (chat.phone || '').replace('@c.us', '');
+      });
+
+    // Buscar los records en la tabla prospectos
+    const prospectRecords = await Record.find({
+      tableSlug: 'prospectos',
+      'data.number': { $in: prospectPhones.map(Number) }
+    }).lean();
+
+    // Agregar información adicional a cada chat, incluyendo el record si existe
+    const enrichedChats = chats.map(chat => {
+      let matchedRecord = null;
+      if (chat.phone) {
+        const cleanPhone = chat.phone.replace('@c.us', '');
+        matchedRecord = prospectRecords.find(
+          record => record.data && String(record.data.number) === cleanPhone
+        ) || null;
+      }
+      return {
+        ...chat,
+        prospectRecord: matchedRecord
+      };
+    });
+
     res.status(200).json({
       success: true,
-      data: chats,
-      total: chats.length
+      data: enrichedChats,
+      total: enrichedChats.length
     });
     
   } catch (error) {

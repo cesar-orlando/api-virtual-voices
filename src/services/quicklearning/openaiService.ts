@@ -226,7 +226,7 @@ export class QuickLearningOpenAIService {
 
       const toolCall = completion.choices[0].message.tool_calls?.[0];
 
-      if (toolCall) {
+      if (toolCall && toolCall.type === "function") {
         const functionName = toolCall.function.name;
         const functionArgs = JSON.parse(toolCall.function.arguments);
         

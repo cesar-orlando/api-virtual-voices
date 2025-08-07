@@ -233,8 +233,62 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
   const { c_name } = req.params;
   const updates = req.body;
 
-  const conn = await getConnectionByCompanySlug(c_name);
+  // Si el update es a status, verifica la sesión en .wwebjs_auth
+  if (Object.prototype.hasOwnProperty.call(updates, 'status')) {
+    // Obtener el nombre de la sesión
+    let sessionName = updates.name;
+    if (!sessionName) {
+      // Si no viene en el update, buscar en la base de datos
+      const connTmp = await getConnectionByCompanySlug(c_name);
+      const WhatsappSessionTmp = getSessionModel(connTmp);
+      const found = await WhatsappSessionTmp.findById(updates._id);
+      sessionName = found?.name;
+    }
+    // Construir ruta de la sesión
+    const getAuthDir = () => {
+      if (process.env.RENDER === 'true') {
+        return '/var/data/.wwebjs_auth';
+      }
+      return path.join(process.cwd(), '.wwebjs_auth');
+    };
+    const authDir = getAuthDir();
+    const sessionFolder = path.join(authDir, `session-${c_name}_${sessionName}`);
+    // Verificar existencia y validez
+    if (!fs.existsSync(sessionFolder)) {
+      console.log(`No se encontró la carpeta de sesión en: ${sessionFolder}`);
+      res.status(400).json({ message: `No se encontró la carpeta de sesión en: ${sessionFolder}` });
+      return;
+    }
+    // Mejor validación: aceptar si existe 'session.json', 'creds.json' o 'Default' y es parseable
+    const files = fs.readdirSync(sessionFolder);
+    let valid = false;
+    if (files.includes('Default')) {
+      // Validación flexible para sesiones modernas
+      const defaultDir = path.join(sessionFolder, 'Default');
+      if (!fs.lstatSync(defaultDir).isDirectory()) {
+        console.log(`'Default' no es una carpeta en: ${sessionFolder}`);
+        res.status(400).json({ message: `'Default' no es una carpeta en: ${sessionFolder}` });
+        return;
+      }
+      const defaultFiles = fs.readdirSync(defaultDir);
+      // Archivos/carpetas válidos para sesión moderna
+      const validFilesOrDirs = ['Cookies', 'Cookies-journal', 'Local Storage', 'IndexedDB'];
+      const hasAny = defaultFiles.some(f => validFilesOrDirs.includes(f));
+      if (!hasAny) {
+        console.log(`La carpeta Default no contiene archivos/carpetas válidos en: ${defaultDir}`);
+        res.status(400).json({ message: `La carpeta Default no contiene archivos/carpetas válidos en: ${defaultDir}` });
+        return;
+      }
+      valid = true;
+    }
+    if (!valid) {
+      console.log(`La carpeta de sesión existe pero no contiene archivos de sesión válidos en: ${sessionFolder}`);
+      res.status(400).json({ message: `La carpeta de sesión existe pero no contiene archivos de sesión válidos en: ${sessionFolder}` });
+      return;
+    }
+  }
 
+  const conn = await getConnectionByCompanySlug(c_name);
   const WhatsappSession = getSessionModel(conn);
   const session = await WhatsappSession.findOneAndUpdate(
     { _id: updates._id },

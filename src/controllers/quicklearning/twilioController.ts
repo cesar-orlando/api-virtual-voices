@@ -515,9 +515,23 @@ function detectCampaign(message: string): string {
       lowerCaseMessage.includes('info')) {
     return 'GENERAL';
   }
+
+  //GOOGLE: Hola, me encantaría recibir información de sus cursos.
+  if (lowerCaseMessage.includes('hola') || 
+      lowerCaseMessage.includes('información') || 
+      lowerCaseMessage.includes('info')) {
+    return 'GOOGLE';
+  }
+
+  //GOOGLE: Hola, quiero más información sobre los cursos de inglés de Quick Learning. Los busque en Google.
+  if (lowerCaseMessage.includes('google') || 
+      lowerCaseMessage.includes('busque') || 
+      lowerCaseMessage.includes('busque en google')) {
+    return 'GOOGLE';
+  }
   
   // Fallback a LEAD si no coincide con nada específico
-  return 'LEAD';
+  return 'ORGANICO';
 }
 
 /**
@@ -558,7 +572,8 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       if (!asesorRandom) {
         asesorRandom = JSON.stringify({
           name: "Luisa Nohemi Jiménez Gutiérrez",
-          _id: "68217a92960180b66cfe6da7"
+          _id: "686eaa90cb5c849172b31e8d",
+          email: "ljimenez@quicklearning.com"
         });
       }
 

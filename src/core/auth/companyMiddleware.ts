@@ -36,7 +36,7 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
       }
     } catch (jwtError: any) {
       // Ignorar todos los errores de JWT (expired, invalid, etc.) y continuar
-      console.warn('⚠️ Token JWT inválido o expirado en ruta:', req.path);
+      // console.warn('⚠️ Token JWT inválido o expirado en ruta:', req.path);
       // Continuar sin contexto de empresa
     }
   } catch (error) {

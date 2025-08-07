@@ -58,7 +58,7 @@ export class AgentManager {
                     throw new Error(`❌ No agent configured for company: ${company}`);
                 }
 
-                this.agents.set(company, agent);
+                this.agents.set(agentKey, agent);
                 console.log(`✅ Agent created for company: ${company}`);
     
     return agent;

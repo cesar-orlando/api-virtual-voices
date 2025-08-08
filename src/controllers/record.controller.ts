@@ -254,6 +254,13 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       }
     }
 
+    // Check if value is a number or can be converted to a number
+    function isNumberOrConvertible(val: any): boolean {
+      if (typeof val === 'number' && !isNaN(val)) return true;
+      if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) return true;
+      return false;
+    }
+
     // Procesar filtros dinámicos (JSON string)
     if (filters && typeof filters === 'string') {
       try {
@@ -271,15 +278,28 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
           if (fieldName === 'textQuery') {
             const textFields = table.fields
-              .filter(field => ['text', 'email'].includes(field.type))
+              .filter(field => ['text', 'email', 'number'].includes(field.type))
               .map(field => field.name);
-
-            const textSearch = textFields.map(field => ({
-              [`data.${field}`]: { $regex: value, $options: 'i' }
-            }));
-
-            orTextFilters.push(...textSearch);
-
+            
+            if (isNumberOrConvertible(value)) {
+              // If it's a number, we assume it's a numeric search and convert to string for regex
+              const textSearch = textFields.map(field => ({
+                $expr: {
+                  $regexMatch: {
+                    input: { $toString: `$data.${field}` },
+                    regex: value,
+                    options: 'i'
+                  }
+                }
+              }));
+              orTextFilters.push({ $or: textSearch });
+            } else {
+              // If it's a string, we assume it's a text search
+              const textSearch = textFields.map(field => ({
+                [`data.${field}`]: { $regex: value, $options: 'i' }
+              }));
+              orTextFilters.push(...textSearch);
+            }
           } else if (dateFields.includes(fieldName)) {
             const dateRange = value as { $gte?: string; $lte?: string };
             const parsedRange: any = {};
@@ -290,19 +310,16 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             orDateFilters.push({[fieldName]: parsedRange })
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
           } else {
-            // Check if value is a number or can be converted to a number
-            function isNumberOrConvertible(val: any): boolean {
-              if (typeof val === 'number' && !isNaN(val)) return true;
-              if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) return true;
-              return false;
-            }
-
             if (isNumberOrConvertible(value)) {
-              // Add both string and number versions for flexible matching
-              otherFilters.push({ $or: [
-                { [`data.${fieldName}`]: value },
-                { [`data.${fieldName}`]: Number(value) }
-              ] });
+              otherFilters.push({
+                $expr: {
+                  $regexMatch: {
+                    input: { $toString: `$data.${fieldName}` },
+                    regex: value,
+                    options: 'i'
+                  }
+                }
+              });
             } else {
               otherFilters.push({ [`data.${fieldName}`]: { $regex: value, $options: 'i' } });
             }

@@ -244,7 +244,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       emitNewMessageNotification(phoneUser, newMessage, chat);
 
       // Actualizar ultimo_mensaje y lastMessageDate en la tabla correcta si el usuario ya existe
-      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
+      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar", "nuevo_ingreso"];
       let updated = false;
       for (const tableSlug of tableSlugs) {
         const result = await Record.updateOne(
@@ -407,14 +407,15 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           }
           
           // Actualizar registros en TODAS las tablas (alumnos, prospectos, clientes, sin_contestar)
-          const tableSlugs = ["alumnos", "prospectos", "nuevo_ingreso", "sin_contestar"];
+          const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar", "nuevo_ingreso"];
           let updated = false;
           
           for (const tableSlug of tableSlugs) {
             try {
               const updateData: any = {
-                "data.ultimo_mensaje": currentDate,
-                "data.lastMessage": aiResponse
+                "data.ultimo_mensaje": aiResponse,
+                "data.lastMessage": aiResponse,
+                "data.lastMessageDate": currentDate
               };
               
               // Si es transferencia, también desactivar IA

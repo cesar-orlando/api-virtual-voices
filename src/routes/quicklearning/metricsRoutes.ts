@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { 
   getQuickLearningMetrics, 
-  getQuickLearningDashboard 
+  getQuickLearningDashboard,
+  checkQuickLearningChatsRecordsConsistency
 } from "../../controllers/quicklearning/metricsController";
 
 const router = Router();
@@ -138,5 +139,12 @@ router.get('/metrics', getQuickLearningMetrics);
  *         description: Error interno del servidor
  */
 router.get('/dashboard', getQuickLearningDashboard);
+
+/**
+ * Verificación de consistencia chats vs dynamicrecords
+ * GET /api/quicklearning/consistency
+ * Query: startDate, endDate, period, includeInactive, tableSlugs
+ */
+router.get('/consistency', checkQuickLearningChatsRecordsConsistency);
 
 export default router;

@@ -6,6 +6,7 @@ import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
 import { MessagingAgentService } from "../services/agents/MessagingAgentService";
 import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
+import { getWhatsappChatModel } from "../models/whatsappChat.model";
 
 // 🔥 Crear configuración inicial si no existe
 export const createIAConfig = async (req: Request, res: Response): Promise<void> => {
@@ -250,5 +251,179 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     console.error("Error al probar IA:", error);
     res.status(500).json({ message: "Error al probar IA" });
+  }
+};
+
+// Generar prompt desde TODOS los chats de WhatsApp (admin-only)
+export const generateWhatsappPromptFromChats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { c_name, user_id } = req.params;
+    const { dateRange, sample } = req.body || {};
+
+    const conn = await getConnectionByCompanySlug(c_name);
+
+    // Validar permisos (solo Administrador)
+    const UserModel = getUserModel(conn);
+    const user = await UserModel.findById(user_id);
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado." });
+      return;
+    }
+    if (user.role !== "Administrador") {
+      res.status(403).json({ message: "Solo un administrador puede generar el prompt." });
+      return;
+    }
+
+    const WhatsappChat = getWhatsappChatModel(conn);
+
+    // Filtro de fecha opcional
+    const filter: any = {};
+    if (dateRange?.from || dateRange?.to) {
+      const createdAtFilter: any = {};
+      if (dateRange?.from) createdAtFilter.$gte = new Date(dateRange.from);
+      if (dateRange?.to) createdAtFilter.$lte = new Date(dateRange.to);
+      // Considerar tanto timestamps de chat como de mensajes
+      filter.$or = [
+        { createdAt: createdAtFilter },
+        { 'messages.createdAt': createdAtFilter }
+      ];
+    }
+
+    const chats = await WhatsappChat.find(filter).lean();
+
+    // Parámetros de muestreo opcionales
+    const maxChats: number | null = typeof sample?.maxChats === 'number' && sample.maxChats > 0 ? sample.maxChats : null;
+    const maxPairsPerChat: number | null = typeof sample?.maxPairsPerChat === 'number' && sample.maxPairsPerChat > 0 ? sample.maxPairsPerChat : null;
+
+    type Pair = { input: string; output: string };
+    const allPairs: Pair[] = [];
+
+    const sanitize = (text: any): string => {
+      if (typeof text !== 'string') return '';
+      return text
+        .replace(/\s+/g, ' ')
+        .replace(/\u200B/g, '')
+        .trim();
+    };
+
+    const isEmoji = (ch: string): boolean => /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(ch);
+
+    // Construir pares entrada (inbound) → salida (siguiente outbound humano)
+    for (let chatIdx = 0; chatIdx < chats.length; chatIdx++) {
+      if (maxChats !== null && chatIdx >= maxChats) break;
+
+      const messages = Array.isArray(chats[chatIdx]?.messages) ? [...chats[chatIdx].messages] : [];
+      messages.sort((a: any, b: any) => new Date(a?.createdAt || 0).getTime() - new Date(b?.createdAt || 0).getTime());
+
+      let pairsForThisChat = 0;
+
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        const dir = (msg?.direction || '').toString().toLowerCase();
+        if (dir !== 'inbound') continue;
+
+        const userText = sanitize(msg?.body);
+        if (!userText || userText.length < 2) continue;
+
+        // Buscar la siguiente respuesta HUMANA (outbound, no bot)
+        const next = messages.slice(i + 1).find((m: any) => {
+          const ndir = (m?.direction || '').toString().toLowerCase();
+          const rb = (m?.respondedBy || '').toString().toLowerCase();
+          return ndir === 'outbound' && rb !== 'bot' && typeof m?.body === 'string' && m?.body?.trim().length > 0;
+        });
+
+        if (!next) continue;
+
+        const outText = sanitize(next.body);
+        if (!outText || outText.length < 2) continue;
+
+        allPairs.push({ input: userText, output: outText });
+        pairsForThisChat++;
+        if (maxPairsPerChat !== null && pairsForThisChat >= maxPairsPerChat) break;
+      }
+    }
+
+    // Métricas simples para el tono
+    let totalOut = 0, emojiOut = 0, exclamOut = 0, ustedHits = 0, tuHits = 0;
+    const greetings: Record<string, number> = {};
+    const closings: Record<string, number> = {};
+
+    const normalizeKey = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+    for (const p of allPairs) {
+      const o = p.output;
+      if (!o) continue;
+      totalOut++;
+      if (/[!¡]/.test(o)) exclamOut++;
+      if ([...o].some(isEmoji)) emojiOut++;
+      if (/\busted\b|\bdisculpe\b|\bpor favor\b/i.test(o)) ustedHits++;
+      if (/\btú\b|\btu\b|\bcontigo\b|\bte\b/i.test(o)) tuHits++;
+
+      if (/\bhola\b|\bbuen[oa]s\b/i.test(o)) {
+        const key = normalizeKey(o.length > 160 ? o.slice(0, 160) + '…' : o);
+        greetings[key] = (greetings[key] || 0) + 1;
+      }
+      if (/\?\s*$|\b¿te (gustaria|parece|ayudo)\b|\bhay algo más\b|\b¿algo más\b/i.test(o)) {
+        const key = normalizeKey(o.length > 160 ? o.slice(0, 160) + '…' : o);
+        closings[key] = (closings[key] || 0) + 1;
+      }
+    }
+
+    const pickTop = (map: Record<string, number>, n: number) => Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n)
+      .map(([text]) => text);
+
+    const topGreetings = pickTop(greetings, 3);
+    const topClosings = pickTop(closings, 3);
+
+    const emojiRate = totalOut > 0 ? emojiOut / totalOut : 0;
+    const exclamRate = totalOut > 0 ? exclamOut / totalOut : 0;
+    const preferredPronoun = ustedHits >= tuHits ? 'usted' : 'tú';
+
+    // Construir prompt (solo texto) basado en pares reales
+    const lines: string[] = [];
+    lines.push("Responde como un asesor humano profesional y cercano.");
+    lines.push(`Usa trato de ${preferredPronoun} de forma consistente.`);
+    if (emojiRate > 0.05) {
+      lines.push("Puedes usar emojis con moderación para dar calidez (sin exceso).");
+    } else {
+      lines.push("Evita emojis salvo que el usuario los use primero.");
+    }
+    lines.push("Una sola idea por mensaje, claro y breve. Evita párrafos largos.");
+    lines.push("No inventes datos que no estén confirmados en la conversación. Si falta información, pregunta primero.");
+
+    if (topGreetings.length > 0) {
+      lines.push("");
+      lines.push("Saludo sugerido (tomado de conversaciones reales):");
+      for (const g of topGreetings) lines.push(`- ${g}`);
+    }
+
+    lines.push("");
+    lines.push("Patrones de respuesta útiles (basados en pares reales usuario→asesor):");
+    const samplePairs = allPairs.slice(0, 10);
+    for (const pair of samplePairs) {
+      const user = pair.input.length > 140 ? pair.input.slice(0, 140) + '…' : pair.input;
+      const agent = pair.output.length > 180 ? pair.output.slice(0, 180) + '…' : pair.output;
+      lines.push(`Usuario: ${user}`);
+      lines.push(`Asesor: ${agent}`);
+      lines.push('');
+    }
+
+    if (topClosings.length > 0) {
+      lines.push("Cierres y preguntas de avance frecuentes:");
+      for (const c of topClosings) lines.push(`- ${c}`);
+    }
+
+    if (exclamRate > 0.1) {
+      lines.push("Usa signos de exclamación con criterio (sin abusar).");
+    }
+
+    const promptDraft = lines.join("\n").trim();
+
+    res.json({ promptDraft });
+  } catch (error) {
+    console.error("Error al generar prompt desde WhatsApp chats:", error);
+    res.status(500).json({ message: "Error al generar prompt desde chats" });
   }
 };

@@ -287,7 +287,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
                 $expr: {
                   $regexMatch: {
                     input: { $toString: `$data.${field}` },
-                    regex: `.*${String(value)}.*`,
+                    regex: String(value),
                     options: 'i'
                   }
                 }
@@ -314,12 +314,11 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
           } else {
             if (isNumberOrConvertible(value)) {
-              console.log(`🔧 Adding numeric filter for field "${fieldName}" with value:`, value);
               otherFilters.push({
                 $expr: {
                   $regexMatch: {
                     input: { $toString: `$data.${fieldName}` },
-                    regex: `.*${String(value)}.*`,
+                    regex: String(value),
                     options: 'i'
                   }
                 }

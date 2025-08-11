@@ -572,9 +572,9 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       // Si sigue siendo null, asigna el asesor por defecto
       if (!asesorRandom) {
         asesorRandom = JSON.stringify({
-          name: "Luisa Nohemi Jiménez Gutiérrez",
-          _id: "686eaa90cb5c849172b31e8d",
-          email: "ljimenez@quicklearning.com"
+          name: "Asistente",
+          _id: "68871c9e8f2515c9310c0611",
+          email: "asistente@quicklearning.com"
         });
       }
 

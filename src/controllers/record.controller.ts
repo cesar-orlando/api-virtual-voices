@@ -280,26 +280,29 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             const textFields = table.fields
               .filter(field => ['text', 'email', 'number'].includes(field.type))
               .map(field => field.name);
-            
+
             if (isNumberOrConvertible(value)) {
               // If it's a number, we assume it's a numeric search and convert to string for regex
               const textSearch = textFields.map(field => ({
                 $expr: {
                   $regexMatch: {
                     input: { $toString: `$data.${field}` },
-                    regex: value,
+                    regex: String(value),
                     options: 'i'
                   }
                 }
               }));
               orTextFilters.push({ $or: textSearch });
-            } else {
+            } else if (typeof value === 'boolean') {
+              orTextFilters.push({ [`data.${fieldName}`]: value });
+            } else if (typeof value === 'string') {
               // If it's a string, we assume it's a text search
               const textSearch = textFields.map(field => ({
-                [`data.${field}`]: { $regex: value, $options: 'i' }
+                [`data.${field}`]: { $regex: `.*${String(value)}.*`, $options: 'i' }
               }));
               orTextFilters.push(...textSearch);
             }
+            // Ignore other types for textQuery
           } else if (dateFields.includes(fieldName)) {
             const dateRange = value as { $gte?: string; $lte?: string };
             const parsedRange: any = {};
@@ -315,14 +318,17 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
                 $expr: {
                   $regexMatch: {
                     input: { $toString: `$data.${fieldName}` },
-                    regex: value,
+                    regex: String(value),
                     options: 'i'
                   }
                 }
               });
-            } else {
-              otherFilters.push({ [`data.${fieldName}`]: { $regex: value, $options: 'i' } });
+            } else if (typeof value === 'boolean') {
+              otherFilters.push({ [`data.${fieldName}`]: value });
+            } else if (typeof value === 'string') {
+              otherFilters.push({ [`data.${fieldName}`]: { $regex: `.*${String(value)}.*`, $options: 'i' } });
             }
+            // Ignore other types for other fields
           }
         }
       } catch (error) {

@@ -173,7 +173,9 @@ export async function handleIncomingMessage(message: Message, client: Client, co
         fields: [
           { name: "name", label: "Nombre", type: "text", order: 1 },
           { name: "number", label: "Número", type: "number", order: 2 },
-          { name: "ia", label: "IA", type: "boolean", order: 3 }
+          { name: "ia", label: "IA", type: "boolean", order: 3 },
+          { name: "lastmessage", label: "Ultimo Mensaje", type: "text", required: false, options: [], order: 4 },
+          { name: "lastmessagedate", label: "Fecha Ultimo Mensaje", type: "date", required: false, options: [], order: 5 }
         ]
       });
       await newTable.save();
@@ -205,6 +207,12 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     } else {
       console.log(`📞 Chat existente encontrado para ${userPhone} con [${company}:${sessionName}]`);
       await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
+      await prospecto?.updateOne({
+        $set: {
+          'data.lastmessage': message.body,
+          'data.lastmessagedate': message.timestamp ? new Date(message.timestamp * 1000) : new Date()
+        }
+      });
     }
 
     if (session.status !== 'connected') {

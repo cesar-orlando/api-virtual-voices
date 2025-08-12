@@ -111,10 +111,6 @@ export abstract class BaseAgent {
         ...context
       };
       
-      // DEBUG: Log the exact input being sent to the agent
-      console.log(`🔧 BaseAgent: About to run agent for ${this.company}`);
-      console.log(`🔧 BaseAgent: messageWithContext length:`, messageWithContext.length);
-      
       // SMART CONTEXT: If message is too long, use intelligent context reduction
       // Different thresholds for different companies
       let contextThreshold = 1200; // Default for QuickLearning
@@ -123,7 +119,6 @@ export abstract class BaseAgent {
       }
       
       if (messageWithContext.length > contextThreshold) {
-        console.log(`🚨 BaseAgent: Using smart context reduction due to length (${messageWithContext.length})`);
         const smartContext = this.buildSmartContext(context?.chatHistory || [], message);
         
         const result = await run(this.agent, smartContext, {
@@ -242,18 +237,6 @@ export abstract class BaseAgent {
     smartContext += `\nMENSAJE ACTUAL DEL CLIENTE:\n${currentMessage}`;
     
     console.log(`🔧 Smart context length: ${smartContext.length} (reduced from original)`);
-    
-    // Debug para grupo-milkasa
-    if (this.company === 'grupo-milkasa') {
-      const realEstateContext = contextInfo as any; // Cast para debug
-      console.log(`🔍 MILKASA DEBUG - Smart context info:`, {
-        userName: realEstateContext.userName,
-        greeted: realEstateContext.greeted,
-        propertyType: realEstateContext.propertyType,
-        location: realEstateContext.location,
-        messageCount: recentMessages.length
-      });
-    }
     
     return smartContext;
   }

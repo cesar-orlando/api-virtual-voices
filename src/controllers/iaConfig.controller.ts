@@ -7,6 +7,8 @@ import getRecordModel from "../models/record.model";
 import { MessagingAgentService } from "../services/agents/MessagingAgentService";
 import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
+import { Agent } from "@openai/agents";
+import { AgentManager } from "../services/agents/AgentManager";
 
 // 🔥 Crear configuración inicial si no existe
 export const createIAConfig = async (req: Request, res: Response): Promise<void> => {
@@ -142,6 +144,8 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
       res.status(404).json({ message: "Configuración no encontrada." });
       return;
     }
+
+    AgentManager.remakeAgentsForCompany(c_name);
 
     res.json({ message: "Configuración actualizada", config: updatedConfig });
   } catch (error) {

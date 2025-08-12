@@ -175,7 +175,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   }
 
   // Función para guardar prospecto si no existe
-  async function saveProspectIfNotExists(company: string, number: string, name?: string, activateIA?: boolean) {
+  async function saveProspectIfNotExists(lastMessageData: { lastMessage: string, lastMessageDate: Date }, company: string, number: string, name?: string, activateIA?: boolean) {
     try {
       if (!isValidUserNumber(number)) {
         return;
@@ -208,14 +208,16 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               name: name || '',
               number: num,
               ia: activateIA === true,
-              asesor: { id: user_id, name: userData?.name }
+              asesor: { id: user_id, name: userData?.name },
+              lastmessage: lastMessageData?.lastMessage || '',
+              lastmessagedate: lastMessageData?.lastMessageDate || new Date(),
             }
           }
         },
         { upsert: true, new: false } // new: false returns the pre-existing doc if found, null if inserted
       );
       if (!result) {
-        console.log(`✅ Prospecto guardado: ${num}`);
+        console.log(`✅ Prospecto guardado: ${num} con ${lastMessageData.lastMessage}`);
       }
     } catch (err) {
       console.error('Error guardando prospecto:', err);
@@ -408,7 +410,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
             }
 
             // NO await: Guardar prospecto si no existe
-            saveProspectIfNotExists(company, chat.id._serialized, chat.name);
+            if (messages.length <= 0) continue;
+            saveProspectIfNotExists({ lastMessage: chatRecord.messages[chatRecord.messages.length - 1].body, lastMessageDate: chatRecord.messages[chatRecord.messages.length - 1].createdAt }, company, chat.id._serialized, chat.name);
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);
@@ -496,7 +499,12 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         // Guardar prospecto si no existe (solo chats individuales)
         const number = message.from;
         try {
-          await saveProspectIfNotExists(company, number, (message as any).notifyName || number, true); // activa IA
+          await saveProspectIfNotExists(
+            { 
+              lastMessage: message.body, 
+              lastMessageDate: message.timestamp ? new Date(message.timestamp * 1000) : new Date() 
+            },
+            company, number, (message as any).notifyName || number, true); // activa IA
         } catch (prospectError) {
           console.warn('Error guardando prospecto:', prospectError);
         }

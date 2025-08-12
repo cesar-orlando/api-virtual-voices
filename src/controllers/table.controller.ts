@@ -459,6 +459,11 @@ export const deleteTable = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    if (table.name === "prospectos") {
+      res.status(400).json({ message: "Cannot delete 'prospectos' table" });
+      return;
+    }
+
     // Soft delete: cambiar isActive a false y guardar info de eliminación
     table.isActive = false;
     table.deletedAt = new Date();

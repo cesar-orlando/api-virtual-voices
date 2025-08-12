@@ -22,6 +22,7 @@ export class AgentManager {
    */
   public async getAgent(company: string, agentContext: Record<string, any> = {}): Promise<BaseAgent> {
     const agentKey = `${company}:${agentContext.sessionId || ''}:${agentContext.phoneUser || ''}`;
+    console.log(`🔧 AgentManager: Requesting agent for key: ${agentKey}`);
     if (this.agents.has(agentKey)) {
       // Actualiza la fecha de último uso
       const entry = this.agents.get(agentKey)!;

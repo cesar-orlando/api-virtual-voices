@@ -205,7 +205,6 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       console.log(`📞 No se encontró chat existente para ${userPhone} con [${company}:${sessionName}], creando uno nuevo...`);
       existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
     } else {
-      console.log(`📞 Chat existente encontrado para ${userPhone} con [${company}:${sessionName}]`);
       await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
       await prospecto?.updateOne({
         $set: {
@@ -266,8 +265,6 @@ async function handleDelayedResponse(
     // Update the existing record reference to the latest state
     existingPending.existingRecord = existingRecord;
   } else {
-    // First message from this user, start the delay
-    console.log(`⏰ Iniciando delay de 10s para ${userPhone}`);
 
     // Store the pending response data
     pendingResponses.set(userPhone, {
@@ -286,8 +283,6 @@ async function handleDelayedResponse(
   
   pendingData.timeout = setTimeout(async () => {
     try {
-      console.log(`🚀 Procesando respuesta para ${userPhone} después de ${DELAY_MS/1000}s. Mensajes: ${pendingData.messages.length}`);
-      
       // Process all accumulated messages
       await processAccumulatedMessages(userPhone, pendingData);
       
@@ -321,44 +316,7 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   // Use the last message for the response context
   const lastMessage = messages[messages.length - 1];
   
-  console.log(`📊 Generando respuesta consolidada para ${messages.length} mensajes de ${userPhone}`);
-  console.log(`🤖 Using BaseAgent system`);
-  
-  // Debug específico para empresas inmobiliarias
-  if (company === 'grupo-milkasa') {
-    console.log(`🔍 MILKASA DEBUG - Procesando mensajes acumulados`);
-    console.log(`🔍 MILKASA DEBUG - Número de mensajes:`, messages.length);
-    console.log(`🔍 MILKASA DEBUG - Último mensaje:`, lastMessage.body);
-    console.log(`🔍 MILKASA DEBUG - Historial total en BD:`, latestRecord.messages?.length || 0);
-    if (latestRecord.messages?.length > 0) {
-      console.log(`🔍 MILKASA DEBUG - Últimos 3 mensajes del historial:`, 
-        latestRecord.messages.slice(-3).map((m: any) => ({
-          direction: m.direction,
-          body: m.body?.substring(0, 50) + '...',
-          respondedBy: m.respondedBy
-        }))
-      );
-    }
-  }
-  
-  if (company === 'grupokg' || company === 'grupo-kg') {
-    console.log(`🔍 GRUPO-KG DEBUG - Procesando mensajes acumulados`);
-    console.log(`🔍 GRUPO-KG DEBUG - Número de mensajes:`, messages.length);
-    console.log(`🔍 GRUPO-KG DEBUG - Último mensaje:`, lastMessage.body);
-    console.log(`🔍 GRUPO-KG DEBUG - Historial total en BD:`, latestRecord.messages?.length || 0);
-    if (latestRecord.messages?.length > 0) {
-      console.log(`🔍 GRUPO-KG DEBUG - Últimos 3 mensajes del historial:`, 
-        latestRecord.messages.slice(-3).map((m: any) => ({
-          direction: m.direction,
-          body: m.body?.substring(0, 50) + '...',
-          respondedBy: m.respondedBy
-        }))
-      );
-    }
-  }
-  
   try {
-    console.log('🤖 Using BaseAgent system');
 
     const sessionModel = getSessionModel(conn);
     const session = await sessionModel.findOne({ name: sessionName });
@@ -370,33 +328,20 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   const isCalendarMessage = messages.some(msg => isCalendarRelatedMessage(msg.body));
   
   if (isCalendarMessage) {
-    console.log(`📅 Calendar-related message detected for ${userPhone}`);
-    console.log(`📝 Message content: ${messages.map(msg => msg.body).join(' ').substring(0, 100)}...`);
     
     try {
-      console.log(`🔧 Step 1: Attempting to initialize Calendar Assistant for company: ${company}`);
       const calendarAssistant = await initializeCalendarAssistant(company);
-      console.log(`✅ Step 1 Complete: Calendar Assistant initialized successfully`);
       
       // Combine all messages into context for the Calendar Assistant
       const combinedMessage = messages.map(msg => msg.body).join(' ');
-      
-      console.log(`� Step 2: Processing calendar request: "${combinedMessage}"`);
       
       const response = await calendarAssistant.processMessage(combinedMessage, {
         company,
         phoneUser: userPhone.replace('@c.us', ''),
         chatHistory: [] // You could populate this with recent chat history if needed
       });
-      
-      console.log(`✅ Step 2 Complete: Calendar Assistant response: ${response.substring(0, 100)}...`);
-      
-      console.log(`🔧 Step 3: Sending calendar assistant response`);
       // Send the calendar assistant response
       await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);
-      console.log(`✅ Step 3 Complete: Response sent successfully`);
-      
-      console.log(`🎯 Calendar message processing completed successfully. Returning early.`);
       return; // CRITICAL: Return early to prevent regular agent processing
       
     } catch (error) {
@@ -405,19 +350,14 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       console.error(`❌ Calendar Assistant error message:`, error.message);
       
       // Fallback to regular agent instead of showing error
-      console.log(`🔄 Calendar Assistant failed, falling back to regular WhatsApp agent`);
       // Don't return here - let it fall through to regular agent processing
     }
   }
   
-  console.log(`🤖 Using BaseAgent system for non-calendar message`);
-  
   try {
-    console.log(`🔧 Step 4: Using regular WhatsApp agent for ${userPhone}`);
     
     // Add a flag to indicate this is a calendar fallback
     const isCalendarFallback = isCalendarMessage;
-    console.log(`📅 Calendar fallback mode: ${isCalendarFallback}`);
     
     const response = await messagingAgentService.processWhatsAppMessage(
       company,
@@ -429,16 +369,6 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       undefined, // providedChatHistory
       isCalendarFallback // Add calendar fallback flag
     );
-    
-    console.log(`✅ Step 4 Complete: Regular agent response: ${response.substring(0, 100)}...`);
-    
-    // Debug específico para empresas inmobiliarias
-    if (company === 'grupo-milkasa') {
-      console.log(`🔍 MILKASA DEBUG - Respuesta generada:`, response?.substring(0, 100) + '...');
-    }
-    if (company === 'grupokg' || company === 'grupo-kg') {
-      console.log(`🔍 GRUPO-KG DEBUG - Respuesta generada:`, response?.substring(0, 100) + '...');
-    }
     
     // Send the response directly
     await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);
@@ -498,7 +428,6 @@ async function sendCustomResponse(
       // Send the message as text only
       const sentMessage = await client.sendMessage(message.from, response);
       await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
-      console.log(`✅ Custom response sent successfully for ${company}`);
     }
   } catch (error) {
     console.error(`❌ Error sending custom response for ${company}:`, error);

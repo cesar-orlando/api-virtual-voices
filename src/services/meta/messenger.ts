@@ -182,9 +182,6 @@ async function saveIncomingFacebookMessage({ FacebookChat, filter, webhookEvent,
   );
 
   if (!sentMessage) {
-    if (newMsgId) {
-      console.log(`⚠️  Mensaje duplicado detectado o chat no encontrado, omitiendo: ${newMsgId}`);
-    }
     return;
   }
   io.emit(`messenger-message-${dbName}`, sentMessage);
@@ -218,9 +215,6 @@ async function processAndRespondFacebookMessage({ FacebookChat, filter, webhookE
       { upsert: true, new: true }
     );
     if (!sentMessage) {
-      if (webhookEvent.message.mid) {
-        console.log(`⚠️  Mensaje duplicado detectado o chat no encontrado, omitiendo: ${webhookEvent.message.mid}`);
-      }
       return;
     }
     io.emit(`messenger-message-${session.companyDb}`, sentMessage);

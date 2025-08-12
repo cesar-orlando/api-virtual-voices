@@ -22,6 +22,7 @@ export class AgentManager {
    */
   public async getAgent(company: string, agentContext: Record<string, any> = {}): Promise<BaseAgent> {
     const agentKey = `${company}:${agentContext.sessionId || ''}:${agentContext.phoneUser || ''}`;
+    console.log(`🔧 AgentManager: Requesting agent for key: ${agentKey}`);
     if (this.agents.has(agentKey)) {
       // Actualiza la fecha de último uso
       const entry = this.agents.get(agentKey)!;
@@ -31,8 +32,6 @@ export class AgentManager {
 
     let agent: BaseAgent;
 
-    // Create company-specific agent
-    console.log(`🔧 AgentManager: Creating agent for company: "${company}" (lowercase: "${company.toLowerCase()}")`);
     switch (company.toLowerCase()) {
       case 'quicklearning':
       case 'quick-learning':
@@ -47,7 +46,6 @@ export class AgentManager {
       case 'simple-green':
       case 'virtualvoices':
       case 'virtual-voices':
-        console.log(`🔧 AgentManager: Creating GeneralAgent for ${company}`);
         try {
           agent = new GeneralAgent(company, agentContext);
           await agent.initialize();
@@ -63,7 +61,6 @@ export class AgentManager {
     }
 
     this.agents.set(agentKey, { agent, lastUsed: Date.now() });
-    console.log(`✅ Agent created for company: ${company}`);
     return agent;
   }
   // Limpia agentes inactivos según el TTL (en milisegundos)
@@ -87,11 +84,8 @@ export class AgentManager {
   public async processMessage(company: string, message: string, context?: any): Promise<string> {
     try {
       this.cleanupInactiveAgents();
-      console.log(`🔧 AgentManager: Getting agent for ${company}`);
       const agent = await this.getAgent(company, context);
-      console.log(`🔧 AgentManager: Agent obtained, processing message`);
       const result = await agent.processMessage(message, context);
-      console.log(`🔧 AgentManager: Message processed successfully`);
       return result;
     } catch (error) {
       // console.error(`❌ Error processing message for ${company}:`, error);
@@ -110,12 +104,17 @@ export class AgentManager {
   /**
    * Remove an agent (useful for testing or reconfiguration)
    */
-  public removeAgent(company: string): void {
-    // Elimina todos los agentes de la compañía
+  public removeAgent(key: string): void {
+    this.agents.delete(key);
+    console.log(`🗑️ Agent removed: ${key}`);
+  }
+
+  public static removeAgentsForCompany(company: string): void {
+    const manager = AgentManager.getInstance();
     let removed = 0;
-    for (const key of Array.from(this.agents.keys())) {
+    for (const key of Array.from(manager.agents.keys())) {
       if (key.startsWith(company + ':')) {
-        this.agents.delete(key);
+        manager.agents.delete(key);
         removed++;
       }
     }

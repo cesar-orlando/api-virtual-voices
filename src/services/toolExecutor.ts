@@ -60,13 +60,6 @@ export class ToolExecutor {
         // 1. Ejecutar request HTTP a la URL base (sin filtros)
         executionResult = await this.executeHttpRequest(tool, parameters);
 
-        // LOG 2: Cantidad de registros obtenidos
-        if (Array.isArray(executionResult.data)) {
-          console.log(`[TOOL EXECUTOR] Registros obtenidos de la tool: ${executionResult.data.length}`);
-        } else {
-          console.log('[TOOL EXECUTOR] Tipo de datos obtenidos:', typeof executionResult.data);
-        }
-
         // 2. Guardar log de ejecución exitosa
         const execution = new ToolExecution({
           toolId: tool._id,
@@ -88,8 +81,6 @@ export class ToolExecutor {
         if (parameters && typeof parameters === 'object' && Object.keys(parameters).length > 0) {
           fuzzyQuery = Object.values(parameters).filter(Boolean).join(' ');
         }
-        // LOG 3: String de fuzzyQuery generado
-        console.log('[TOOL EXECUTOR] fuzzyQuery generado:', fuzzyQuery);
 
         // 4. Aplicar fuzzy search si hay query
         if (fuzzyQuery) {
@@ -260,7 +251,6 @@ export class ToolExecutor {
       if (['POST', 'PUT'].includes(config.method) && Object.keys(parameters).length > 0) {
         const { c_name, updatedBy, ...rest } = parameters;
         body = JSON.stringify({ c_name, updatedBy, data: { ...rest } });
-        console.log('[TOOL EXECUTOR] Body enviado:', body);
       }
 
       // Ejecutar request

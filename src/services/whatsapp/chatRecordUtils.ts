@@ -83,10 +83,6 @@ export async function updateChatRecord(
     );
 
     if (!updatedChat) {
-      // Duplicate message or chat not found
-      if (message.id?.id) {
-        console.log(`⚠️  Mensaje duplicado detectado o chat no encontrado, omitiendo: ${message.id?.id}`);
-      }
       return;
     }
     io.emit(`whatsapp-message-${company}`, updatedChat);

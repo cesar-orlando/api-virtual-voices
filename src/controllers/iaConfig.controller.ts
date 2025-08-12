@@ -145,7 +145,7 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    AgentManager.remakeAgentsForCompany(c_name);
+    AgentManager.removeAgentsForCompany(c_name);
 
     res.json({ message: "Configuración actualizada", config: updatedConfig });
   } catch (error) {

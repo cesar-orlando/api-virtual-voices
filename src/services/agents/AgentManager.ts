@@ -122,35 +122,16 @@ export class AgentManager {
     console.log(`🗑️ Agent(s) removed for company: ${company} (${removed} eliminados)`);
   }
 
-  public static remakeAgentsForCompany(company: string): void {
+  public static removeAgentsForCompany(company: string): void {
     const manager = AgentManager.getInstance();
     let removed = 0;
-    let remade = 0;
-    // Store agent contexts for remaking
-    const agentContexts: Array<{ key: string; context: any }> = [];
     for (const key of Array.from(manager.agents.keys())) {
       if (key.startsWith(company + ':')) {
-        // Try to extract context from key (sessionId, phoneUser)
-        const parts = key.split(':');
-        const context: any = {};
-        if (parts.length > 1) context.sessionId = parts[1];
-        if (parts.length > 2) context.phoneUser = parts[2];
-        agentContexts.push({ key, context });
         manager.agents.delete(key);
         removed++;
       }
     }
-    // Re-create agents with latest config/context
-    for (const { key, context } of agentContexts) {
-      try {
-        // Only remake if context is valid
-        manager.getAgent(company, context);
-        remade++;
-      } catch (err) {
-        console.error(`❌ Error re-creating agent for key ${key}:`, err);
-      }
-    }
-    console.log(`🗑️ Agent(s) removed for company: ${company} (${removed} eliminados, ${remade} re-creados)`);
+    console.log(`🗑️ Agent(s) removed for company: ${company} (${removed} eliminados)`);
   }
 
   /**

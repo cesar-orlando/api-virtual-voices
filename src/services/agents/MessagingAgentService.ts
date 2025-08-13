@@ -1,8 +1,6 @@
 import { AgentManager } from './AgentManager';
-import { getDbConnection } from '../../config/connectionManager';
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import { Connection } from 'mongoose';
-import { chat } from 'googleapis/build/src/apis/chat';
 import { getFacebookChatModel } from '../../models/facebookChat.model';
 
 export class MessagingAgentService {
@@ -34,7 +32,7 @@ export class MessagingAgentService {
         chatHistory = providedChatHistory;
       } else {
         // console.log(`📚 Getting chat history from database for ${phoneUser}`);
-        chatHistory = await this.getChatHistory(phoneUser, conn);
+        chatHistory = await this.getChatHistory(phoneUser, conn, sessionId);
       }
       
       // Process with agent - with retry logic
@@ -141,10 +139,8 @@ export class MessagingAgentService {
         chatHistory = providedChatHistory;
       } else {
         // console.log(`📚 Getting chat history from database for ${userId}`);
-        chatHistory = await this.getFacebookChatHistory(userId, conn);
+        chatHistory = await this.getFacebookChatHistory(userId, conn, sessionId);
       }
-
-      console.log(`📚 Chat history for ${userId}:`, chatHistory.length, 'messages');
       
       // Process with agent - with retry logic
       // console.log(`🤖 Calling agentManager.processMessage for ${company}`);
@@ -268,10 +264,10 @@ export class MessagingAgentService {
   /**
    * Get chat history for context
    */
-  private async getChatHistory(phoneUser: string, conn: Connection): Promise<any[]> {
+  private async getChatHistory(phoneUser: string, conn: Connection, sessionId: string): Promise<any[]> {
     try {
       const WhatsappChat = getWhatsappChatModel(conn);
-      const chatHistory = await WhatsappChat.findOne({ phone: phoneUser });
+      const chatHistory = await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId });
       
       if (!chatHistory || !chatHistory.messages) {
         return [];
@@ -279,8 +275,7 @@ export class MessagingAgentService {
 
       return chatHistory.messages.map((message: any) => ({
         role: message.direction === "inbound" ? "user" : "assistant",
-        content: this.cleanMessageContent(message.body || ''),
-        timestamp: message.timestamp
+        content: this.cleanMessageContent(message.body || '')
       }));
     } catch (error) {
       console.error('❌ Error getting chat history:', error);
@@ -288,10 +283,10 @@ export class MessagingAgentService {
     }
   }
 
-  private async getFacebookChatHistory(userId: string, conn: Connection): Promise<any[]> {
+  private async getFacebookChatHistory(userId: string, conn: Connection, sessionId: string): Promise<any[]> {
     try {
       const FacebookChat = getFacebookChatModel(conn);
-      const chatHistory = await FacebookChat.findOne({ userId });
+      const chatHistory = await FacebookChat.findOne({ userId, 'session.id': sessionId });
       if (!chatHistory || !chatHistory.messages) {
         return [];
       }

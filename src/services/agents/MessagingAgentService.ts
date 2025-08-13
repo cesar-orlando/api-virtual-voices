@@ -264,16 +264,30 @@ export class MessagingAgentService {
   /**
    * Get chat history for context
    */
-  private async getChatHistory(phoneUser: string, conn: Connection, sessionId: string): Promise<any[]> {
+  private async getChatHistory(phoneUser: string, conn: Connection, sessionId?: string): Promise<any[]> {
     try {
       const WhatsappChat = getWhatsappChatModel(conn);
-      const chatHistory = await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId });
-      
+      // Try session-scoped history when sessionId provided
+      let chatHistory = sessionId
+        ? await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId })
+        : null;
+
+      // Fallback to the latest chat for this phone when sessionId is missing or not found
+      if (!chatHistory) {
+        chatHistory = await WhatsappChat.findOne({ phone: phoneUser }).sort({ updatedAt: -1 });
+        if (sessionId) {
+          console.log(`ℹ️ WhatsApp chat history fallback used for ${phoneUser} (sessionId not found)`);
+        }
+      }
+
       if (!chatHistory || !chatHistory.messages) {
         return [];
       }
 
-      return chatHistory.messages.map((message: any) => ({
+      // Limit to most recent messages to avoid large payloads
+      const recent = chatHistory.messages.slice(-100);
+
+      return recent.map((message: any) => ({
         role: message.direction === "inbound" ? "user" : "assistant",
         content: this.cleanMessageContent(message.body || '')
       }));
@@ -283,14 +297,30 @@ export class MessagingAgentService {
     }
   }
 
-  private async getFacebookChatHistory(userId: string, conn: Connection, sessionId: string): Promise<any[]> {
+  private async getFacebookChatHistory(userId: string, conn: Connection, sessionId?: string): Promise<any[]> {
     try {
       const FacebookChat = getFacebookChatModel(conn);
-      const chatHistory = await FacebookChat.findOne({ userId, 'session.id': sessionId });
+      // Try session-scoped history when sessionId provided
+      let chatHistory = sessionId
+        ? await FacebookChat.findOne({ userId, 'session.id': sessionId })
+        : null;
+
+      // Fallback to the latest chat for this user when sessionId is missing or not found
+      if (!chatHistory) {
+        chatHistory = await FacebookChat.findOne({ userId }).sort({ updatedAt: -1 });
+        if (sessionId) {
+          console.log(`ℹ️ Facebook chat history fallback used for ${userId} (sessionId not found)`);
+        }
+      }
+
       if (!chatHistory || !chatHistory.messages) {
         return [];
       }
-      return chatHistory.messages.map((message: any) => ({
+
+      // Limit to most recent messages to avoid large payloads
+      const recent = chatHistory.messages.slice(-100);
+
+      return recent.map((message: any) => ({
         role: message.direction === "inbound" ? "user" : "assistant",
         content: this.cleanMessageContent(message.body || ''),
         timestamp: message.createdAt

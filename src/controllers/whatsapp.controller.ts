@@ -307,51 +307,14 @@ export async function enviarFichaTecnica(req: Request, res: Response): Promise<a
   }
 }
 
-export async function updateChatRecord(req: Request, res: Response): Promise<void> {
-  try {
-    const { c_name } = req.params;
-    const { data } = req.body;
-
-    const conn = await getConnectionByCompanySlug(c_name);
-    const WhatsappChat = getWhatsappChatModel(conn);
-    const UserConfig = getUserModel(conn);
-    const allUsers = await UserConfig.find({ role: 'Asesor' }).lean();
-
-    if (allUsers.length === 0) {
-      res.status(404).json({ message: "No hay asesores disponibles" });
-      return;
-    }
-
-    const user = allUsers.length > 0 ? allUsers[Math.floor(Math.random() * allUsers.length)] : null;
-
-    const chat = await WhatsappChat.findOneAndUpdate(
-      { "session.id": data.sessionId, "phone": `${data.number}@c.us` },
-      { $set: { advisor: { id: user._id, name: user.name } } },
-      { new: true }
-    ).lean();
-
-    if (!chat) {
-      res.status(404).json({ message: "Chat no encontrado", data: { phone: data.number } });
-      return;
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Se ha asignado el chat al asesor ${user.name}`,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Error updating chat record", error });
-  }
-}
-
-// Endpoint modificado - permite asignación manual específica
+// Permite asignación manual específica
 export async function assignChatToAdvisor(req: Request, res: Response): Promise<void> {
   try {
     const { c_name } = req.params;
     const { data } = req.body; // { sessionId, number, advisorId?, isVisibleToAll? }
 
     const conn = await getConnectionByCompanySlug(c_name);
-    const WhatsappChat = getWhatsappChatModel(conn);
+    const Record = getRecordModel(conn);
     const UserConfig = getUserModel(conn);
 
     // Si no se especifica advisorId, desasignar (poner null)
@@ -368,20 +331,28 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
         });
         return;
       }
-      
       advisor = { id: targetUser._id, name: targetUser.name };
+    } else {
+      const allUsers = await UserConfig.find({ role: 'Asesor' }).lean();
+
+      if (allUsers.length === 0) {
+        res.status(404).json({ message: "No hay asesores disponibles" });
+        return;
+      }
+      const user = allUsers.length > 0 ? allUsers[Math.floor(Math.random() * allUsers.length)] : null;
+      advisor = { id: user._id, name: user.name };
     }
 
     // Actualizar el chat con el asesor asignado (o null para desasignar)
-    const chat = await WhatsappChat.findOneAndUpdate(
-      { "session.id": data.sessionId, "phone": `${data.number}@c.us` },
-      { 
-        $set: { 
-          advisor: advisor,
-          isVisibleToAll: data.isVisibleToAll || false,
-          assignedAt: new Date(),
-          assignedBy: 'system' // Valor por defecto sin auth
-        } 
+    const chat = await Record.findOneAndUpdate(
+      { "data.number": Number(data.number) },
+      {
+        $set: {
+          'data.asesor': advisor,
+          'data.isVisibleToAll': data.isVisibleToAll || false,
+          'data.assignedAt': new Date(),
+          'data.assignedBy': 'system'
+        }
       },
       { new: true }
     ).lean();
@@ -389,15 +360,15 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     if (!chat) {
       res.status(404).json({ 
         success: false, 
-        message: "Chat no encontrado", 
+        message: "Prospecto no encontrado", 
         data: { phone: data.number } 
       });
       return;
     }
 
     const message = advisor 
-      ? `Chat asignado correctamente a ${advisor.name}`
-      : 'Chat desasignado correctamente';
+      ? `Prospecto asignado correctamente a ${advisor.name}`
+      : 'Prospecto desasignado correctamente';
 
     res.status(200).json({
       success: true,
@@ -410,10 +381,10 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     });
     
   } catch (error) {
-    console.error("Error assigning chat:", error);
+    console.error("Error assigning Prospecto:", error);
     res.status(500).json({ 
       success: false, 
-      message: "Error al asignar chat", 
+      message: "Error al asignar Prospecto", 
       error 
     });
   }

@@ -1,6 +1,6 @@
 import { AgentManager } from './AgentManager';
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
-import { Connection } from 'mongoose';
+import { Connection, isValidObjectId } from 'mongoose';
 import { getFacebookChatModel } from '../../models/facebookChat.model';
 
 export class MessagingAgentService {
@@ -267,17 +267,13 @@ export class MessagingAgentService {
   private async getChatHistory(phoneUser: string, conn: Connection, sessionId?: string): Promise<any[]> {
     try {
       const WhatsappChat = getWhatsappChatModel(conn);
-      // Try session-scoped history when sessionId provided
-      let chatHistory = sessionId
-        ? await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId })
-        : null;
-
-      // Fallback to the latest chat for this phone when sessionId is missing or not found
-      if (!chatHistory) {
+      // Try session-scoped history when sessionId provided and valid
+      let chatHistory = null as any;
+      if (typeof sessionId === 'string' && isValidObjectId(sessionId)) {
+        chatHistory = await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId });
+      } else if (sessionId) {
+        console.log(`ℹ️ WhatsApp chat history fallback used for ${phoneUser} (sessionId not found)`);
         chatHistory = await WhatsappChat.findOne({ phone: phoneUser }).sort({ updatedAt: -1 });
-        if (sessionId) {
-          console.log(`ℹ️ WhatsApp chat history fallback used for ${phoneUser} (sessionId not found)`);
-        }
       }
 
       if (!chatHistory || !chatHistory.messages) {
@@ -300,17 +296,13 @@ export class MessagingAgentService {
   private async getFacebookChatHistory(userId: string, conn: Connection, sessionId?: string): Promise<any[]> {
     try {
       const FacebookChat = getFacebookChatModel(conn);
-      // Try session-scoped history when sessionId provided
-      let chatHistory = sessionId
-        ? await FacebookChat.findOne({ userId, 'session.id': sessionId })
-        : null;
-
-      // Fallback to the latest chat for this user when sessionId is missing or not found
-      if (!chatHistory) {
+      // Try session-scoped history when sessionId provided and valid
+      let chatHistory = null as any;
+      if (typeof sessionId === 'string' && isValidObjectId(sessionId)) {
+        chatHistory = await FacebookChat.findOne({ userId, 'session.id': sessionId });
+      } else if (sessionId) {
         chatHistory = await FacebookChat.findOne({ userId }).sort({ updatedAt: -1 });
-        if (sessionId) {
-          console.log(`ℹ️ Facebook chat history fallback used for ${userId} (sessionId not found)`);
-        }
+        console.log(`ℹ️ Facebook chat history fallback used for ${userId} (sessionId not found)`);
       }
 
       if (!chatHistory || !chatHistory.messages) {

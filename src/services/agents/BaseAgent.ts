@@ -1,4 +1,4 @@
-import { Agent, tool } from '@openai/agents';
+import { Agent, tool, run } from '@openai/agents';
 import { getEnvironmentConfig } from '../../config/environments';
 
 interface AgentContext {
@@ -56,8 +56,6 @@ export abstract class BaseAgent {
    */
   public async processMessage(message: string, context?: AgentContext): Promise<string> {
     try {
-      // console.log(`🔧 BaseAgent: processMessage called for ${this.company}`);
-      const { run } = await import('@openai/agents');
       // console.log(`🔧 BaseAgent: run function imported successfully`);
       
       // Build conversation history for context
@@ -65,7 +63,7 @@ export abstract class BaseAgent {
       if (context?.chatHistory && context.chatHistory.length > 0) {
         conversationContext = '\n\nHISTORIAL DE CONVERSACION:\n';
         context.chatHistory.forEach((msg: any, index: number) => {
-          const role = msg.role === 'user' ? 'Usuario' : 'NatalIA';
+          const role = msg.role === 'user' ? 'Usuario' : 'IA';
           // Escape special characters that could break JSON
           const cleanContent = msg.content
             .replace(/\\/g, '\\\\')  // Escape backslashes first
@@ -113,10 +111,7 @@ export abstract class BaseAgent {
       
       // SMART CONTEXT: If message is too long, use intelligent context reduction
       // Different thresholds for different companies
-      let contextThreshold = 1200; // Default for QuickLearning
-      if (this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg') {
-        contextThreshold = 4000; // Higher threshold for real estate companies
-      }
+      let contextThreshold = 4000; // Default
       
       if (messageWithContext.length > contextThreshold) {
         const smartContext = this.buildSmartContext(context?.chatHistory || [], message);
@@ -211,8 +206,8 @@ export abstract class BaseAgent {
       }
     }
     
-    // Add more recent messages for real estate (8 instead of 4)
-    const messageCount = (this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg') ? 8 : 4;
+    // Add more recent messages
+    const messageCount = 50;
     const recentMessages = chatHistory.slice(-messageCount);
     
     if (recentMessages.length > 0) {

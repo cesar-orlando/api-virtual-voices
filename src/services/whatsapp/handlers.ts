@@ -1,6 +1,6 @@
 import { Message, Client } from 'whatsapp-web.js';
 import { createNewChatRecord, updateChatRecord, sendAndRecordBotResponse } from './chatRecordUtils';
-import { getImageFromUrl, handleAudioMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
+import { getImageFromUrl, handleAudioMessage, handleFileMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import { getSessionModel } from '../../models/session.model';
@@ -136,6 +136,9 @@ export async function handleIncomingMessage(message: Message, client: Client, co
   }
   if (message.type === 'video') {
     message = await handleVideoMessage(message, statusText);
+  }
+  if (message.type === 'document') {
+    message = await handleFileMessage(message, statusText);
   }
 
   // Validar que el mensaje no esté vacío o sea solo espacios

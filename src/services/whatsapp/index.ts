@@ -212,10 +212,11 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               asesor: { id: user_id, name: userData?.name },
               lastmessage: lastMessageData?.lastMessage || '',
               lastmessagedate: lastMessageData?.lastMessageDate || new Date(),
-            }
+            },
+            updatedAt: new Date(),
           }
         },
-        { upsert: true, new: false } // new: false returns the pre-existing doc if found, null if inserted
+        { upsert: true, new: false, timestamps: { updatedAt: false } } // new: false returns the pre-existing doc if found, null if inserted
       );
       if (!result) {
         console.log(`✅ Prospecto guardado: ${num} con ${lastMessageData.lastMessage}`);

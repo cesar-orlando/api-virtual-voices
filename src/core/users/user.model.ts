@@ -1,4 +1,4 @@
-import { Schema, Document, Connection, Model } from "mongoose";
+import { Schema, Document, Connection, Model, Types } from "mongoose";
 
 // Define the interface for a User document
 export interface IUser extends Document {
@@ -10,6 +10,12 @@ export interface IUser extends Document {
   status: 'active' | 'inactive' | 'eliminado';
   permissions?: string[];
   metadata?: Record<string, any>;
+  // NUEVO: Referencia a sucursal (desde Company)
+  branch?: {
+    id: string; // ID de la sucursal dentro del array
+    name: string; // Nombre de la sucursal
+    code: string; // Código de la sucursal
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,7 +38,13 @@ const UserSchema: Schema = new Schema(
       default: 'active'
     },
     permissions: [{ type: String }],
-    metadata: { type: Schema.Types.Mixed }
+    metadata: { type: Schema.Types.Mixed },
+    // NUEVO: Campo opcional para sucursal
+    branch: {
+      id: { type: String }, // ID del subdocumento branch
+      name: { type: String },
+      code: { type: String }
+    }
   },
   {
     timestamps: true,

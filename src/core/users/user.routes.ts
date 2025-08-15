@@ -7,10 +7,10 @@ import {
   getUsers,
   getAllUsersFromAllCompanies,
   updateUser,
-  getUserById
+  getUserById,
+  getAvailableBranches
 } from "./user.controller";
 import { detectCompanyFromToken } from "../auth/companyMiddleware";
-import { requireCompanyContext } from "../auth/companyMiddleware";
 
 const router = Router();
 
@@ -183,7 +183,7 @@ router.post("/register", register);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get("/", getUsers);
+router.get("/", detectCompanyFromToken, getUsers);
 
 /**
  * @swagger
@@ -265,7 +265,7 @@ router.use(detectCompanyFromToken);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get("/me", getProfile);
+router.get("/me", detectCompanyFromToken, getProfile);
 
 /**
  * @swagger
@@ -311,12 +311,15 @@ router.get("/me", getProfile);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.put("/me/update", updateProfile);
+router.put("/me/update", detectCompanyFromToken, updateProfile);
 
 // Agregar endpoint para actualizar usuario por ID
-router.put("/:id", requireCompanyContext, updateUser);
+router.put("/:id", detectCompanyFromToken, updateUser);
 
 // Agregar endpoint para consultar usuario por ID
-router.get("/:id", requireCompanyContext, getUserById);
+router.get("/:id", detectCompanyFromToken, getUserById);
+
+// Agregar endpoint para obtener sucursales disponibles
+router.get("/branches/available", detectCompanyFromToken, getAvailableBranches);
 
 export default router; 

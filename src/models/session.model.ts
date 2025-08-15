@@ -16,6 +16,13 @@ export interface ISession extends Document {
     id: Types.ObjectId; // Referencia al usuario
     name: string; // Nombre del usuario asociado
   };
+  // NUEVO: Referencia a sucursal (desde Company)
+  branch?: {
+    companyId: string; // Slug de la empresa (ej: "mitsubishi")
+    branchId: string; // ID o código de la sucursal (ej: "GG")
+    name: string; // Nombre de la sucursal
+    code: string; // Código de la sucursal
+  };
 }
 
 // Define el esquema para la tabla
@@ -34,6 +41,13 @@ const SessionSchema: Schema = new Schema(
     user: {
       id: { type: Types.ObjectId, ref: "User", required: true }, // Referencia al usuario
       name: { type: String, required: true }, // Nombre del usuario asociado
+    },
+    // NUEVO: Campo opcional para sucursal
+    branch: {
+      companyId: { type: String }, // Slug de la empresa
+      branchId: { type: String }, // ID o código de la sucursal
+      name: { type: String },
+      code: { type: String }
     }
   },
   {

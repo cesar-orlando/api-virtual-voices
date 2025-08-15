@@ -360,6 +360,7 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const UserConfig = getUserModel(conn);
+    const Session = getSessionModel(conn);
 
     // Si no se especifica advisorId, desasignar (poner null)
     let advisor = null;
@@ -377,7 +378,9 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
       }
       advisor = { id: targetUser._id, name: targetUser.name };
     } else {
-      const allUsers = await UserConfig.find({ role: 'Asesor' }).lean();
+
+      const targetSession = await Session.findById(data.sessionId).lean();
+      const allUsers = await UserConfig.find({ role: 'Asesor', 'branch.code': targetSession?.branch.branchId }).lean();
 
       if (allUsers.length === 0) {
         res.status(404).json({ message: "No hay asesores disponibles" });

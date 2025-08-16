@@ -363,7 +363,7 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   // Check if any of the messages are calendar-related
   const isCalendarMessage = messages.some(msg => isCalendarRelatedMessage(msg.body));
   
-  if (isCalendarMessage) {
+  /*if (isCalendarMessage) {
     // NUEVA VERIFICACIÓN: Solo proceder si el teléfono está autorizado
     const isAuthorized = isPhoneAuthorizedForCalendar(company, userPhone);
     
@@ -400,7 +400,7 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       // Fallback to regular agent instead of showing error
       // Don't return here - let it fall through to regular agent processing
     }
-  }
+  }*/
   
   try {
     
@@ -424,12 +424,12 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   } catch (error) {
     console.error(`❌ Error with BaseAgent system:`, error);
     // Fallback response
-    await sendCustomResponse(client, lastMessage, "Disculpa, hubo un problema técnico. Un asesor se pondrá en contacto contigo.", company, sessionName, latestRecord, conn);
+    await sendCustomResponse(client, lastMessage, "En un momento un asesor se pondrá en contacto con usted.", company, sessionName, latestRecord, conn);
   }
   } catch (error) {
     console.error(`❌ Error in processAccumulatedMessages:`, error);
     // Final fallback response
-    await sendCustomResponse(client, lastMessage, "Disculpa, hubo un problema técnico. Un asesor se pondrá en contacto contigo.", company, sessionName, latestRecord, conn);
+    await sendCustomResponse(client, lastMessage, "En un momento un asesor se pondrá en contacto con usted.", company, sessionName, latestRecord, conn);
   }
 }
 

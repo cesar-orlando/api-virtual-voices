@@ -63,7 +63,7 @@ export class AgentManager {
     return agent;
   }
   // Limpia agentes inactivos según el TTL (en milisegundos)
-  public cleanupInactiveAgents(ttlMs: number = 1000 * 60 * 30): void { // 30 minutos por defecto
+  public cleanupInactiveAgents(ttlMs: number = 1000 * 60 * 10): void { // 10 minutos por defecto
     const now = Date.now();
     let removed = 0;
     for (const [key, entry] of this.agents.entries()) {

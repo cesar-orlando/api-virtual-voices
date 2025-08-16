@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import getUserModel, { IUser } from "./user.model";
 import getMinutosControlModel from "./minutosControl.model";
 import getElevenLabsCallModel from "./elevenLabs.model";
+import getCompanyModel from "../../models/company.model";
 import { getConnectionByCompanySlug } from "../../config/connectionManager";
 import { getCurrentCompanyContext, requireCompanyContext } from "../auth/companyMiddleware";
 import { hasFeature } from "../../shared/projectManager";
@@ -166,25 +167,58 @@ export const createUser = async (req: Request, res: Response): Promise<void> => 
 // Update a user by ID
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role, status } = req.body;
+    const { name, email, password, role, status, branch, companySlug } = req.body;
     const companyContext = getCurrentCompanyContext(req);
     
-    if (!companyContext) {
-      res.status(401).json({ message: "Contexto de empresa requerido" });
+    console.log('🔄 updateUser llamado:');
+    console.log('  - Usuario ID:', req.params.id);
+    console.log('  - Datos a actualizar:', { name, email, role, status, companySlug, branch: branch ? `${branch.name} (${branch.code})` : 'sin cambios' });
+    console.log('  - Company Context:', companyContext ? companyContext.slug : 'NULL');
+    console.log('  - Headers Authorization:', req.headers.authorization ? 'Presente' : 'Ausente');
+    
+    // CAMBIO: Si no hay companyContext, intentar usar el companySlug del body o derivarlo del JWT
+    let targetCompanySlug = companyContext?.slug;
+    
+    if (!targetCompanySlug && companySlug) {
+      console.log('📝 Usando companySlug del body:', companySlug);
+      targetCompanySlug = companySlug;
+    }
+    
+    if (!targetCompanySlug) {
+      // Intentar extraer del JWT directamente
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.substring(7);
+          const jwt = require('jsonwebtoken');
+          const decoded = jwt.decode(token) as any;
+          targetCompanySlug = decoded?.companySlug || decoded?.c_name;
+          console.log('🔓 CompanySlug extraído del JWT:', targetCompanySlug);
+        } catch (err) {
+          console.log('❌ Error decodificando JWT:', err);
+        }
+      }
+    }
+    
+    if (!targetCompanySlug) {
+      console.log('❌ No se pudo determinar companySlug - devolviendo 400');
+      res.status(400).json({ message: "No se pudo determinar la empresa del usuario" });
       return;
     }
 
-    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const conn = await getConnectionByCompanySlug(targetCompanySlug);
     const User = getUserModel(conn);
 
     // Log para depuración
-    console.log('Intentando actualizar usuario:', req.params.id, 'en empresa:', companyContext.slug);
+    console.log('Intentando actualizar usuario:', req.params.id, 'en empresa:', targetCompanySlug);
 
     const updateData: any = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
     if (role) updateData.role = role;
     if (status) updateData.status = status;
+    if (branch) updateData.branch = branch; // NUEVO: Permitir actualizar sucursal
+    if (companySlug) updateData.companySlug = companySlug; // NUEVO: Permitir actualizar companySlug
     if (password) {
       if (password.length < 10) {
         res.status(400).json({ message: "La contraseña debe tener al menos 10 caracteres" });
@@ -292,6 +326,7 @@ export const compareLogin = async (
             name: existingUser.name,
             role: existingUser.role,
             c_name: dbName,
+            companySlug: dbName, // AGREGAR: Para que el middleware lo detecte
             id: existingUser._id,
           },
           getJwtSecret(existingUser.companySlug),
@@ -303,11 +338,14 @@ export const compareLogin = async (
           email: existingUser.email,
           role: existingUser.role,
           c_name: dbName,
+          companySlug: dbName, // AGREGAR: Para consistencia
           token,
         });
         console.log(
-          "Inicio de sesión exitoso para el usuario:",
-          existingUser.name
+          "✅ Inicio de sesión exitoso para el usuario:",
+          existingUser.name,
+          "- Empresa:", dbName,
+          "- Email:", existingUser.email
         );
         return;
       }
@@ -681,5 +719,42 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
   } catch (err: any) {
     res.status(500).json({ message: "Update error", error: err.message });
     return;
+  }
+};
+
+// Obtener sucursales disponibles para asignar a usuarios
+export const getAvailableBranches = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const Company = getCompanyModel(conn);
+
+    const company = await Company.findOne();
+    if (!company) {
+      res.status(404).json({ message: "Company not found" });
+      return;
+    }
+
+    // Filtrar solo sucursales activas
+    const activeBranches = company.branches.filter(branch => branch.isActive);
+    
+    res.json({ 
+      branches: activeBranches.map(branch => ({
+        id: branch._id,
+        name: branch.name,
+        code: branch.code,
+        address: branch.address,
+        phone: branch.phone,
+        isActive: branch.isActive
+      }))
+    });
+  } catch (error) {
+    console.error('Error getting available branches:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
   }
 }; 

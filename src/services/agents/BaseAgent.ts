@@ -207,7 +207,7 @@ export abstract class BaseAgent {
     }
     
     // Add more recent messages
-    const messageCount = 50;
+    const messageCount = 20;
     const recentMessages = chatHistory.slice(-messageCount);
     
     if (recentMessages.length > 0) {

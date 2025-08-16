@@ -22,6 +22,7 @@ import quickLearningTwilioRoutes from "./routes/quicklearning/twilioRoutes";
 import twilioTestRoutes from "./routes/quicklearning/twilioTestRoutes";
 import twilioWebhookRoutes from "./routes/quicklearning/twilioWebhookRoutes";
 import quickLearningMetricsRoutes from "./routes/quicklearning/metricsRoutes";
+import emailRoutes from "./routes/email.routes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -154,6 +155,8 @@ app.use('/api/sessions', sessionRoutes);
 
 // Rutas de tareas (estilo Trello)
 app.use('/api/tasks', taskRoutes);
+
+app.use('/api/email', emailRoutes);
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

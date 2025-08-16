@@ -4,6 +4,57 @@ import getTableModel from "../models/table.model";
 import getRecordModel from "../models/record.model";
 import { IMPORT_CONFIG, validateImportSize, generateImportReport } from "../config/importConfig";
 
+// Accent-insensitive utilities
+// - buildAccentInsensitivePattern: builds a regex pattern string that matches both accented and unaccented variants
+// - normalizeForCompare: strips diacritics and lowercases for accent-insensitive comparisons in JS
+const ACCENT_MAP: Record<string, string> = {
+  a: "aá",
+  e: "eé",
+  i: "ií",
+  o: "oó",
+  u: "uúü",
+  n: "nñ",
+  A: "AÁ",
+  E: "EÉ",
+  I: "IÍ",
+  O: "OÓ",
+  U: "UÚÜ",
+  N: "NÑ",
+};
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildAccentInsensitivePattern(input: string, opts?: { partial?: boolean; flexWhitespace?: boolean }): string {
+  const { partial = true, flexWhitespace = true } = opts || {};
+  const escaped = escapeRegExp(input);
+  let pattern = "";
+  for (let i = 0; i < escaped.length; i++) {
+    const ch = escaped[i];
+    if (ACCENT_MAP[ch]) {
+      const chars = ACCENT_MAP[ch];
+      pattern += `[${chars}]`;
+    } else if (flexWhitespace && /\s/.test(ch)) {
+      // Collapse any whitespace in the query to match variable whitespace in data
+      pattern += `\\s+`;
+      // Skip consecutive whitespace chars in the input
+      while (i + 1 < escaped.length && /\s/.test(escaped[i + 1])) i++;
+    } else {
+      pattern += ch;
+    }
+  }
+  return partial ? `.*${pattern}.*` : pattern;
+}
+
+function normalizeForCompare(s: unknown): string {
+  if (s == null) return "";
+  return String(s)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove combining marks
+    .toLowerCase();
+}
+
 // Función para validar el valor de un campo según su tipo
 const validateFieldValue = (value: any, field: any): any => {
   if (value === undefined || value === null) {
@@ -234,21 +285,53 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
         value !== ''
       ) {
         const fieldDef = table.fields.find((f: any) => f.name === key);
-        let filterValue: any = value;
         if (fieldDef) {
+          // Soportar rangos numéricos enviados como arrays: ?precio=3000000&precio=4500000
+          if ((fieldDef.type === 'number' || fieldDef.type === 'currency') && Array.isArray(value) && value.length >= 2) {
+            const [min, max] = value as any[];
+            const hasMin = min !== undefined && min !== '' && !isNaN(Number(min));
+            const hasMax = max !== undefined && max !== '' && !isNaN(Number(max));
+            const range: any = {};
+            if (hasMin) range.$gte = Number(min);
+            if (hasMax) range.$lte = Number(max);
+            if (Object.keys(range).length > 0) {
+              queryFilter[`data.${key}`] = range;
+              continue;
+            }
+          }
+
+          // Manejo estándar para valores simples
           switch (fieldDef.type) {
             case 'number':
-            case 'currency':
-              filterValue = Number(value);
+            case 'currency': {
+              const numVal = Number(value as any);
+              if (!isNaN(numVal)) queryFilter[`data.${key}`] = numVal;
               break;
-            case 'boolean':
-              filterValue = value === 'true';
+            }
+            case 'boolean': {
+              const boolVal = String(value).toLowerCase() === 'true';
+              queryFilter[`data.${key}`] = boolVal;
               break;
-            case 'date':
+            }
+            case 'date': {
+              if (Array.isArray(value) && value.length >= 2) {
+                const [from, to] = value as any[];
+                const range: any = {};
+                if (from) range.$gte = new Date(from);
+                if (to) range.$lte = new Date(to);
+                if (Object.keys(range).length > 0) queryFilter[`data.${key}`] = range;
+              } else {
+                const d = new Date(value as any);
+                if (!isNaN(d.getTime())) queryFilter[`data.${key}`] = d;
+              }
               break;
-            default:
-              filterValue = { $regex: `.*${value}.*`, $options: 'i' };
+            }
+            default: {
+              // Texto: usar regex (accent- and case-insensitive)
+              const pattern = buildAccentInsensitivePattern(String(value));
+              queryFilter[`data.${key}`] = { $regex: pattern, $options: 'i' };
               break;
+            }
           }
         }
       }
@@ -278,7 +361,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
           if (fieldName === 'textQuery') {
             const textFields = table.fields
-              .filter(field => ['text', 'email', 'number'].includes(field.type))
+              .filter(field => ['text', 'email', 'number', 'currency'].includes(field.type))
               .map(field => field.name);
 
             if (isNumberOrConvertible(value)) {
@@ -298,7 +381,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             } else if (typeof value === 'string') {
               // If it's a string, we assume it's a text search
               const textSearch = textFields.map(field => ({
-                [`data.${field}`]: { $regex: `.*${String(value)}.*`, $options: 'i' }
+                [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(value)), $options: 'i' }
               }));
               orTextFilters.push(...textSearch);
             }
@@ -313,7 +396,15 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             orDateFilters.push({[fieldName]: parsedRange })
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
           } else {
-            if (isNumberOrConvertible(value)) {
+            // Numeric range support: { fieldName: { $gte: N, $lte: M } }
+            const isRangeObject = Array.isArray(value) && value !== null && value.length === 2;
+            if (isRangeObject) {
+              const range: any = {};
+              if ((value as any)[0] !== undefined) range.$gte = Number((value as any)[0]);
+              if ((value as any)[1] !== undefined) range.$lte = Number((value as any)[1]);
+              otherFilters.push({ [`data.${fieldName}`]: range });
+            } else if (isNumberOrConvertible(value)) {
+              // Fallback: numeric-like value -> text contains on stringified field
               otherFilters.push({
                 $expr: {
                   $regexMatch: {
@@ -326,7 +417,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             } else if (typeof value === 'boolean') {
               otherFilters.push({ [`data.${fieldName}`]: value });
             } else if (typeof value === 'string') {
-              otherFilters.push({ [`data.${fieldName}`]: { $regex: `.*${String(value)}.*`, $options: 'i' } });
+              otherFilters.push({ [`data.${fieldName}`]: { $regex: buildAccentInsensitivePattern(String(value)), $options: 'i' } });
             }
             // Ignore other types for other fields
           }
@@ -377,30 +468,81 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
     // Scoring logic: rank records by number of filter matches (partial/fuzzy matching)
     let scoredRecords: (typeof records[0] & { matchScore: number })[] = records as any;
-    if (filters && typeof filters === 'string') {
+
+    // Detect presence of numeric range in direct query (?precio=min&precio=max)
+    const hasRangeInQuery = Object.entries(req.query).some(([key, value]) => {
+      const fieldDef = table.fields.find((f: any) => f.name === key);
+      return fieldDef && (fieldDef.type === 'number' || fieldDef.type === 'currency') && Array.isArray(value) && (value as any[]).length >= 2;
+    });
+
+    if ((filters && typeof filters === 'string') || hasRangeInQuery) {
       try {
-        const parsedFilters = JSON.parse(filters);
+        const parsedFilters = filters && typeof filters === 'string' ? JSON.parse(filters) : {};
+
+        // Build numeric range criteria from JSON filters ($gte/$lte etc.)
+        const rangeCriteriaMap = new Map<string, { $gte?: number; $gt?: number; $lte?: number; $lt?: number }>();
+        for (const [fieldName, value] of Object.entries(parsedFilters)) {
+          if (value && typeof value === 'object') {
+            const v: any = value;
+            if ('$gte' in v || '$gt' in v || '$lte' in v || '$lt' in v) {
+              rangeCriteriaMap.set(fieldName, {
+                ...(v.$gte !== undefined ? { $gte: Number(v.$gte) } : {}),
+                ...(v.$lte !== undefined ? { $lte: Number(v.$lte) } : {}),
+              });
+            }
+          }
+        }
+
+        // Add numeric range criteria from direct query arrays
+        for (const [key, value] of Object.entries(parsedFilters)) {
+          const fieldDef = table.fields.find((f: any) => f.name === key);
+          if (fieldDef && (fieldDef.type === 'number' || fieldDef.type === 'currency') && Array.isArray(value) && (value as any[]).length >= 1) {
+            const [min, max] = value as any[];
+            const crit: any = {};
+            if (min !== undefined && min !== '' && !isNaN(Number(min))) crit.$gte = Number(min);
+            if (max !== undefined && max !== '' && !isNaN(Number(max))) crit.$lte = Number(max);
+            if (Object.keys(crit).length > 0 && !rangeCriteriaMap.has(key)) {
+              rangeCriteriaMap.set(key, crit);
+            }
+          }
+        }
+
         scoredRecords = records.map(record => {
           let score = 0;
+
+          // Base scoring from parsedFilters (exact/partial text and equality)
           for (const [fieldName, value] of Object.entries(parsedFilters)) {
             if (value !== undefined && value !== null && value !== '') {
               const fieldValue = record.data[fieldName];
               if (typeof value === 'string' && typeof fieldValue === 'string') {
-                if (fieldValue.toLowerCase() === value.toLowerCase()) {
+                const a = normalizeForCompare(fieldValue);
+                const b = normalizeForCompare(value);
+                if (a === b) {
                   score += 2; // Exact match
-                } else if (fieldValue.toLowerCase().includes(value.toLowerCase())) {
+                } else if (a.includes(b)) {
                   score += 1; // Partial match
                 }
-              } else if (fieldValue == value) {
-                score += 2; // Exact match for non-string
+              } else if (typeof (value as any) !== 'object' && fieldValue == value) {
+                score += 2; // Exact match for non-string scalar
               }
             }
           }
+
+          // Additional scoring: numeric range matches
+          for (const [fieldName, crit] of rangeCriteriaMap.entries()) {
+            const val = record.data[fieldName];
+            const numVal = typeof val === 'number' ? val : (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val)) ? Number(val) : undefined);
+            if (numVal === undefined) continue;
+            if (crit.$gte !== undefined && !(numVal >= crit.$gte)) continue;
+            if (crit.$lte !== undefined && !(numVal <= crit.$lte)) continue;
+            score += 1; // Reward range match
+          }
+
           return { ...record, matchScore: score };
         });
         scoredRecords.sort((a, b) => b.matchScore - a.matchScore);
       } catch (error) {
-        // If filters can't be parsed, fallback to unsorted
+        // If parsing fails, keep default ordering
       }
     }
 
@@ -415,125 +557,6 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error in getDynamicRecords:', error);
-    res.status(500).json({ message: "Error fetching dynamic records", error });
-  }
-};
-
-
-// Obtener todos los registros de una tabla
-export const getDynamicRecordsBot = async (req: Request, res: Response) => {
-  const { tableSlug, c_name } = req.params;
-  const { 
-    page = 1, 
-    limit = 100, 
-    sortBy = 'createdAt', 
-    sortOrder = 'desc',
-    filters,
-    characteristics
-  } = req.query;
-
-  try {
-    const conn = await getConnectionByCompanySlug(c_name);
-    const Record = getRecordModel(conn);
-    const Table = getTableModel(conn);
-
-    // Validar que la tabla existe
-    const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
-    if (!table) {
-      res.status(404).json({ message: "Table not found or inactive" });
-      return;
-    }
-
-    // Construir filtros de consulta
-    const queryFilter: any = { tableSlug, c_name };
-
-    // Procesar filtros directos de query
-    for (const [key, value] of Object.entries(req.query)) {
-      if (
-        !['page', 'limit', 'sortBy', 'sortOrder', 'filters', 'characteristics'].includes(key) &&
-        value !== undefined &&
-        value !== null &&
-        value !== ''
-      ) {
-        // Buscar el tipo de campo en la tabla
-        const fieldDef = table.fields.find((f: any) => f.name === key);
-        let filterValue: any = value;
-        if (fieldDef) {
-          switch (fieldDef.type) {
-            case 'number':
-            case 'currency':
-              filterValue = Number(value);
-              break;
-            case 'boolean':
-              if (value === 'true') filterValue = true;
-              else if (value === 'false') filterValue = false;
-              break;
-            default:
-              filterValue = { $regex: `^${value}$`, $options: 'i' };
-              break;
-          }
-        }
-        queryFilter[`data.${key}`] = filterValue;
-      }
-    }
-
-    // Aplicar filtros dinámicos si se proporcionan
-    if (filters && typeof filters === 'string') {
-      try {
-        const parsedFilters = JSON.parse(filters);
-        for (const [fieldName, value] of Object.entries(parsedFilters)) {
-          if (value !== undefined && value !== null && value !== '') {
-            queryFilter[`data.${fieldName}`] = value;
-          }
-        }
-      } catch (error) {
-        res.status(400).json({ message: "Invalid filters format" });
-        return;
-      }
-    }
-
-    // Configurar paginación y ordenamiento
-    const skip = (Number(page) - 1) * Number(limit);
-    const sort: any = {};
-    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
-
-    // Si characteristics=true, mostrar toda la información (sin proyección)
-    // Si characteristics no está presente o es false, mostrar solo ciertos campos
-    let projection = undefined;
-    if (!characteristics || String(characteristics) === "false") {
-      projection = {};
-      Object.keys(queryFilter).forEach(key => {
-        if (key.startsWith('data.')) {
-          projection[key] = 1; // Incluir solo campos de datos
-        }
-      });
-      table.fields.slice(0, 3).forEach((f: any) => {
-      projection[`data.${f.name}`] = 1;
-      });
-      projection["createdAt"] = 1;
-      projection["updatedAt"] = 1;
-    }
-
-    // Obtener registros con o sin proyección
-    const records = await Record.find(queryFilter, projection)
-      .sort(sort)
-      .skip(skip)
-      .limit(Number(limit))
-      .lean();
-
-    // Contar total de registros
-    const total = await Record.countDocuments(queryFilter);
-
-    res.json({
-      records,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit))
-      }
-    });
-  } catch (error) {
     res.status(500).json({ message: "Error fetching dynamic records", error });
   }
 };
@@ -806,7 +829,7 @@ export const searchRecords = async (req: Request, res: Response) => {
       
       if (textFields.length > 0) {
         const textSearch = textFields.map(field => ({
-          [`data.${field}`]: { $regex: query, $options: 'i' }
+          [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(query)), $options: 'i' }
         }));
         searchFilter.$or = textSearch;
       }
@@ -1696,19 +1719,19 @@ export async function searchPropiedadesGrupokg(req: Request, res: Response): Pro
     const searchParams = [colonia, zona, titulo].filter(Boolean);
     if (searchParams.length === 1 && searchTerm) {
       filter.$or = [
-        { 'data.colonia': { $regex: searchTerm, $options: 'i' } },
-        { 'data.zona': { $regex: searchTerm, $options: 'i' } },
-        { 'data.titulo': { $regex: searchTerm, $options: 'i' } }
+  { 'data.colonia': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } },
+  { 'data.zona': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } },
+  { 'data.titulo': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } }
       ];
     } else {
       if (zona) {
-        filter['data.zona'] = { $regex: zona as string, $options: 'i' };
+  filter['data.zona'] = { $regex: buildAccentInsensitivePattern(String(zona)), $options: 'i' };
       }
       if (titulo) {
-        filter['data.titulo'] = { $regex: titulo as string, $options: 'i' };
+  filter['data.titulo'] = { $regex: buildAccentInsensitivePattern(String(titulo)), $options: 'i' };
       }
       if (colonia) {
-        filter['data.colonia'] = { $regex: colonia as string, $options: 'i' };
+  filter['data.colonia'] = { $regex: buildAccentInsensitivePattern(String(colonia)), $options: 'i' };
       }
     }
 
@@ -1725,7 +1748,7 @@ export async function searchPropiedadesGrupokg(req: Request, res: Response): Pro
       };
     }
     if (renta_venta_inversion) {
-      filter['data.renta_venta_inversión '] = { $regex: renta_venta_inversion as string, $options: 'i' };
+  filter['data.renta_venta_inversión '] = { $regex: buildAccentInsensitivePattern(String(renta_venta_inversion)), $options: 'i' };
     }
     if (recamaras) {
       filter['data.recamaras'] = recamaras as string;
@@ -1743,13 +1766,13 @@ export async function searchPropiedadesGrupokg(req: Request, res: Response): Pro
       filter['data.metros_de_construccion '] = { $gte: Number(metros_de_construccion) };
     }
     if (disponibilidad) {
-      filter['data.disponibilidad'] = { $regex: disponibilidad as string, $options: 'i' };
+  filter['data.disponibilidad'] = { $regex: buildAccentInsensitivePattern(String(disponibilidad)), $options: 'i' };
     }
     if (aceptan_creditos) {
-      filter['data.aceptan_creditos '] = { $regex: aceptan_creditos as string, $options: 'i' };
+  filter['data.aceptan_creditos '] = { $regex: buildAccentInsensitivePattern(String(aceptan_creditos)), $options: 'i' };
     }
     if (mascotas) {
-      filter['data.mascotas'] = { $regex: mascotas as string, $options: 'i' };
+  filter['data.mascotas'] = { $regex: buildAccentInsensitivePattern(String(mascotas)), $options: 'i' };
     }
 
     // Ejecutar búsqueda

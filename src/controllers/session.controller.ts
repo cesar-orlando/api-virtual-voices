@@ -11,7 +11,7 @@ import { loadRecentFacebookMessages } from "../services/meta/messenger";
 
 export const createFacebookSession = async (req: Request, res: Response) => {
     try {
-        const { sessionName, sessionData, c_name, user_id, user_name } = req.body;
+        const { sessionName, sessionData, c_name, user_id, user_name, branch } = req.body;
         if (!sessionName) {
             res.status(400).json({ message: "sessionName is required" });
             return;
@@ -34,13 +34,26 @@ export const createFacebookSession = async (req: Request, res: Response) => {
             try {
                 const defaultIAConfig = await IAConfig.findOne({ type: "general" });
 
-                const newSession = new FacebookSession({
+                const sessionDataToSave: any = {
                     name: sessionName,
                     user: { id: user_id, name: user_name },
                     platform: 'facebook',
                     sessionData,
                     IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name },
-                });
+                };
+
+                // NUEVO: Agregar información de sucursal si está presente
+                if (branch && branch.name && branch.code) {
+                    sessionDataToSave.branch = {
+                        companyId: branch.companyId,
+                        branchId: branch.branchId,
+                        name: branch.name,
+                        code: branch.code
+                    };
+                    console.log("✅ Sucursal agregada a la sesión Facebook:", branch.name, `(${branch.code})`);
+                }
+
+                const newSession = new FacebookSession(sessionDataToSave);
 
                 await newSession.save();
 
@@ -154,7 +167,7 @@ export const deleteFacebookSession = async (req: Request, res: Response) => {
 };
 
 export const createWhatsappSession = async (req: Request, res: Response) => {
-  const { sessionName, c_name, user_id, user_name } = req.body;
+  const { sessionName, c_name, user_id, user_name, branch } = req.body;
   if (!sessionName) {
     res.status(400).json({ message: "sessionName is required" });
     return;
@@ -183,12 +196,25 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
 
       const defaultIAConfig = await IAConfig.findOne({ type: "general" }); // Obtiene el prompt general por defecto
 
-      const newSession = new WhatsappSession({
+      const sessionData: any = {
         name: sessionName,
         user: { id: user_id, name: user_name },
         phone: client.info.wid._serialized || '',
         IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name },
-      });
+      };
+
+      // NUEVO: Agregar información de sucursal si está presente
+      if (branch && branch.name && branch.code) {
+        sessionData.branch = {
+          companyId: branch.companyId,
+          branchId: branch.branchId,
+          name: branch.name,
+          code: branch.code
+        };
+        console.log("✅ Sucursal agregada a la sesión:", branch.name, `(${branch.code})`);
+      }
+
+      const newSession = new WhatsappSession(sessionData);
 
       await newSession.save();
       res.status(201).json({ message: `Session '${sessionName}' started` });

@@ -5,6 +5,10 @@ import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
+import { MessageMedia } from "whatsapp-web.js";
+import fs from "node:fs";
+import path from "node:path";
+import axios from "axios";
 
 // Obtiene todos los mensajes de todos los chats
 export const getAllWhatsappMessages = async (req: Request, res: Response) => {
@@ -206,10 +210,35 @@ export const MessageToAll = async (
   }
 };
 
+// Save an uploaded in-memory file to disk under src/media/files and return the file path
+function saveUploadedToDisk(file: Express.Multer.File): string {
+  const baseDir = path.join(process.cwd(), "src", "media", "files");
+  if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
+  const safeName = file.originalname?.replace(/[^a-zA-Z0-9._-]/g, "_") || `upload_${Date.now()}`;
+  const filePath = path.join(baseDir, `${Date.now()}-${safeName}`);
+  fs.writeFileSync(filePath, file.buffer);
+  return filePath;
+}
+
+// Download a URL to disk in src/media/files and return the file path
+async function downloadUrlToDisk(url: string): Promise<string> {
+  const baseDir = path.join(process.cwd(), "src", "media", "files");
+  if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
+  // Try to infer filename from URL
+  const urlPath = new URL(url).pathname;
+  const urlName = path.basename(urlPath) || `download_${Date.now()}`;
+  const cleanName = urlName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const targetPath = path.join(baseDir, `${Date.now()}-${cleanName}`);
+  const resp = await axios.get<ArrayBuffer>(url, { responseType: "arraybuffer" });
+  fs.writeFileSync(targetPath, Buffer.from(resp.data));
+  return targetPath;
+}
+
 export const sendWhatsappMessage = async (req: Request, res: Response) => {
   try {
     const { c_name, sessionId } = req.params;
-    const { phone, message } = req.body;
+    const { phone, message, attachment } = req.body;
+    const uploaded: Express.Multer.File | undefined = (req as any).file;
 
     const conn = await getConnectionByCompanySlug(c_name);
 
@@ -222,7 +251,22 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
       return;
     }
 
-    clients[`${c_name}:${session.name}`].sendMessage(phone, message);
+    if (uploaded) {
+      // Received as multipart file from frontend
+      const filePath = saveUploadedToDisk(uploaded);
+      const media = await MessageMedia.fromFilePath(filePath);
+      await clients[`${c_name}:${session.name}`].sendMessage(phone, media, { caption: message });
+      fs.unlinkSync(filePath); // Eliminar archivo temporal
+    } else if (typeof attachment === "string" && attachment.trim().length > 0) {
+      // If it's a URL, download it locally first, then send via file path
+      const isHttp = /^https?:\/\//i.test(attachment);
+      const filePath = isHttp ? await downloadUrlToDisk(attachment) : attachment;
+      const media = await MessageMedia.fromFilePath(filePath);
+      await clients[`${c_name}:${session.name}`].sendMessage(phone, media, { caption: message });
+      fs.unlinkSync(filePath); // Eliminar archivo temporal
+    } else {
+      await clients[`${c_name}:${session.name}`].sendMessage(phone, message);
+    }
 
     res.status(200).json({ message: "Message sent" });
   } catch (error) {
@@ -316,6 +360,7 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const UserConfig = getUserModel(conn);
+    const Session = getSessionModel(conn);
 
     // Si no se especifica advisorId, desasignar (poner null)
     let advisor = null;
@@ -333,7 +378,9 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
       }
       advisor = { id: targetUser._id, name: targetUser.name };
     } else {
-      const allUsers = await UserConfig.find({ role: 'Asesor' }).lean();
+
+      const targetSession = await Session.findById(data.sessionId).lean();
+      const allUsers = await UserConfig.find({ role: 'Asesor', 'branch.code': targetSession?.branch.branchId }).lean();
 
       if (allUsers.length === 0) {
         res.status(404).json({ message: "No hay asesores disponibles" });

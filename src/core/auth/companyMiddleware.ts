@@ -13,10 +13,11 @@ declare global {
   }
 }
 
-// Middleware para detectar empresa desde JWT
+// Middleware para detectar empresa desde JWT (versión simplificada)
 export function detectCompanyFromToken(req: Request, res: Response, next: NextFunction): void {
   try {
     const authHeader = req.headers.authorization;
+    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return next();
     }
@@ -26,8 +27,8 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
     
     try {
       const decoded = jwt.verify(token, config.jwtSecret) as any;
-      
       const slug = decoded.companySlug || decoded.c_name;
+      
       if (slug) {
         const companyContext = getCompanyContext(slug);
         if (companyContext) {
@@ -35,12 +36,10 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
         }
       }
     } catch (jwtError: any) {
-      // Ignorar todos los errores de JWT (expired, invalid, etc.) y continuar
-      // console.warn('⚠️ Token JWT inválido o expirado en ruta:', req.path);
-      // Continuar sin contexto de empresa
+      // Ignorar errores de JWT y continuar sin contexto
     }
   } catch (error) {
-    console.warn('⚠️ Error general en middleware de autenticación:', error);
+    // Ignorar errores generales
   }
   
   next();

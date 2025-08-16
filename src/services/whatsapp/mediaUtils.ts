@@ -109,6 +109,33 @@ export async function handleVideoMessage(message: Message, statusText?: string):
   return message;
 }
 
+export async function handleFileMessage(message: Message, statusText?: string): Promise<Message> {
+  const fileDir = 'src/media/files';
+  if (!fs.existsSync(fileDir)) {
+    fs.mkdirSync(fileDir, { recursive: true });
+    console.log(`📁 Directorio creado: ${fileDir}`);
+  }
+  const media = await message.downloadMedia();
+  if (!media || !media.mimetype || !media.data) {
+    console.warn('⚠️ No se pudo descargar el archivo de video o está incompleto');
+    return message;
+  }
+  //const extension = media.mimetype.split('/')[1];
+  //const filePath = `${fileDir}/${message.id.id}.${extension}`;
+  const fileName = media.filename;
+  //fs.writeFileSync(filePath, media.data, { encoding: 'base64' });
+  //console.log(`📁 Archivo guardado: ${filePath}`);
+
+  console.log(`📁 Archivo guardado: ${fileName}`);
+
+  if (statusText) {
+    message.body = `Contexto: "${statusText}"\n\nArchivo adjunto: ${fileName}`;
+  } else {
+    message.body = `${message.body} Archivo adjunto: ${fileName}`;
+  }
+  return message;
+}
+
 export async function analyzeImage(data: string, mimetype: string): Promise<{ description: string; extractedText: string }> {
   try {
     // OpenAI Vision API implementation

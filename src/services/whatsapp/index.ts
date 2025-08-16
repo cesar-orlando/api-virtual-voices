@@ -48,7 +48,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   }
 
   const authDir = getAuthDir();
-  // console.log(`🔐 Iniciando WhatsApp con sesión: ${company}-${sessionName}`);
+  // console.log(`🔐 Iniciando WhatsApp con sesión: ${clientId}`);
   
   // Crear directorio si no existe
   if (!fs.existsSync(authDir)) {
@@ -59,15 +59,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       console.error(`❌ Error creando directorio: ${err}`);
     }
   }
-  
-  // Verificar si existe sesión previa
-  const sessionPath = path.join(authDir, `session-${company}-${sessionName}`);
-  
-  if (fs.existsSync(sessionPath)) {
-    console.log(`✅ Sesión previa encontrada en: ${sessionPath}`);
-  } else {
-    console.log(`❌ No se encontró sesión previa en: ${sessionPath}`);
-  }
+
 
   // Sanitizar clientId para que solo contenga caracteres válidos
   const sanitizeForClientId = (str: string): string => {
@@ -77,6 +69,15 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   const sanitizedCompany = sanitizeForClientId(company);
   const sanitizedSessionName = sanitizeForClientId(sessionName);
   const clientId = `${sanitizedCompany}_${sanitizedSessionName}`;
+  
+  // Verificar si existe sesión previa
+  const sessionPath = path.join(authDir, `session-${clientId}`);
+  
+  if (fs.existsSync(sessionPath)) {
+    console.log(`✅ Sesión previa encontrada en: ${sessionPath}`);
+  } else {
+    console.log(`❌ No se encontró sesión previa en: ${sessionPath}`);
+  }
   
   console.log(`📱 Iniciando WhatsApp bot con clientId: ${clientId}`);
 
@@ -131,7 +132,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           const sessionFolder = path.join(
             process.cwd(),
             ".wwebjs_auth",
-            `session-${company}-${sessionName}`
+            `session-${clientId}`
           );
           if (fs.existsSync(sessionFolder)) {
               fs.rmSync(sessionFolder, { recursive: true, force: true });
@@ -262,7 +263,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
     // Evento cuando la autenticación está en progreso
     whatsappClient.on('authenticated', async () => {
-      console.log(`🔓 WhatsApp autenticado exitosamente para: ${company}-${sessionName}`);
+      console.log(`🔓 WhatsApp autenticado exitosamente para: ${clientId}`);
       
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
@@ -274,13 +275,13 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     });
 
     whatsappClient.on('ready', async () => {
-      console.log(`🚀 WhatsApp listo y conectado para: ${company}-${sessionName}`);
+      console.log(`🚀 WhatsApp listo y conectado para: ${clientId}`);
 
       resolve(whatsappClient);
       
       // Verificar si la sesión se guardó después de estar listo
       setTimeout(() => {
-        const sessionPath = path.join(authDir, `session-${company}-${sessionName}`);
+        const sessionPath = path.join(authDir, `session-${clientId}`);
         if (fs.existsSync(sessionPath)) {
           console.log(`✅ Sesión guardada exitosamente en: ${sessionPath}`);
           // Listar archivos de la sesión

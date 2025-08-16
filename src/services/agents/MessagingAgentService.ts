@@ -281,7 +281,7 @@ export class MessagingAgentService {
       }
 
       // Limit to most recent messages to avoid large payloads
-      const recent = chatHistory.messages.slice(-100);
+      const recent = chatHistory.messages.slice(-50);
 
       return recent.map((message: any) => ({
         role: message.direction === "inbound" ? "user" : "assistant",
@@ -310,7 +310,7 @@ export class MessagingAgentService {
       }
 
       // Limit to most recent messages to avoid large payloads
-      const recent = chatHistory.messages.slice(-100);
+      const recent = chatHistory.messages.slice(-50);
 
       return recent.map((message: any) => ({
         role: message.direction === "inbound" ? "user" : "assistant",

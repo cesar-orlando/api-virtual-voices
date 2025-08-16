@@ -1,6 +1,6 @@
 import { Message, Client } from 'whatsapp-web.js';
 import { createNewChatRecord, updateChatRecord, sendAndRecordBotResponse } from './chatRecordUtils';
-import { getImageFromUrl, handleAudioMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
+import { getImageFromUrl, handleAudioMessage, handleFileMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import { getSessionModel } from '../../models/session.model';
@@ -49,6 +49,39 @@ const ACTION_KEYWORDS = [
   'quiero', 'necesito', 'puedes', 'agenda', 'programa', 'crea', 'elimina', 'borra',
   'want', 'need', 'can you', 'create', 'delete', 'schedule', 'book'
 ];
+
+// NUEVA CONFIGURACIÓN: Teléfonos autorizados para usar Calendar Assistant por empresa
+const AUTHORIZED_PHONES = {
+  'mitsubishi': [
+    '5216441500358',    // Ejemplo de teléfono autorizado
+    '5210000000000',    // Otro teléfono autorizado
+    // Agregar más teléfonos según sea necesario
+  ],
+  'quicklearning': [
+    '5210000000000',    // Teléfono autorizado para quicklearning
+    // Agregar más teléfonos
+  ],
+  // Agregar más empresas según sea necesario
+};
+
+// Función para verificar si un teléfono está autorizado para usar Calendar Assistant
+function isPhoneAuthorizedForCalendar(company: string, phone: string): boolean {
+  const cleanPhone = phone.replace('@c.us', '').replace(/\D/g, ''); // Limpiar formato de WhatsApp y caracteres no numéricos
+  const authorizedPhones = AUTHORIZED_PHONES[company] || [];
+  
+  console.log(`🔍 Verificando autorización para Calendar Assistant:`);
+  console.log(`   - Empresa: ${company}`);
+  console.log(`   - Teléfono: ${cleanPhone}`);
+  console.log(`   - Teléfonos autorizados:`, authorizedPhones);
+  
+  const isAuthorized = authorizedPhones.some(authPhone => {
+    // Permitir coincidencia exacta o que el teléfono termine con el número autorizado
+    return cleanPhone === authPhone || cleanPhone.endsWith(authPhone);
+  });
+  
+  console.log(`   - ${isAuthorized ? '✅ Autorizado' : '❌ No autorizado'}`);
+  return isAuthorized;
+}
 
 function isCalendarRelatedMessage(message: string): boolean {
   const lowerMessage = message.toLowerCase();
@@ -136,6 +169,9 @@ export async function handleIncomingMessage(message: Message, client: Client, co
   }
   if (message.type === 'video') {
     message = await handleVideoMessage(message, statusText);
+  }
+  if (message.type === 'document') {
+    message = await handleFileMessage(message, statusText);
   }
 
   // Validar que el mensaje no esté vacío o sea solo espacios
@@ -328,8 +364,20 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
   const isCalendarMessage = messages.some(msg => isCalendarRelatedMessage(msg.body));
   
   if (isCalendarMessage) {
+    // NUEVA VERIFICACIÓN: Solo proceder si el teléfono está autorizado
+    const isAuthorized = isPhoneAuthorizedForCalendar(company, userPhone);
+    
+    if (!isAuthorized) {
+      console.log(`🚫 Calendar Assistant bloqueado para teléfono no autorizado: ${userPhone} (empresa: ${company})`);
+      
+      // Enviar mensaje de no autorización (opcional)
+      const notAuthorizedMessage = '🚫 Lo siento, no tienes autorización para usar el asistente de calendario. Contacta con el administrador si necesitas acceso.';
+      await sendCustomResponse(client, lastMessage, notAuthorizedMessage, company, sessionName, latestRecord, conn);
+      return;
+    }
     
     try {
+      console.log(`✅ Calendar Assistant autorizado para: ${userPhone} (empresa: ${company})`);
       const calendarAssistant = await initializeCalendarAssistant(company);
       
       // Combine all messages into context for the Calendar Assistant

@@ -27,6 +27,17 @@ export function getCompanyContext(slug: string): CompanyContext | null {
   };
 }
 
+// Obtener contexto de empresa válida (excluir QuickLearning para usuarios normales)
+export function getValidCompanyContext(slug: string, allowQuickLearning: boolean = false): CompanyContext | null {
+  // Bloquear QuickLearning a menos que esté explícitamente permitido
+  if (slug === 'quicklearning' && !allowQuickLearning) {
+    console.log('⚠️ Acceso a QuickLearning bloqueado para usuario normal');
+    return null;
+  }
+  
+  return getCompanyContext(slug);
+}
+
 // Verificar si una empresa tiene una funcionalidad específica
 export function hasFeature(slug: string, feature: keyof ProjectConfig['features']): boolean {
   const config = getProjectConfig(slug);

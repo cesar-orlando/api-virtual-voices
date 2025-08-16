@@ -282,7 +282,7 @@ async function handleDelayedResponse(
   existingRecord: any,
   conn: Connection
 ) {
-  const DELAY_MS = 10000; // Reducido de 15 a 10 segundos para mejor responsividad
+  const DELAY_MS = 15000; // 15 segundos para mejor responsividad
 
   // Always record the incoming message first
   await updateChatRecord(company, existingRecord, "inbound", message, "human");

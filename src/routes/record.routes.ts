@@ -17,7 +17,6 @@ import {
   addNewFieldToAllRecords,
   deleteFieldsFromAllRecords,
   deleteFieldsFromRecord,
-  getDynamicRecordsBot,
   searchPropiedadesGrupokg,
 } from "../controllers/record.controller";
 

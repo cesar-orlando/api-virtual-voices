@@ -1803,3 +1803,142 @@ export async function searchPropiedadesGrupokg(req: Request, res: Response): Pro
     });
   }
 }
+
+export async function getRecordByPhone(req: Request, res: Response) {
+  try {
+    const { c_name } = req.params;
+    const { page = 1, limit = 50 } = req.query; // REDUCED DEFAULT LIMIT
+    
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Record = getRecordModel(conn);
+    
+    console.log(`⚡ LIGHTNING FAST AGGREGATION for ${c_name} - Page ${page}, Limit ${limit}`);
+    
+    // ⚡ LIGHTNING FAST - EARLY PAGINATION + MINIMAL DATA
+    const pipeline: any[] = [
+      // Stage 1: Match + pagination FIRST (reduce dataset immediately)
+      {
+        $match: {
+          tableSlug: "prospectos",
+          c_name: c_name
+        }
+      },
+      
+      // Stage 2: Sort + pagination EARLY  
+      {
+        $sort: { updatedAt: -1 }
+      },
+      {
+        $skip: (Number(page) - 1) * Number(limit)
+      },
+      {
+        $limit: Number(limit)
+      },
+      
+      // Stage 3: Add phone variants for lookup
+      {
+        $addFields: {
+          phoneVariants: [
+            "$data.name",
+            { $concat: [{ $toString: "$data.number" }, "@c.us"] },
+            { $toString: "$data.number" }
+          ]
+        }
+      },
+      
+      // Stage 4: Lookup chats by ANY phone variant
+      {
+        $lookup: {
+          from: "chats",
+          let: { phones: "$phoneVariants" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ["$phone", "$$phones"]
+                }
+              }
+            },
+            {
+              $project: {
+                phone: 1,
+                session: 1,
+                advisor: 1,
+                botActive: 1,
+                messageCount: { $size: { $ifNull: ["$messages", []] } },
+                // GET ALL MESSAGES - as requested
+                messages: "$messages"
+              }
+            }
+          ],
+          as: "chats"
+        }
+      },
+      
+      // Stage 5: Add summary (super simple)
+      {
+        $addFields: {
+          totalChats: { $size: "$chats" },
+          hasActiveBot: { $gt: [{ $size: "$chats" }, 0] }
+        }
+      },
+      
+      // Stage 6: Clean output (remove phoneVariants)
+      {
+        $project: {
+          phoneVariants: 0  // Remove internal field
+        }
+      }
+    ];
+
+    console.log(`⚡ Executing LIGHTNING-FAST ${pipeline.length}-stage aggregation (with phone variants)`);
+    
+    const startTime = Date.now();
+    
+    // Execute super fast aggregation
+    const results = await Record.aggregate(pipeline);
+    
+    // Get total (simple query)  
+    const totalCount = await Record.countDocuments({
+      tableSlug: "prospectos",
+      c_name: c_name
+    });
+    
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    const recordsWithChats = results.filter(r => r.totalChats > 0).length;
+    
+    console.log(`⚡ LIGHTNING AGGREGATION DONE: ${results.length} records, ${recordsWithChats} with chats in ${executionTime}ms`);
+
+    res.status(200).json({
+      success: true,
+      data: results,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: totalCount,
+        pages: Math.ceil(totalCount / Number(limit))
+      },
+      performance: {
+        method: "Lightning-Fast MongoDB Aggregation", 
+        stages: pipeline.length,
+        executionTimeMs: executionTime,
+        recordsWithChats,
+        includesMessages: "all messages included",
+        phoneMatching: "name + number + @c.us variants",
+        earlyPagination: true,
+        optimized: true
+      },
+      message: `Found ${results.length} records (${recordsWithChats} with chats) in ${executionTime}ms`
+    });
+
+  } catch (error) {
+    console.error('Error in ultra-fast aggregation:', error);
+    res.status(500).json({
+      success: false,
+      message: "Error in ultra-fast aggregation",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}

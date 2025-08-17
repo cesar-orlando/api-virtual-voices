@@ -18,6 +18,7 @@ import {
   deleteFieldsFromAllRecords,
   deleteFieldsFromRecord,
   searchPropiedadesGrupokg,
+  getRecordByPhone,
 } from "../controllers/record.controller";
 
 const router = Router();
@@ -34,6 +35,7 @@ router.get("/:c_name/:tableSlug/export", exportRecords);
 // Búsqueda
 router.post("/:c_name/:tableSlug/search", searchRecords);
 router.get('/search/grupokg/propiedades', searchPropiedadesGrupokg);
+router.get('/records-with-chats/:c_name', getRecordByPhone);
 
 // Campos
 router.post("/add-field", addNewFieldToAllRecords);

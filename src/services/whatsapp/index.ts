@@ -69,17 +69,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   const sanitizedCompany = sanitizeForClientId(company);
   const sanitizedSessionName = sanitizeForClientId(sessionName);
   const clientId = `${sanitizedCompany}_${sanitizedSessionName}`;
-  
-  // Verificar si existe sesión previa
-  const sessionPath = path.join(authDir, `session-${clientId}`);
-  
-  if (fs.existsSync(sessionPath)) {
-    console.log(`✅ Sesión previa encontrada en: ${sessionPath}`);
-  } else {
-    console.log(`❌ No se encontró sesión previa en: ${sessionPath}`);
-  }
-  
-  console.log(`📱 Iniciando WhatsApp bot con clientId: ${clientId}`);
 
   // Usar LocalAuth con configuración optimizada para Render
   const whatsappClient = new Client({
@@ -279,23 +268,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
       resolve(whatsappClient);
       
-      // Verificar si la sesión se guardó después de estar listo
-      setTimeout(() => {
-        const sessionPath = path.join(authDir, `session-${clientId}`);
-        if (fs.existsSync(sessionPath)) {
-          console.log(`✅ Sesión guardada exitosamente en: ${sessionPath}`);
-          // Listar archivos de la sesión
-          try {
-            const files = fs.readdirSync(sessionPath);
-            console.log(`📁 Archivos de sesión:`, files);
-          } catch (err) {
-            console.log(`❌ Error leyendo archivos de sesión:`, err);
-          }
-        } else {
-          console.log(`❌ Sesión NO se guardó en: ${sessionPath}`);
-        }
-      }, 5000);
-      
       const chats = await whatsappClient.getChats();
 
       const fetchLimit = 50;
@@ -379,7 +351,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
             if (!chatRecord) {
               chatRecord = new WhatsappChat({
-                tableSlug: "clientes",
+                tableSlug: "prospectos",
                 phone: chat.id._serialized,
                 name: chat.name || chat.id._serialized,
                 messages: [],

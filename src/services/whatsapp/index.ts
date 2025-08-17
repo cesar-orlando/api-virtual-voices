@@ -382,9 +382,20 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               continue;
             }
 
-            // NO await: Guardar prospecto si no existe
-            if (messages.length <= 0) continue;
-            saveProspectIfNotExists({ lastMessage: chatRecord.messages[chatRecord.messages.length - 1].body, lastMessageDate: chatRecord.messages[chatRecord.messages.length - 1].createdAt }, company, chat.id._serialized, chat.name);
+            // NO await: Guardar prospecto si no existe (usa el último mensaje persistido)
+            const lastMsg = chatRecord?.messages && chatRecord.messages.length > 0
+              ? chatRecord.messages[chatRecord.messages.length - 1]
+              : null;
+            if (!lastMsg) continue;
+            saveProspectIfNotExists(
+              { 
+                lastMessage: lastMsg.body || '', 
+                lastMessageDate: lastMsg.createdAt || new Date() 
+              }, 
+              company,
+              chat.id._serialized,
+              chat.name
+            );
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);

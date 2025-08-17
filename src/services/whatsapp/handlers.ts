@@ -1,5 +1,5 @@
 import { Message, Client } from 'whatsapp-web.js';
-import { createNewChatRecord, updateChatRecord, sendAndRecordBotResponse } from './chatRecordUtils';
+import { createNewChatRecord, updateChatRecord } from './chatRecordUtils';
 import { getImageFromUrl, handleAudioMessage, handleFileMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';

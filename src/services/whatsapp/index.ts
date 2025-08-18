@@ -201,13 +201,14 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
             'data.ia': activateIA === true,
             'data.asesor.id': user_id,
             'data.asesor.name': userData?.name,
+            updatedAt: new Date(),
           },
           $set: {
             'data.lastmessage': lastMessageData?.lastMessage || '',
             'data.lastmessagedate': lastMessageData?.lastMessageDate || new Date(),
           }
         },
-        { upsert: true, new: false }
+        { upsert: true, new: false, timestamps: { updatedAt: false } }
       );
       if (!result) {
         console.log(`✅ Prospecto guardado: ${num} con ${lastMessageData.lastMessage}`);

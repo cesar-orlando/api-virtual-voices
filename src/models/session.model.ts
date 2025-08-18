@@ -23,6 +23,13 @@ export interface ISession extends Document {
     name: string; // Nombre de la sucursal
     code: string; // Código de la sucursal
   };
+  // NUEVO: Metadata para operaciones internas
+  metadata?: {
+    assignmentCounter?: number; // Contador para asignación secuencial
+    lastAssignmentAt?: Date; // Última asignación realizada
+    lastAssignedTo?: string; // Nombre del último asesor asignado
+    [key: string]: any; // Permitir campos adicionales
+  };
 }
 
 // Define el esquema para la tabla
@@ -48,6 +55,12 @@ const SessionSchema: Schema = new Schema(
       branchId: { type: String }, // ID o código de la sucursal
       name: { type: String },
       code: { type: String }
+    },
+    // NUEVO: Metadata para operaciones internas
+    metadata: {
+      assignmentCounter: { type: Number, default: 0 },
+      lastAssignmentAt: { type: Date },
+      lastAssignedTo: { type: String }
     }
   },
   {

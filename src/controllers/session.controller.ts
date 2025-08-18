@@ -3,6 +3,7 @@ import { startWhatsappBot, clients } from "../services/whatsapp/index";
 import { getSessionModel } from "../models/session.model";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { getFacebookChatModel } from "../models/facebookChat.model";
+import getBranchModel from "../models/branch.model";
 import getIaConfigModel from "../models/iaConfig.model";
 import getUserModel from "../core/users/user.model";
 import fs from "fs";
@@ -42,15 +43,22 @@ export const createFacebookSession = async (req: Request, res: Response) => {
                     IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name },
                 };
 
-                // NUEVO: Agregar información de sucursal si está presente
-                if (branch && branch.name && branch.code) {
-                    sessionDataToSave.branch = {
-                        companyId: branch.companyId,
-                        branchId: branch.branchId,
-                        name: branch.name,
-                        code: branch.code
-                    };
-                    console.log("✅ Sucursal agregada a la sesión Facebook:", branch.name, `(${branch.code})`);
+                // NUEVO: Validar y agregar información de sucursal si está presente
+                if (branch && branch.branchId) {
+                    const Branch = getBranchModel(conn);
+                    const foundBranch = await Branch.findById(branch.branchId);
+                    
+                    if (foundBranch) {
+                        sessionDataToSave.branch = {
+                            companyId: foundBranch.companyId,
+                            branchId: foundBranch._id,
+                            name: foundBranch.name,
+                            code: foundBranch.code
+                        };
+                        console.log("✅ Sucursal agregada a la sesión Facebook:", foundBranch.name, `(${foundBranch.code})`);
+                    } else {
+                        console.log("⚠️ Sucursal no encontrada con ID:", branch.branchId);
+                    }
                 }
 
                 const newSession = new FacebookSession(sessionDataToSave);
@@ -82,6 +90,33 @@ export const updateFacebookSession = async (req: Request, res: Response) => {
         const updates = req.body;
         const conn = await getConnectionByCompanySlug(c_name);
         const FacebookSession = getSessionModel(conn);
+
+        // NUEVO: Manejar actualización de branch
+        if (updates.branch) {
+            if (updates.branch.branchId) {
+                // Validar y obtener información completa de la sucursal
+                const Branch = getBranchModel(conn);
+                const foundBranch = await Branch.findById(updates.branch.branchId);
+                
+                if (foundBranch) {
+                    updates.branch = {
+                        companyId: foundBranch.companyId,
+                        branchId: foundBranch._id,
+                        name: foundBranch.name,
+                        code: foundBranch.code
+                    };
+                    console.log("✅ Branch actualizado en sesión Facebook:", foundBranch.name, `(${foundBranch.code})`);
+                } else {
+                    res.status(400).json({ message: "Branch not found", branchId: updates.branch.branchId });
+                    return;
+                }
+            } else if (updates.branch === null) {
+                // Permitir remover branch enviando null
+                updates.branch = null;
+                console.log("✅ Branch removido de sesión Facebook");
+            }
+        }
+
         const session = await FacebookSession.findOneAndUpdate(
             { _id: updates._id, platform: 'facebook' },
             updates,
@@ -203,15 +238,22 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
         IA: { id: defaultIAConfig?._id, name: defaultIAConfig?.name },
       };
 
-      // NUEVO: Agregar información de sucursal si está presente
-      if (branch && branch.name && branch.code) {
-        sessionData.branch = {
-          companyId: branch.companyId,
-          branchId: branch.branchId,
-          name: branch.name,
-          code: branch.code
-        };
-        console.log("✅ Sucursal agregada a la sesión:", branch.name, `(${branch.code})`);
+      // NUEVO: Validar y agregar información de sucursal si está presente
+      if (branch && branch.branchId) {
+        const Branch = getBranchModel(conn);
+        const foundBranch = await Branch.findById(branch.branchId);
+        
+        if (foundBranch) {
+          sessionData.branch = {
+            companyId: foundBranch.companyId,
+            branchId: foundBranch._id,
+            name: foundBranch.name,
+            code: foundBranch.code
+          };
+          console.log("✅ Sucursal agregada a la sesión WhatsApp:", foundBranch.name, `(${foundBranch.code})`);
+        } else {
+          console.log("⚠️ Sucursal no encontrada con ID:", branch.branchId);
+        }
       }
 
       const newSession = new WhatsappSession(sessionData);
@@ -259,75 +301,106 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
   const { c_name } = req.params;
   const updates = req.body;
 
-  // Si el update es a status, verifica la sesión en .wwebjs_auth
-  if (Object.prototype.hasOwnProperty.call(updates, 'status')) {
-    // Obtener el nombre de la sesión
-    let sessionName = updates.name;
-    if (!sessionName) {
-      // Si no viene en el update, buscar en la base de datos
-      const connTmp = await getConnectionByCompanySlug(c_name);
-      const WhatsappSessionTmp = getSessionModel(connTmp);
-      const found = await WhatsappSessionTmp.findById(updates._id);
-      sessionName = found?.name;
-    }
-    // Construir ruta de la sesión
-    const getAuthDir = () => {
-      if (process.env.RENDER === 'true') {
-        return '/var/data/.wwebjs_auth';
+  try {
+    const conn = await getConnectionByCompanySlug(c_name);
+
+    // NUEVO: Manejar actualización de branch
+    if (updates.branch) {
+      if (updates.branch.branchId) {
+        // Validar y obtener información completa de la sucursal
+        const Branch = getBranchModel(conn);
+        const foundBranch = await Branch.findById(updates.branch.branchId);
+        
+        if (foundBranch) {
+          updates.branch = {
+            companyId: foundBranch.companyId,
+            branchId: foundBranch._id,
+            name: foundBranch.name,
+            code: foundBranch.code
+          };
+          console.log("✅ Branch actualizado en sesión WhatsApp:", foundBranch.name, `(${foundBranch.code})`);
+        } else {
+          res.status(400).json({ message: "Branch not found", branchId: updates.branch.branchId });
+          return;
+        }
+      } else if (updates.branch === null) {
+        // Permitir remover branch enviando null
+        updates.branch = null;
+        console.log("✅ Branch removido de sesión WhatsApp");
       }
-      return path.join(process.cwd(), '.wwebjs_auth');
-    };
-    const authDir = getAuthDir();
-    const sessionFolder = path.join(authDir, `session-${c_name.toLowerCase()}_${sessionName.toLowerCase()}`);
-    // Verificar existencia y validez
-    if (!fs.existsSync(sessionFolder)) {
-      console.log(`No se encontró la carpeta de sesión en: ${sessionFolder}`);
-      res.status(400).json({ message: `No se encontró la carpeta de sesión en: ${sessionFolder}` });
-      return;
     }
-    // Mejor validación: aceptar si existe 'session.json', 'creds.json' o 'Default' y es parseable
-    const files = fs.readdirSync(sessionFolder);
-    let valid = false;
-    if (files.includes('Default')) {
-      // Validación flexible para sesiones modernas
-      const defaultDir = path.join(sessionFolder, 'Default');
-      if (!fs.lstatSync(defaultDir).isDirectory()) {
-        console.log(`'Default' no es una carpeta en: ${sessionFolder}`);
-        res.status(400).json({ message: `'Default' no es una carpeta en: ${sessionFolder}` });
+
+    // Si el update es a status, verifica la sesión en .wwebjs_auth
+    if (Object.prototype.hasOwnProperty.call(updates, 'status')) {
+      // Obtener el nombre de la sesión
+      let sessionName = updates.name;
+      if (!sessionName) {
+        // Si no viene en el update, buscar en la base de datos
+        const WhatsappSessionTmp = getSessionModel(conn);
+        const found = await WhatsappSessionTmp.findById(updates._id);
+        sessionName = found?.name;
+      }
+      // Construir ruta de la sesión
+      const getAuthDir = () => {
+        if (process.env.RENDER === 'true') {
+          return '/var/data/.wwebjs_auth';
+        }
+        return path.join(process.cwd(), '.wwebjs_auth');
+      };
+      const authDir = getAuthDir();
+      const sessionFolder = path.join(authDir, `session-${c_name.toLowerCase()}_${sessionName.toLowerCase()}`);
+      // Verificar existencia y validez
+      if (!fs.existsSync(sessionFolder)) {
+        console.log(`No se encontró la carpeta de sesión en: ${sessionFolder}`);
+        res.status(400).json({ message: `No se encontró la carpeta de sesión en: ${sessionFolder}` });
         return;
       }
-      const defaultFiles = fs.readdirSync(defaultDir);
-      // Archivos/carpetas válidos para sesión moderna
-      const validFilesOrDirs = ['Cookies', 'Cookies-journal', 'Local Storage', 'IndexedDB'];
-      const hasAny = defaultFiles.some(f => validFilesOrDirs.includes(f));
-      if (!hasAny) {
-        console.log(`La carpeta Default no contiene archivos/carpetas válidos en: ${defaultDir}`);
-        res.status(400).json({ message: `La carpeta Default no contiene archivos/carpetas válidos en: ${defaultDir}` });
+      // Mejor validación: aceptar si existe 'session.json', 'creds.json' o 'Default' y es parseable
+      const files = fs.readdirSync(sessionFolder);
+      let valid = false;
+      if (files.includes('Default')) {
+        // Validación flexible para sesiones modernas
+        const defaultDir = path.join(sessionFolder, 'Default');
+        if (!fs.lstatSync(defaultDir).isDirectory()) {
+          console.log(`'Default' no es una carpeta en: ${sessionFolder}`);
+          res.status(400).json({ message: `'Default' no es una carpeta en: ${sessionFolder}` });
+          return;
+        }
+        const defaultFiles = fs.readdirSync(defaultDir);
+        // Archivos/carpetas válidos para sesión moderna
+        const validFilesOrDirs = ['Cookies', 'Cookies-journal', 'Local Storage', 'IndexedDB'];
+        const hasAny = defaultFiles.some(f => validFilesOrDirs.includes(f));
+        if (!hasAny) {
+          console.log(`La carpeta Default no contiene archivos/carpetas válidos en: ${defaultDir}`);
+          res.status(400).json({ message: `La carpeta Default no contiene archivos/carpetas válidos en: ${defaultDir}` });
+          return;
+        }
+        valid = true;
+      }
+      if (!valid) {
+        console.log(`La carpeta de sesión existe pero no contiene archivos de sesión válidos en: ${sessionFolder}`);
+        res.status(400).json({ message: `La carpeta de sesión existe pero no contiene archivos de sesión válidos en: ${sessionFolder}` });
         return;
       }
-      valid = true;
     }
-    if (!valid) {
-      console.log(`La carpeta de sesión existe pero no contiene archivos de sesión válidos en: ${sessionFolder}`);
-      res.status(400).json({ message: `La carpeta de sesión existe pero no contiene archivos de sesión válidos en: ${sessionFolder}` });
+
+    const WhatsappSession = getSessionModel(conn);
+    const session = await WhatsappSession.findOneAndUpdate(
+      { _id: updates._id },
+      updates,
+      { new: true }
+    );
+
+    if (!session) {
+      res.status(404).json({ message: "Session not found" });
       return;
     }
+
+    res.status(200).json({ message: "Session updated", session });
+  } catch (error) {
+    console.error("Error updating WhatsApp session:", error);
+    res.status(500).json({ message: "Error updating session", error });
   }
-
-  const conn = await getConnectionByCompanySlug(c_name);
-  const WhatsappSession = getSessionModel(conn);
-  const session = await WhatsappSession.findOneAndUpdate(
-    { _id: updates._id },
-    updates,
-    { new: true }
-  );
-
-  if (!session) {
-    res.status(404).json({ message: "Session not found" });
-    return;
-  }
-
-  res.status(200).json({ message: "Session updated", session });
 };
 
 export const deleteWhatsappSession = async (req: Request, res: Response) => {

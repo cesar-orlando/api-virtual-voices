@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import getCompanyModel from "../models/company.model";
+import getBranchModel from "../models/branch.model";
 import { getConnectionByCompanySlug, getDbConnection } from "../config/connectionManager";
 import { createIAConfig } from "./iaConfig.controller";
 import getIaConfigModel from "../models/iaConfig.model";
@@ -14,7 +15,17 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
     const conn = await getConnectionByCompanySlug(name);
     const uppercaseName = name.toUpperCase();
 
-    // Preparar branches con valores por defecto
+    // Crea el registro de la empresa en la base principal (sin branches embebidas)
+    const Company = getCompanyModel(conn);
+    const company = new Company({ 
+      name, 
+      address, 
+      phone
+    });
+    await company.save();
+
+    // Crear sucursales en colección separada
+    const Branch = getBranchModel(conn);
     const defaultBranches = branches && branches.length > 0 
       ? branches 
       : [{ 
@@ -25,15 +36,21 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
           isActive: true 
         }];
 
-    // Crea el registro de la empresa en la base principal
-    const Company = getCompanyModel(conn);
-    const company = new Company({ 
-      name, 
-      address, 
-      phone, 
-      branches: defaultBranches 
-    });
-    await company.save();
+    // Crear cada sucursal con referencia a la empresa
+    const createdBranches = await Promise.all(
+      defaultBranches.map(async (branchData: any) => {
+        const branch = new Branch({
+          companyId: company._id,
+          name: branchData.name,
+          code: branchData.code.toUpperCase(),
+          address: branchData.address,
+          phone: branchData.phone,
+          email: branchData.email,
+          isActive: branchData.isActive !== false
+        });
+        return await branch.save();
+      })
+    );
     
     // Llama a createIAConfig para crear la configuración IA inicial
     // Simula un Request y Response mínimos para reutilizar el controlador
@@ -51,7 +68,17 @@ export const createCompanyAndDatabase = async (req: Request, res: Response) => {
 
     await firstConfig.save();
 
-    res.status(201).json({ message: "Empresa, base de datos e IAConfig creadas", name });
+    res.status(201).json({ 
+      message: "Company, database and branches created successfully", 
+      company: {
+        _id: company._id,
+        name: company.name,
+        address: company.address,
+        phone: company.phone
+      },
+      branches: createdBranches,
+      iaConfig: firstConfig 
+    });
     return;
   } catch (error) {
     res.status(500).json({ message: "Error creando empresa/base de datos/IAConfig", error });
@@ -258,7 +285,7 @@ export const getGlobalStats = async (req: Request, res: Response) => {
 export const addBranchToCompany = async (req: Request, res: Response) => {
   try {
     const { c_name } = req.params;
-    const { name, code, address, phone, isActive = true } = req.body;
+    const { name, code, address, phone, email, isActive = true, manager } = req.body;
 
     if (!name || !code) {
       res.status(400).json({ message: "Name and code are required" });
@@ -267,33 +294,41 @@ export const addBranchToCompany = async (req: Request, res: Response) => {
 
     const conn = await getConnectionByCompanySlug(c_name);
     const Company = getCompanyModel(conn);
+    const Branch = getBranchModel(conn);
 
-    // Verificar que el código no exista
-    const existingCompany = await Company.findOne({ "branches.code": code.toUpperCase() });
-    if (existingCompany) {
-      res.status(400).json({ message: "Branch code already exists" });
-      return;
-    }
-
-    // Agregar nueva branch
+    // Buscar la empresa
     const company = await Company.findOne();
     if (!company) {
       res.status(404).json({ message: "Company not found" });
       return;
     }
 
-    company.branches.push({
+    // Verificar que el código no exista en esta empresa
+    const existingBranch = await Branch.findOne({ 
+      companyId: company._id, 
+      code: code.toUpperCase() 
+    });
+    if (existingBranch) {
+      res.status(400).json({ message: "Branch code already exists for this company" });
+      return;
+    }
+
+    // Crear nueva sucursal
+    const branch = new Branch({
+      companyId: company._id,
       name,
       code: code.toUpperCase(),
       address,
       phone,
-      isActive
+      email,
+      isActive,
+      manager
     });
 
-    await company.save();
+    await branch.save();
     res.status(201).json({ 
       message: "Branch added successfully", 
-      branch: company.branches[company.branches.length - 1] 
+      branch 
     });
   } catch (error) {
     res.status(500).json({ message: "Error adding branch", error });
@@ -307,18 +342,37 @@ export const updateBranch = async (req: Request, res: Response) => {
 
     const conn = await getConnectionByCompanySlug(c_name);
     const Company = getCompanyModel(conn);
+    const Branch = getBranchModel(conn);
 
+    // Buscar la empresa
     const company = await Company.findOne();
     if (!company) {
       res.status(404).json({ message: "Company not found" });
       return;
     }
 
-    // Buscar la sucursal por ID usando el método correcto para subdocumentos
-    const branch = company.branches.id(branchId);
+    // Buscar y actualizar la sucursal por ID
+    const branch = await Branch.findOne({ 
+      _id: branchId, 
+      companyId: company._id 
+    });
+    
     if (!branch) {
       res.status(404).json({ message: "Branch not found" });
       return;
+    }
+
+    // Si se actualiza el código, verificar que no exista en esta empresa
+    if (updateData.code && updateData.code.toUpperCase() !== branch.code) {
+      const existingBranch = await Branch.findOne({ 
+        companyId: company._id, 
+        code: updateData.code.toUpperCase(),
+        _id: { $ne: branchId }
+      });
+      if (existingBranch) {
+        res.status(400).json({ message: "Branch code already exists for this company" });
+        return;
+      }
     }
 
     // Actualizar campos
@@ -330,7 +384,7 @@ export const updateBranch = async (req: Request, res: Response) => {
       }
     });
 
-    await company.save();
+    await branch.save();
     res.status(200).json({ message: "Branch updated successfully", branch });
   } catch (error) {
     res.status(500).json({ message: "Error updating branch", error });
@@ -343,14 +397,21 @@ export const getBranches = async (req: Request, res: Response) => {
     
     const conn = await getConnectionByCompanySlug(c_name);
     const Company = getCompanyModel(conn);
+    const Branch = getBranchModel(conn);
 
+    // Buscar la empresa
     const company = await Company.findOne();
     if (!company) {
       res.status(404).json({ message: "Company not found" });
       return;
     }
 
-    res.status(200).json({ branches: company.branches });
+    // Buscar todas las sucursales de esta empresa
+    const branches = await Branch.find({ companyId: company._id })
+      .populate('manager.id', 'name email')
+      .sort({ name: 1 });
+
+    res.status(200).json({ branches });
   } catch (error) {
     res.status(500).json({ message: "Error getting branches", error });
   }
@@ -362,32 +423,49 @@ export const deleteBranch = async (req: Request, res: Response) => {
     
     const conn = await getConnectionByCompanySlug(c_name);
     const Company = getCompanyModel(conn);
+    const Branch = getBranchModel(conn);
 
+    // Buscar la empresa
     const company = await Company.findOne();
     if (!company) {
       res.status(404).json({ message: "Company not found" });
       return;
     }
 
-    // Buscar la sucursal por ID usando el método correcto para subdocumentos
-    const branch = company.branches.id(branchId);
+    // Buscar la sucursal
+    const branch = await Branch.findOne({ 
+      _id: branchId, 
+      companyId: company._id 
+    });
+    
     if (!branch) {
       res.status(404).json({ message: "Branch not found" });
       return;
     }
 
     // No permitir eliminar si es la única sucursal activa
-    const activeBranches = company.branches.filter(b => b.isActive && b._id?.toString() !== branchId);
-    if (activeBranches.length === 0) {
+    const activeBranchesCount = await Branch.countDocuments({ 
+      companyId: company._id, 
+      isActive: true,
+      _id: { $ne: branchId }
+    });
+    
+    if (activeBranchesCount === 0 && branch.isActive) {
       res.status(400).json({ message: "Cannot delete the last active branch" });
       return;
     }
 
-    // Usar el método pull de Mongoose para subdocumentos
-    company.branches.pull(branchId);
-    await company.save();
+    // Eliminar la sucursal
+    await Branch.findByIdAndDelete(branchId);
     
-    res.status(200).json({ message: "Branch deleted successfully" });
+    res.status(200).json({ 
+      message: "Branch deleted successfully",
+      deletedBranch: {
+        _id: branch._id,
+        name: branch.name,
+        code: branch.code
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: "Error deleting branch", error });
   }

@@ -365,6 +365,16 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     // Si no se especifica advisorId, desasignar (poner null)
     let advisor = null;
     
+    // Obtener la sesión para validar branch
+    const targetSession = await Session.findById(data.sessionId).lean();
+    if (!targetSession) {
+      res.status(404).json({ 
+        success: false, 
+        message: "Sesión no encontrada" 
+      });
+      return;
+    }
+    
     if (data.advisorId) {
       // Buscar el asesor específico
       const targetUser = await UserConfig.findById(data.advisorId).lean();
@@ -376,18 +386,67 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
         });
         return;
       }
-      advisor = { id: targetUser._id, name: targetUser.name };
-    } else {
 
-      const targetSession = await Session.findById(data.sessionId).lean();
-      const allUsers = await UserConfig.find({ role: 'Asesor', 'branch.code': targetSession?.branch.branchId }).lean();
-
-      if (allUsers.length === 0) {
-        res.status(404).json({ message: "No hay asesores disponibles" });
+      // ✅ VALIDAR QUE EL ASESOR TENGA LA MISMA SUCURSAL QUE LA SESIÓN
+      const sessionBranchId = targetSession.branch?.branchId ? String(targetSession.branch.branchId) : null;
+      const userBranchId = targetUser.branch?.branchId ? String(targetUser.branch.branchId) : null;
+      
+      if (sessionBranchId && userBranchId !== sessionBranchId) {
+        res.status(400).json({ 
+          success: false, 
+          message: `El asesor ${targetUser.name} no pertenece a la sucursal ${targetSession.branch.name}. Solo se pueden asignar asesores de la misma sucursal.`,
+          data: {
+            advisorBranch: targetUser.branch?.name || 'Sin sucursal',
+            sessionBranch: targetSession.branch?.name || 'Sin sucursal'
+          }
+        });
         return;
       }
-      const user = allUsers.length > 0 ? allUsers[Math.floor(Math.random() * allUsers.length)] : null;
-      advisor = { id: user._id, name: user.name };
+
+      advisor = { id: targetUser._id, name: targetUser.name };
+    } else {
+      // ✅ ASIGNACIÓN AUTOMÁTICA EN SECUENCIA (ROUND-ROBIN)
+      const sessionBranchId = targetSession.branch?.branchId ? String(targetSession.branch.branchId) : null;
+      const branchFilter = sessionBranchId
+        ? { role: 'Asesor', 'branch.branchId': sessionBranchId }
+        : { role: 'Asesor', $or: [{ 'branch.branchId': { $exists: false } }, { 'branch.branchId': null }] };
+
+      // Ordenar por nombre para mantener consistencia en el orden
+      const allUsers = await UserConfig.find(branchFilter).sort({ name: 1 }).lean();
+
+      if (allUsers.length === 0) {
+        const branchName = targetSession.branch?.name || 'Sin sucursal';
+        res.status(404).json({ 
+          success: false,
+          message: `No hay asesores disponibles en la sucursal: ${branchName}`,
+          data: {
+            sessionBranch: branchName,
+            sessionBranchId: sessionBranchId
+          }
+        });
+        return;
+      }
+
+      // Obtener el contador actual de asignaciones para esta sucursal/sesión
+      const currentCounter = targetSession.metadata?.assignmentCounter || 0;
+      const nextUserIndex = currentCounter % allUsers.length;
+      const selectedUser = allUsers[nextUserIndex];
+
+      // Actualizar el contador en la sesión para la próxima asignación
+      await Session.findByIdAndUpdate(
+        data.sessionId,
+        { 
+          $set: { 
+            'metadata.assignmentCounter': currentCounter + 1,
+            'metadata.lastAssignmentAt': new Date(),
+            'metadata.lastAssignedTo': selectedUser.name
+          } 
+        }
+      );
+
+      advisor = { id: selectedUser._id, name: selectedUser.name };
+      
+      console.log(`🔄 Asignación secuencial: Usuario ${nextUserIndex + 1}/${allUsers.length} - ${selectedUser.name} (Contador: ${currentCounter + 1})`);
     }
 
     // Actualizar el chat con el asesor asignado (o null para desasignar)
@@ -605,6 +664,155 @@ export async function getChatAssignments(req: Request, res: Response): Promise<v
       success: false, 
       message: "Error al obtener asignaciones de chat",
       error: error.message
+    });
+  }
+}
+
+// NUEVO: Endpoint para obtener estadísticas de asignación secuencial por sesión
+export async function getAssignmentStats(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name, sessionId } = req.params;
+    
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Session = getSessionModel(conn);
+    const UserConfig = getUserModel(conn);
+    const Record = getRecordModel(conn);
+
+    // Obtener la sesión con metadata
+    const session = await Session.findById(sessionId).lean();
+    if (!session) {
+      res.status(404).json({ 
+        success: false, 
+        message: "Sesión no encontrada" 
+      });
+      return;
+    }
+
+    // Obtener asesores disponibles para esta sesión
+    const sessionBranchId = session.branch?.branchId ? String(session.branch.branchId) : null;
+    const branchFilter = sessionBranchId
+      ? { role: 'Asesor', 'branch.branchId': sessionBranchId }
+      : { role: 'Asesor', $or: [{ 'branch.branchId': { $exists: false } }, { 'branch.branchId': null }] };
+
+    const availableAdvisors = await UserConfig.find(branchFilter)
+      .sort({ name: 1 })
+      .select('name email')
+      .lean();
+
+    // Obtener estadísticas de asignaciones realizadas
+    const totalAssignments = await Record.countDocuments({
+      tableSlug: 'prospectos',
+      'data.asesor.id': { $exists: true }
+    });
+
+    // Contar asignaciones por asesor
+    const assignmentsByAdvisor = await Record.aggregate([
+      {
+        $match: {
+          tableSlug: 'prospectos',
+          'data.asesor.id': { $exists: true }
+        }
+      },
+      {
+        $group: {
+          _id: '$data.asesor.id',
+          count: { $sum: 1 },
+          advisorName: { $first: '$data.asesor.name' },
+          lastAssignment: { $max: '$data.assignedAt' }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+
+    // Calcular próximo asesor en la secuencia
+    const currentCounter = session.metadata?.assignmentCounter || 0;
+    const nextUserIndex = availableAdvisors.length > 0 ? currentCounter % availableAdvisors.length : 0;
+    const nextAdvisor = availableAdvisors[nextUserIndex] || null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        session: {
+          id: session._id,
+          name: session.name,
+          branch: session.branch || null,
+          assignmentCounter: session.metadata?.assignmentCounter || 0,
+          lastAssignmentAt: session.metadata?.lastAssignmentAt || null,
+          lastAssignedTo: session.metadata?.lastAssignedTo || null
+        },
+        availableAdvisors: availableAdvisors.map((advisor, index) => ({
+          id: advisor._id,
+          name: advisor.name,
+          email: advisor.email,
+          sequencePosition: index + 1,
+          isNext: index === nextUserIndex
+        })),
+        nextAdvisor: nextAdvisor ? {
+          id: nextAdvisor._id,
+          name: nextAdvisor.name,
+          sequencePosition: nextUserIndex + 1
+        } : null,
+        assignmentStats: {
+          totalAssignments,
+          assignmentsByAdvisor
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error getting assignment stats:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error al obtener estadísticas de asignación",
+      error: error.message
+    });
+  }
+}
+
+// NUEVO: Endpoint para reiniciar el contador de asignación secuencial
+export async function resetAssignmentCounter(req: Request, res: Response): Promise<void> {
+  try {
+    const { c_name, sessionId } = req.params;
+    
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Session = getSessionModel(conn);
+
+    const session = await Session.findByIdAndUpdate(
+      sessionId,
+      {
+        $set: {
+          'metadata.assignmentCounter': 0,
+          'metadata.lastAssignmentAt': null,
+          'metadata.lastAssignedTo': null
+        }
+      },
+      { new: true }
+    );
+
+    if (!session) {
+      res.status(404).json({ 
+        success: false, 
+        message: "Sesión no encontrada" 
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Contador de asignación reiniciado",
+      data: {
+        sessionId: session._id,
+        assignmentCounter: 0
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error resetting assignment counter:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error al reiniciar contador de asignación"
     });
   }
 }

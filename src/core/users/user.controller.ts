@@ -6,6 +6,7 @@ import getUserModel, { IUser } from "./user.model";
 import getMinutosControlModel from "./minutosControl.model";
 import getElevenLabsCallModel from "./elevenLabs.model";
 import getCompanyModel from "../../models/company.model";
+import getBranchModel from "../../models/branch.model";
 import { getConnectionByCompanySlug } from "../../config/connectionManager";
 import { getCurrentCompanyContext, requireCompanyContext } from "../auth/companyMiddleware";
 import { hasFeature } from "../../shared/projectManager";
@@ -217,8 +218,37 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     if (email) updateData.email = email;
     if (role) updateData.role = role;
     if (status) updateData.status = status;
-    if (branch) updateData.branch = branch; // NUEVO: Permitir actualizar sucursal
     if (companySlug) updateData.companySlug = companySlug; // NUEVO: Permitir actualizar companySlug
+    
+    // ACTUALIZADO: Validar y procesar sucursal con nuevo modelo independiente
+    if (branch && branch.branchId) {
+      const Branch = getBranchModel(conn);
+      const foundBranch = await Branch.findById(branch.branchId);
+      
+      if (!foundBranch) {
+        console.log('❌ Sucursal no encontrada con ID:', branch.branchId);
+        res.status(400).json({ message: "Sucursal no encontrada" });
+        return;
+      }
+      
+      if (!foundBranch.isActive) {
+        console.log('⚠️ Sucursal inactiva:', foundBranch.name);
+        res.status(400).json({ message: "No se puede asignar una sucursal inactiva" });
+        return;
+      }
+      
+      updateData.branch = {
+        branchId: foundBranch._id,
+        name: foundBranch.name,
+        code: foundBranch.code
+      };
+      console.log('✅ Sucursal validada:', foundBranch.name, `(${foundBranch.code})`);
+    } else if (branch === null) {
+      // Permitir remover la asignación de sucursal
+      updateData.branch = undefined;
+      console.log('🗑️ Removiendo asignación de sucursal');
+    }
+    
     if (password) {
       if (password.length < 10) {
         res.status(400).json({ message: "La contraseña debe tener al menos 10 caracteres" });
@@ -733,28 +763,203 @@ export const getAvailableBranches = async (req: Request, res: Response): Promise
 
     const conn = await getConnectionByCompanySlug(companyContext.slug);
     const Company = getCompanyModel(conn);
+    const Branch = getBranchModel(conn);
 
+    // Buscar la empresa para obtener su ID
     const company = await Company.findOne();
     if (!company) {
       res.status(404).json({ message: "Company not found" });
       return;
     }
 
-    // Filtrar solo sucursales activas
-    const activeBranches = company.branches.filter(branch => branch.isActive);
+    // ACTUALIZADO: Buscar sucursales en la colección independiente
+    const branches = await Branch.find({ 
+      companyId: company._id,
+      isActive: true 
+    })
+    .select('_id name code address phone email isActive manager')
+    .populate('manager.id', 'name email')
+    .sort({ name: 1 });
     
     res.json({ 
-      branches: activeBranches.map(branch => ({
-        id: branch._id,
+      branches: branches.map(branch => ({
+        branchId: branch._id,  // Cambio de 'id' a 'branchId' para consistencia
         name: branch.name,
         code: branch.code,
         address: branch.address,
         phone: branch.phone,
-        isActive: branch.isActive
+        email: branch.email,
+        isActive: branch.isActive,
+        manager: branch.manager
       }))
     });
   } catch (error) {
     console.error('Error getting available branches:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Asignar sucursal a un usuario
+ * POST /api/users/:userId/assign-branch
+ */
+export const assignBranchToUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { branchId } = req.body;
+    
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    if (!branchId) {
+      res.status(400).json({ message: "ID de sucursal requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const User = getUserModel(conn);
+    const Branch = getBranchModel(conn);
+
+    // Verificar que la sucursal existe y está activa
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      res.status(404).json({ message: "Sucursal no encontrada" });
+      return;
+    }
+
+    if (!branch.isActive) {
+      res.status(400).json({ message: "No se puede asignar una sucursal inactiva" });
+      return;
+    }
+
+    // Actualizar el usuario con la nueva sucursal
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        branch: {
+          branchId: branch._id,
+          name: branch.name,
+          code: branch.code
+        }
+      },
+      { new: true, select: '-password' }
+    );
+
+    if (!updatedUser) {
+      res.status(404).json({ message: "Usuario no encontrado" });
+      return;
+    }
+
+    console.log(`✅ Sucursal asignada: ${branch.name} (${branch.code}) -> Usuario: ${updatedUser.name}`);
+    
+    res.json({
+      message: "Sucursal asignada exitosamente",
+      user: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        branch: updatedUser.branch
+      }
+    });
+  } catch (error) {
+    console.error('Error assigning branch to user:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Remover sucursal de un usuario
+ * DELETE /api/users/:userId/remove-branch
+ */
+export const removeBranchFromUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const User = getUserModel(conn);
+
+    // Remover la sucursal del usuario
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $unset: { branch: "" } },
+      { new: true, select: '-password' }
+    );
+
+    if (!updatedUser) {
+      res.status(404).json({ message: "Usuario no encontrado" });
+      return;
+    }
+
+    console.log(`🗑️ Sucursal removida del usuario: ${updatedUser.name}`);
+    
+    res.json({
+      message: "Sucursal removida exitosamente",
+      user: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        branch: null
+      }
+    });
+  } catch (error) {
+    console.error('Error removing branch from user:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Obtener usuarios por sucursal
+ * GET /api/users/by-branch/:branchId
+ */
+export const getUsersByBranch = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { branchId } = req.params;
+    
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const User = getUserModel(conn);
+    const Branch = getBranchModel(conn);
+
+    // Verificar que la sucursal existe
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      res.status(404).json({ message: "Sucursal no encontrada" });
+      return;
+    }
+
+    // Buscar usuarios asignados a esta sucursal
+    const users = await User.find({ 
+      'branch.branchId': branchId,
+      status: { $ne: 'eliminado' }
+    })
+    .select('-password')
+    .sort({ name: 1 });
+
+    res.json({
+      branch: {
+        _id: branch._id,
+        name: branch.name,
+        code: branch.code
+      },
+      users,
+      total: users.length
+    });
+  } catch (error) {
+    console.error('Error getting users by branch:', error);
     res.status(500).json({ message: "Error interno del servidor" });
   }
 }; 

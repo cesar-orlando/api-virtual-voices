@@ -11,7 +11,9 @@ import {
   assignChatToAdvisor,
   getAvailableAdvisors,
   getFilteredChats,
-  getChatAssignments
+  getChatAssignments,
+  getAssignmentStats,
+  resetAssignmentCounter
 } from "../controllers/whatsapp.controller";
 
 const router = Router();
@@ -29,5 +31,7 @@ router.put("/assign-chat/:c_name", assignChatToAdvisor);
 router.get("/advisors/:c_name", getAvailableAdvisors);
 router.get("/chats-filtered/:c_name", getFilteredChats);
 router.get("/chat-assignments/:c_name", getChatAssignments);
+router.get("/assignment-stats/:c_name/:sessionId", getAssignmentStats);
+router.post("/reset-counter/:c_name/:sessionId", resetAssignmentCounter);
 
 export default router;

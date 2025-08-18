@@ -1897,14 +1897,18 @@ export async function getRecordByPhone(req: Request, res: Response) {
         // Handle textQuery (global search)
         if (parsedFilters.textQuery) {
           const textFields = table.fields
-            .filter(field => ['text', 'email', 'number', 'currency'].includes(field.type))
+            .filter(field => ['text', 'email'].includes(field.type))
+            .map(field => field.name);
+
+          const numberFields = table.fields
+            .filter(field => ['number', 'currency'].includes(field.type))
             .map(field => field.name);
             
           if (textFields.length > 0) {
             
             if (isNumberOrConvertible(parsedFilters.textQuery)) {
               // If it's a number, we assume it's a numeric search and convert to string for regex
-              const textSearch = textFields.map(field => ({
+              const numberSearch = numberFields.map(field => ({
                 $expr: {
                   $regexMatch: {
                     input: { $toString: `$data.${field}` },
@@ -1913,7 +1917,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
                   }
                 }
               }));
-              dynamicMatchFilters.push({ $or: textSearch });
+              dynamicMatchFilters.$or = numberSearch;
             } else if (typeof parsedFilters.textQuery === 'string') {
               // If it's a string, we assume it's a text search
               const textSearch = textFields.map(field => ({
@@ -1921,10 +1925,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
               }));
               dynamicMatchFilters.$or = textSearch;
             }
-            const textSearch = textFields.map(field => ({
-              [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(parsedFilters.textQuery)), $options: 'i' }
-            }));
-            dynamicMatchFilters.$or = textSearch;
           }
         }
       } catch (error) {

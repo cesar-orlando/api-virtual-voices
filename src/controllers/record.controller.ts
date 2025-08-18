@@ -1807,26 +1807,111 @@ export async function searchPropiedadesGrupokg(req: Request, res: Response): Pro
 export async function getRecordByPhone(req: Request, res: Response) {
   try {
     const { c_name } = req.params;
-    const { page = 1, limit = 50 } = req.query; // REDUCED DEFAULT LIMIT
+    const { 
+      page = 1, 
+      limit = 50,
+      sortBy = 'updatedAt',
+      sortOrder = 'desc',
+      filters
+    } = req.query; // ADDED FILTER PARAMETERS
     
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
+    const Table = getTableModel(conn);
+
+    // Get table definition for filter processing
+    const table = await Table.findOne({ slug: "prospectos", c_name, isActive: true });
+    if (!table) {
+      return res.status(404).json({ message: "Prospectos table not found" });
+    }
+
+    // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
+    const dynamicMatchFilters: any = {};
     
-    console.log(`⚡ LIGHTNING FAST AGGREGATION for ${c_name} - Page ${page}, Limit ${limit}`);
-    
-    // ⚡ LIGHTNING FAST - EARLY PAGINATION + MINIMAL DATA
+    // Process dynamic filters from JSON string
+    if (filters && typeof filters === 'string') {
+      try {
+        const parsedFilters = JSON.parse(filters);
+        
+        for (const [fieldName, value] of Object.entries(parsedFilters)) {
+          if (value === undefined || value === null || value === '') continue;
+          
+          const fieldDef = table.fields.find((f: any) => f.name === fieldName);
+          if (!fieldDef) continue;
+          
+          // Handle different field types
+          switch (fieldDef.type) {
+            case 'number':
+            case 'currency': {
+              const numVal = Number(value);
+              if (!isNaN(numVal)) {
+                dynamicMatchFilters[`data.${fieldName}`] = numVal;
+              }
+              break;
+            }
+            case 'boolean': {
+              const boolVal = String(value).toLowerCase() === 'true';
+              dynamicMatchFilters[`data.${fieldName}`] = boolVal;
+              break;
+            }
+            case 'date': {
+              if (typeof value === 'object' && value !== null) {
+                const dateRange = value as any;
+                const range: any = {};
+                if (dateRange.$gte) range.$gte = new Date(dateRange.$gte);
+                if (dateRange.$lte) range.$lte = new Date(dateRange.$lte);
+                if (Object.keys(range).length > 0) {
+                  dynamicMatchFilters[`data.${fieldName}`] = range;
+                }
+              } else {
+                const d = new Date(value as any);
+                if (!isNaN(d.getTime())) {
+                  dynamicMatchFilters[`data.${fieldName}`] = d;
+                }
+              }
+              break;
+            }
+            default: {
+              // Text fields: use regex (accent-insensitive)
+              const pattern = buildAccentInsensitivePattern(String(value));
+              dynamicMatchFilters[`data.${fieldName}`] = { $regex: pattern, $options: 'i' };
+              break;
+            }
+          }
+        }
+        
+        // Handle textQuery (global search)
+        if (parsedFilters.textQuery) {
+          const textFields = table.fields
+            .filter(field => ['text', 'email', 'number', 'currency'].includes(field.type))
+            .map(field => field.name);
+            
+          if (textFields.length > 0) {
+            const textSearch = textFields.map(field => ({
+              [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(parsedFilters.textQuery)), $options: 'i' }
+            }));
+            dynamicMatchFilters.$or = textSearch;
+          }
+        }
+      } catch (error) {
+        return res.status(400).json({ message: "Invalid filters format" });
+      }
+    }
+        
+    // ⚡ LIGHTNING FAST - EARLY PAGINATION + MINIMAL DATA + DYNAMIC FILTERS
     const pipeline: any[] = [
-      // Stage 1: Match + pagination FIRST (reduce dataset immediately)
+      // Stage 1: Match + DYNAMIC FILTERS (reduce dataset immediately)
       {
         $match: {
           tableSlug: "prospectos",
-          c_name: c_name
+          c_name: c_name,
+          ...dynamicMatchFilters // ✅ DYNAMIC FILTERS INTEGRATED
         }
       },
       
-      // Stage 2: Sort + pagination EARLY  
+      // Stage 2: Sort + pagination EARLY (with dynamic sorting)
       {
-        $sort: { updatedAt: -1 }
+        $sort: { [sortBy as string]: sortOrder === 'desc' ? -1 : 1 }
       },
       {
         $skip: (Number(page) - 1) * Number(limit)
@@ -1891,7 +1976,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       }
     ];
 
-    console.log(`⚡ Executing LIGHTNING-FAST ${pipeline.length}-stage aggregation (with phone variants)`);
     
     const startTime = Date.now();
     
@@ -1909,7 +1993,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
     
     const recordsWithChats = results.filter(r => r.totalChats > 0).length;
     
-    console.log(`⚡ LIGHTNING AGGREGATION DONE: ${results.length} records, ${recordsWithChats} with chats in ${executionTime}ms`);
 
     res.status(200).json({
       success: true,
@@ -1921,12 +2004,16 @@ export async function getRecordByPhone(req: Request, res: Response) {
         pages: Math.ceil(totalCount / Number(limit))
       },
       performance: {
-        method: "Lightning-Fast MongoDB Aggregation", 
+        method: "Lightning-Fast MongoDB Aggregation + Dynamic Filters", 
         stages: pipeline.length,
         executionTimeMs: executionTime,
         recordsWithChats,
         includesMessages: "all messages included",
         phoneMatching: "name + number + @c.us variants",
+        dynamicFilters: Object.keys(dynamicMatchFilters).length > 0,
+        filtersApplied: Object.keys(dynamicMatchFilters),
+        sortBy: sortBy as string,
+        sortOrder: sortOrder as string,
         earlyPagination: true,
         optimized: true
       },

@@ -8,7 +8,10 @@ import {
   getAllUsersFromAllCompanies,
   updateUser,
   getUserById,
-  getAvailableBranches
+  getAvailableBranches,
+  assignBranchToUser,
+  removeBranchFromUser,
+  getUsersByBranch
 } from "./user.controller";
 import { detectCompanyFromToken } from "../auth/companyMiddleware";
 
@@ -319,7 +322,18 @@ router.put("/:id", detectCompanyFromToken, updateUser);
 // Agregar endpoint para consultar usuario por ID
 router.get("/:id", detectCompanyFromToken, getUserById);
 
+// ===== RUTAS PARA MANEJO DE SUCURSALES EN USUARIOS =====
+
 // Agregar endpoint para obtener sucursales disponibles
 router.get("/branches/available", detectCompanyFromToken, getAvailableBranches);
+
+// Asignar sucursal a usuario
+router.post("/:userId/assign-branch", detectCompanyFromToken, assignBranchToUser);
+
+// Remover sucursal de usuario
+router.delete("/:userId/remove-branch", detectCompanyFromToken, removeBranchFromUser);
+
+// Obtener usuarios por sucursal
+router.get("/by-branch/:branchId", detectCompanyFromToken, getUsersByBranch);
 
 export default router; 

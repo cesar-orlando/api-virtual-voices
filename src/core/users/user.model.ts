@@ -10,11 +10,11 @@ export interface IUser extends Document {
   status: 'active' | 'inactive' | 'eliminado';
   permissions?: string[];
   metadata?: Record<string, any>;
-  // NUEVO: Referencia a sucursal (desde Company)
+  // ACTUALIZADO: Referencia a sucursal usando el nuevo modelo independiente
   branch?: {
-    id: string; // ID de la sucursal dentro del array
-    name: string; // Nombre de la sucursal
-    code: string; // Código de la sucursal
+    branchId: Types.ObjectId; // ID de la sucursal independiente
+    name: string;             // Nombre de la sucursal (desnormalizado para performance)
+    code: string;             // Código de la sucursal (desnormalizado para performance)
   };
   createdAt: Date;
   updatedAt: Date;
@@ -39,9 +39,12 @@ const UserSchema: Schema = new Schema(
     },
     permissions: [{ type: String }],
     metadata: { type: Schema.Types.Mixed },
-    // NUEVO: Campo opcional para sucursal
+    // ACTUALIZADO: Campo para sucursal con referencia al modelo independiente
     branch: {
-      id: { type: String }, // ID del subdocumento branch
+      branchId: { 
+        type: Schema.Types.ObjectId,
+        ref: 'Branch'  // Referencia al modelo Branch independiente
+      },
       name: { type: String },
       code: { type: String }
     }

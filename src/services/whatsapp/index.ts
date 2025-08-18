@@ -284,6 +284,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
         if (!messages || messages.length === 0) return;
         const existingIds = new Set<string>((record.messages || []).map((m: any) => m.msgId));
+        let appended = false;
         for (let idx = 0; idx < messages.length; idx++) {
           const msg = messages[idx];
           try {
@@ -307,9 +308,14 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               respondedBy: msg.fromMe ? 'human' : 'user',
               status
             });
+            appended = true;
           } catch (pushErr) {
             console.warn('No se pudo procesar un mensaje, se continúa...', pushErr);
           }
+        }
+        if (appended) {
+          const ts = (d: any) => d instanceof Date ? d.getTime() : (d ? new Date(d).getTime() : 0);
+          record.messages.sort((a: any, b: any) => ts(a.createdAt) - ts(b.createdAt));
         }
       };
 

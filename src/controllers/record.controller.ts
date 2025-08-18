@@ -377,7 +377,14 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               }));
               orTextFilters.push({ $or: textSearch });
             } else if (typeof value === 'boolean') {
-              orTextFilters.push({ [`data.${fieldName}`]: value });
+              const boolFields = table.fields
+                .filter(field => field.type === 'boolean')
+                .map(field => field.name);
+              
+              const boolSearch = boolFields.map(field => ({
+                [`data.${field}`]: value
+              }));
+              orTextFilters.push({ $or: boolSearch });
             } else if (typeof value === 'string') {
               // If it's a string, we assume it's a text search
               const textSearch = textFields.map(field => ({
@@ -1822,11 +1829,18 @@ export async function getRecordByPhone(req: Request, res: Response) {
     // Get table definition for filter processing
     const table = await Table.findOne({ slug: "prospectos", c_name, isActive: true });
     if (!table) {
-      return res.status(404).json({ message: "Prospectos table not found" });
+      res.status(404).json({ message: "Prospectos table not found" });
+      return;
     }
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
+
+    function isNumberOrConvertible(val: any): boolean {
+      if (typeof val === 'number' && !isNaN(val)) return true;
+      if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) return true;
+      return false;
+    }
     
     // Process dynamic filters from JSON string
     if (filters && typeof filters === 'string') {
@@ -1887,6 +1901,26 @@ export async function getRecordByPhone(req: Request, res: Response) {
             .map(field => field.name);
             
           if (textFields.length > 0) {
+            
+            if (isNumberOrConvertible(parsedFilters.textQuery)) {
+              // If it's a number, we assume it's a numeric search and convert to string for regex
+              const textSearch = textFields.map(field => ({
+                $expr: {
+                  $regexMatch: {
+                    input: { $toString: `$data.${field}` },
+                    regex: String(parsedFilters.textQuery),
+                    options: 'i'
+                  }
+                }
+              }));
+              dynamicMatchFilters.push({ $or: textSearch });
+            } else if (typeof parsedFilters.textQuery === 'string') {
+              // If it's a string, we assume it's a text search
+              const textSearch = textFields.map(field => ({
+                [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(parsedFilters.textQuery)), $options: 'i' }
+              }));
+              dynamicMatchFilters.$or = textSearch;
+            }
             const textSearch = textFields.map(field => ({
               [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(parsedFilters.textQuery)), $options: 'i' }
             }));
@@ -1894,7 +1928,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
           }
         }
       } catch (error) {
-        return res.status(400).json({ message: "Invalid filters format" });
+        res.status(400).json({ message: "Invalid filters format" });
+        return;
       }
     }
         

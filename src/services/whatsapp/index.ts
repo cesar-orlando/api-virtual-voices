@@ -196,14 +196,15 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
             tableSlug: 'prospectos',
             c_name: company,
             createdBy: 'whatsapp-bot',
-            data: {
-              name: name || '',
-              number: num,
-              ia: activateIA === true,
-              asesor: { id: user_id, name: userData?.name },
-              lastmessage: lastMessageData?.lastMessage || '',
-              lastmessagedate: lastMessageData?.lastMessageDate || new Date(),
-            }
+            'data.name': name || '',
+            'data.number': num,
+            'data.ia': activateIA === true,
+            'data.asesor.id': user_id,
+            'data.asesor.name': userData?.name,
+          },
+          $set: {
+            'data.lastmessage': lastMessageData?.lastMessage || '',
+            'data.lastmessagedate': lastMessageData?.lastMessageDate || new Date(),
           }
         },
         { upsert: true, new: false }
@@ -325,45 +326,23 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           for (const chat of chats) {
             if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
 
-            // Upsert atómico del chat (solo actualizar si difiere)
-            const baseFilter: any = { phone: chat.id._serialized, "session.name": sessionName };
-            const setDoc: any = {};
-            const diffOr: any[] = [];
-
-            if (chat.name) {
-              setDoc.name = chat.name;
-              diffOr.push({ name: { $ne: chat.name } });
-            }
-            if (existingSessionDoc?._id) {
-              setDoc["session.id"] = existingSessionDoc._id;
-              diffOr.push({ "session.id": { $ne: existingSessionDoc._id } });
-            }
-            setDoc["session.name"] = sessionName;
-            diffOr.push({ "session.name": { $ne: sessionName } });
-            if ((existingSessionDoc as any)?.user?.id) {
-              setDoc["advisor.id"] = (existingSessionDoc as any).user.id;
-              diffOr.push({ "advisor.id": { $ne: (existingSessionDoc as any).user.id } });
-            }
-            if ((existingSessionDoc as any)?.user?.name) {
-              setDoc["advisor.name"] = (existingSessionDoc as any).user.name;
-              diffOr.push({ "advisor.name": { $ne: (existingSessionDoc as any).user.name } });
-            }
-
-            const updateDoc: any = {
-              $setOnInsert: {
-                tableSlug: "prospectos",
-                phone: chat.id._serialized,
-                messages: []
-              }
-            };
-            const finalFilter = diffOr.length ? { ...baseFilter, $or: diffOr } : baseFilter;
-            if (diffOr.length) {
-              updateDoc.$set = setDoc;
-            }
-
+            // Upsert atómico del chat (filtro estricto para evitar carreras)
             let chatRecord = await WhatsappChat.findOneAndUpdate(
-              finalFilter,
-              updateDoc,
+              { phone: chat.id._serialized, "session.name": sessionName },
+              {
+                $setOnInsert: {
+                  tableSlug: "prospectos",
+                  phone: chat.id._serialized,
+                  messages: []
+                },
+                $set: {
+                  ...(chat.name ? { name: chat.name } : {}),
+                  ...(existingSessionDoc?._id ? { "session.id": existingSessionDoc._id } : {}),
+                  "session.name": sessionName,
+                  ...(existingSessionDoc as any)?.user?.id ? { "advisor.id": (existingSessionDoc as any).user.id } : {},
+                  ...(existingSessionDoc as any)?.user?.name ? { "advisor.name": (existingSessionDoc as any).user.name } : {},
+                } as any
+              },
               { upsert: true, new: true }
             );
 

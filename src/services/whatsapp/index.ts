@@ -40,11 +40,11 @@ const getAuthDir = () => {
   return localPath;
 };
 
-export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId) => {
+export const startWhatsappBot = (sessionName: string, company: string, user_id: Types.ObjectId): Promise<Client> => {
   const clientKey = `${company}:${sessionName}`;
   if (clients[clientKey]) {
     console.log(`Cliente WhatsApp para la sesión '${sessionName}' ya existe.`);
-    return clients[clientKey];
+    return Promise.resolve(clients[clientKey]);
   }
 
   const authDir = getAuthDir();
@@ -105,6 +105,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   });
 
   clients[clientKey] = whatsappClient;
+
+  return new Promise<Client>((resolve, reject) => {
 
   async function cleanUpResources(reason: string) {
     console.log(`🧹 Limpiando recursos para ${clientKey} por: ${reason}`);
@@ -204,7 +206,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
             }
           }
         },
-        { upsert: true, new: false } // new: false returns the pre-existing doc if found, null if inserted
+        { upsert: true, new: false }
       );
       if (!result) {
         console.log(`✅ Prospecto guardado: ${num} con ${lastMessageData.lastMessage}`);
@@ -214,7 +216,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     }
   }
 
-  return new Promise<Client>((resolve, reject) => {
     whatsappClient.on('qr', async (qr) => {
       if (qrSent[clientKey]) {
         delete qrSent[clientKey];
@@ -238,7 +239,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       }
     });
 
-    // Evento cuando el usuario escanea el QR
+  // Evento cuando el usuario escanea el QR
     whatsappClient.on('loading_screen', async (percent, message) => {
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
@@ -273,105 +274,100 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       const fetchLimit = 50;
       const conn = await getDbConnection(company);
       const WhatsappChat = getWhatsappChatModel(conn);
+      const WhatsappSession = getSessionModel(conn);
+      const existingSessionDoc = await WhatsappSession.findOne({ name: sessionName });
 
       const saveMessagesToRecord = (record: any, messages: Message[]) => {
         // Encuentra el índice del último mensaje enviado por mí (outbound)
         const lastOutboundIdx = [...messages].reverse().findIndex(msg => msg.fromMe);
         const lastOutboundAbsIdx = lastOutboundIdx === -1 ? -1 : messages.length - 1 - lastOutboundIdx;
 
-        for (let i = 0; i < messages.length; i++) {
-          const msg = messages[i];
+        if (!messages || messages.length === 0) return;
+        const existingIds = new Set<string>((record.messages || []).map((m: any) => m.msgId));
+        for (let idx = 0; idx < messages.length; idx++) {
+          const msg = messages[idx];
           try {
-            // Validar que el mensaje tenga las propiedades necesarias
-            if (!msg || !msg.id || !msg.id.id) {
-              console.warn('Mensaje inválido encontrado, saltando...');
-              continue;
-            }
+            if (!msg || !msg.id || !msg.id.id) continue;
+            if (existingIds.has(msg.id.id)) continue;
 
-            const alreadyExists = record.messages.some((m: any) => m.msgId === msg.id.id);
-            if (alreadyExists) continue;
-
-            let status: string;
-            if (!msg.fromMe) {
-              // Mensaje recibido
-              if (lastOutboundAbsIdx !== -1 && i < lastOutboundAbsIdx) {
-                status = 'leído'; // Antes de mi último mensaje, lo considero leído
-              } else {
-                status = 'recibido'; // Después de mi último mensaje, solo recibido
-              }
-            } else {
+            let status: 'enviado' | 'recibido' | 'leído';
+            if (msg.fromMe) {
               // Mensaje enviado por mí
               status = msg.ack === 3 ? 'leído' : 'enviado';
+            } else {
+              // Mensaje recibido
+              status = (lastOutboundAbsIdx !== -1 && idx < lastOutboundAbsIdx) ? 'leído' : 'recibido';
             }
 
             record.messages.push({
               msgId: msg.id.id,
-              direction: msg.fromMe ? "outbound" : "inbound",
               body: msg.body || '',
-              respondedBy: msg.fromMe ? "human" : "user",
               createdAt: msg.timestamp ? new Date(msg.timestamp * 1000) : new Date(),
+              direction: msg.fromMe ? 'outbound' : 'inbound',
+              respondedBy: msg.fromMe ? 'human' : 'user',
               status
             });
-          } catch (msgError) {
-            console.warn('Error procesando mensaje individual:', msgError);
-            continue;
+          } catch (pushErr) {
+            console.warn('No se pudo procesar un mensaje, se continúa...', pushErr);
           }
-        }
-
-        try {
-          record.messages.sort(
-            (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          );
-        } catch (sortError) {
-          console.warn('Error ordenando mensajes:', sortError);
         }
       };
 
+      // Importación en background
       (async () => {
         try {
-          const WhatsappSession = getSessionModel(conn);
-          const existingSession = await WhatsappSession.findOne({ name: sessionName });
           for (const chat of chats) {
             if (chat.isGroup || !chat.id._serialized.endsWith('@c.us')) continue;
 
-            let chatRecord = await WhatsappChat.findOne({
-              phone: chat.id._serialized,
-              "session.name": existingSession?.name // Usar el nombre de la sesión
-            });
+            // Upsert atómico del chat (solo actualizar si difiere)
+            const baseFilter: any = { phone: chat.id._serialized, "session.name": sessionName };
+            const setDoc: any = {};
+            const diffOr: any[] = [];
 
-            // Manejo seguro de fetchMessages con retry
+            if (chat.name) {
+              setDoc.name = chat.name;
+              diffOr.push({ name: { $ne: chat.name } });
+            }
+            if (existingSessionDoc?._id) {
+              setDoc["session.id"] = existingSessionDoc._id;
+              diffOr.push({ "session.id": { $ne: existingSessionDoc._id } });
+            }
+            setDoc["session.name"] = sessionName;
+            diffOr.push({ "session.name": { $ne: sessionName } });
+            if ((existingSessionDoc as any)?.user?.id) {
+              setDoc["advisor.id"] = (existingSessionDoc as any).user.id;
+              diffOr.push({ "advisor.id": { $ne: (existingSessionDoc as any).user.id } });
+            }
+            if ((existingSessionDoc as any)?.user?.name) {
+              setDoc["advisor.name"] = (existingSessionDoc as any).user.name;
+              diffOr.push({ "advisor.name": { $ne: (existingSessionDoc as any).user.name } });
+            }
+
+            const updateDoc: any = {
+              $setOnInsert: {
+                tableSlug: "prospectos",
+                phone: chat.id._serialized,
+                messages: []
+              }
+            };
+            const finalFilter = diffOr.length ? { ...baseFilter, $or: diffOr } : baseFilter;
+            if (diffOr.length) {
+              updateDoc.$set = setDoc;
+            }
+
+            let chatRecord = await WhatsappChat.findOneAndUpdate(
+              finalFilter,
+              updateDoc,
+              { upsert: true, new: true }
+            );
+
+            // Obtener mensajes recientes del chat
             let messages: Message[] = [];
             try {
               messages = await chat.fetchMessages({ limit: fetchLimit });
             } catch (fetchError) {
               console.warn(`Error fetching messages for ${chat.id._serialized}:`, fetchError);
-              // Continuar con el siguiente chat si hay error
               continue;
-            }
-
-            if (!chatRecord) {
-              chatRecord = new WhatsappChat({
-                tableSlug: "prospectos",
-                phone: chat.id._serialized,
-                name: chat.name || chat.id._serialized,
-                messages: [],
-                session: {
-                  id: existingSession?.id,
-                  name: existingSession?.name
-                },
-                advisor: {
-                  id: existingSession?.user.id,
-                  name: existingSession?.user.name
-                },
-              });
-            } else {
-              // Si existe pero el ObjectId de la sesión cambió, actualiza el id
-              if (
-                existingSession?.id &&
-                (!chatRecord.session.id || chatRecord.session.id.toString() !== existingSession.id.toString())
-              ) {
-                chatRecord.session.id = existingSession.id;
-              }
             }
 
             try {
@@ -382,16 +378,16 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               continue;
             }
 
-            // NO await: Guardar prospecto si no existe (usa el último mensaje persistido)
+            // Guardar prospecto si no existe usando el último mensaje persistido
             const lastMsg = chatRecord?.messages && chatRecord.messages.length > 0
               ? chatRecord.messages[chatRecord.messages.length - 1]
               : null;
             if (!lastMsg) continue;
             saveProspectIfNotExists(
-              { 
-                lastMessage: lastMsg.body || '', 
-                lastMessageDate: lastMsg.createdAt || new Date() 
-              }, 
+              {
+                lastMessage: lastMsg.body || '',
+                lastMessageDate: lastMsg.createdAt || new Date()
+              },
               company,
               chat.id._serialized,
               chat.name
@@ -399,7 +395,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);
-        } 
+        }
       })(); // Lanzar en background
 
       // Notificar que la sesión está completamente lista DESPUÉS de guardar todo

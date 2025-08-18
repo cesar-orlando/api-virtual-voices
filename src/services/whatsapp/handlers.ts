@@ -1,5 +1,5 @@
 import { Message, Client } from 'whatsapp-web.js';
-import { createNewChatRecord, updateChatRecord } from './chatRecordUtils';
+import { updateChatRecord } from './chatRecordUtils';
 import { getImageFromUrl, handleAudioMessage, handleFileMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
@@ -219,36 +219,46 @@ export async function handleIncomingMessage(message: Message, client: Client, co
 
     const WhatsappChat = getWhatsappChatModel(conn);
 
-    // Verifica si el registro ya existe
+    // Upsert atómico del chat para evitar duplicados por carreras
     const cleanUserPhone = userPhone.replace('@c.us', '');
-    let existingRecord = await WhatsappChat.findOne({
-      $or: [
-        { phone: cleanUserPhone },
-        { phone: `${cleanUserPhone}@c.us` }
-      ],
-      'session.name': sessionName
-    });
+    const SessionModel = getSessionModel(conn);
+    const session = await SessionModel.findOne({ name: sessionName });
+    const existingRecord = await WhatsappChat.findOneAndUpdate(
+      {
+        'session.name': sessionName,
+        $or: [
+          { phone: cleanUserPhone },
+          { phone: `${cleanUserPhone}@c.us` }
+        ]
+      },
+      {
+        $setOnInsert: {
+          tableSlug: 'prospectos',
+          phone: `${cleanUserPhone}@c.us`,
+          messages: []
+        },
+        $set: {
+          ...(session?._id ? { 'session.id': session._id } : {}),
+          ...(session?.name ? { 'session.name': session.name } : {}),
+          ...(session?.user?.id ? { 'advisor.id': session.user.id } : {}),
+          ...(session?.user?.name ? { 'advisor.name': session.user.name } : {}),
+        }
+      },
+      { upsert: true, new: true }
+    );
 
     // --- VALIDACIÓN DE IA EN PROSPECTOS ---
 
     const Record = getRecordModel(conn);
     const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': { $in: [cleanUserPhone, Number(cleanUserPhone)] } });
-    const Session = getSessionModel(conn);
-    const session = await Session.findOne({ name: sessionName });
-
-    // Crea un nuevo chat si no existe
-    if (!existingRecord) {
-      console.log(`📞 No se encontró chat existente para ${userPhone} con [${company}:${sessionName}], creando uno nuevo...`);
-      existingRecord = await createNewChatRecord(WhatsappChat, "prospectos", `${cleanUserPhone}@c.us`, message, session);
-    } else {
-      await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
-      await prospecto?.updateOne({
-        $set: {
-          'data.lastmessage': message.body,
-          'data.lastmessagedate': message.timestamp ? new Date(message.timestamp * 1000) : new Date()
-        }
-      });
-    }
+    // Siempre anexar el mensaje actual de forma idempotente
+    await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
+    await prospecto?.updateOne({
+      $set: {
+        'data.lastmessage': message.body,
+        'data.lastmessagedate': message.timestamp ? new Date(message.timestamp * 1000) : new Date()
+      }
+    });
 
     if (session.status !== 'connected') {
       console.log(`🚫 AI desconectada para ${company}:${session.name}, ignorando mensaje.`);

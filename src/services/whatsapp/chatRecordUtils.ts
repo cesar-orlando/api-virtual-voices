@@ -1,11 +1,7 @@
-import { Connection, Model } from 'mongoose';
-import { generateResponse, openai, preparePrompt } from '../openai';
-import { Message, Client } from 'whatsapp-web.js';
-import { getSessionModel, ISession } from '../../models/session.model';
-import { getWhatsappChatModel, IWhatsappChat } from '../../models/whatsappChat.model';
+import { Model } from 'mongoose';
+import { Message } from 'whatsapp-web.js';
+import { ISession } from '../../models/session.model';
 import { io } from '../../server';
-import getIaConfigModel from '../../models/iaConfig.model';
-import getRecordModel from '../../models/record.model';
 
 // Create a new WhatsApp chat record
 export async function createNewChatRecord(
@@ -72,8 +68,8 @@ export async function updateChatRecord(
       direction: direction,
       body: message.body,
       respondedBy: respondedBy,
-      createdAt: new Date(),
-    };
+      status: direction === 'inbound' ? 'recibido' : 'enviado'
+    } as any;
 
     // Only push if not duplicate
     updatedChat = await WhatsappChat.findOneAndUpdate(

@@ -26,8 +26,10 @@ export async function handleAudioMessage(message: Message, statusText?: string):
   if (statusText) {
     message.body = `Contexto: "${statusText}"\n\nMensaje de voz: ${transcribedText}`;
     console.log(`📝 Contexto agregado al audio de ${message.from}: "${statusText}"`);
+  } else if (typeof message.body === 'string' && message.body.trim().length > 0){
+    message.body = `Mensaje escrito: ${message.body}\n\nMensaje de voz: ${transcribedText}`;
   } else {
-    message.body = transcribedText;
+    message.body = `Mensaje de voz: ${transcribedText}`;
   }
   return message;
 }
@@ -70,9 +72,11 @@ export async function handleImageMessage(message: Message, statusText?: string):
   const imageAnalysis = await analyzeImage(media.data, media.mimetype);
   console.log(`🖼️ Imagen analizada: ${imageAnalysis.description}`);
   if (statusText) {
-    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
+    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\n\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
+  } else if (typeof message.body === 'string' && message.body.trim().length > 0){
+    message.body = `Mensaje escrito: ${message.body}\n\nImagen: ${imageAnalysis.description}\n\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
   } else {
-    message.body = `Imagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
+    message.body = `Imagen: ${imageAnalysis.description}\n\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
   }
   return message;
 }
@@ -117,8 +121,10 @@ export async function handleVideoMessage(message: Message, statusText?: string):
   }
   if (statusText) {
     message.body = `Contexto: "${statusText}"\n\nVideo: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
+  } else if (typeof message.body === 'string' && message.body.trim().length > 0){
+    message.body = `Mensaje escrito: ${message.body}\n\nVideo: ${videoAnalysis.description}\n\nAudio transcrito: ${videoAnalysis.transcribedAudio}\n\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
   } else {
-    message.body = `Video: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
+    message.body = `Video: ${videoAnalysis.description}\n\nAudio transcrito: ${videoAnalysis.transcribedAudio}\n\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
   }
   return message;
 }

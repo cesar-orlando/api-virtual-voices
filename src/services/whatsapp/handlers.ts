@@ -252,7 +252,7 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     const Record = getRecordModel(conn);
     const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': { $in: [cleanUserPhone, Number(cleanUserPhone)] } });
     // Siempre anexar el mensaje actual de forma idempotente
-    await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
+    const latestMessage = await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
     await prospecto?.updateOne({
       $set: {
         'data.lastmessage': message.body,
@@ -270,8 +270,12 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       console.log(`🤖 IA desactivada para ${userPhone}, debe responder un agente.`);
       // Aquí podrías emitir un evento para el agente humano si lo deseas
       return;
-    } else if (message.fromMe) {
-      console.log(`📤 Mensaje enviado por el bot/usuario, no se requiere respuesta`);
+    } else if (!latestMessage) {
+      console.log(`📤 Mensaje enviado por el bot, no se requiere respuesta`);
+      return;
+    } else if (latestMessage.direction === "outbound") {
+      console.log(`📤 Mensaje enviado por empleado, apagando IA`);
+      await prospecto?.updateOne({ $set: { 'data.ia': false } });
       return;
     }
 

@@ -369,8 +369,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               const textSearch = textFields.map(field => ({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: `$data.${field}` },
-                    regex: String(value),
+                    input: { $toString: { $ifNull: [ `$data.${field}`, '' ] } },
+                    regex: `.*${escapeRegExp(String(value))}.*`,
                     options: 'i'
                   }
                 }
@@ -415,8 +415,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               otherFilters.push({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: `$data.${fieldName}` },
-                    regex: String(value),
+                    input: { $toString: { $ifNull: [ `$data.${fieldName}`, '' ] } },
+                    regex: `.*${escapeRegExp(String(value))}.*`,
                     options: 'i'
                   }
                 }
@@ -1911,8 +1911,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
               const numberSearch = numberFields.map(field => ({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: `$data.${field}` },
-                    regex: String(parsedFilters.textQuery),
+                    input: { $toString: { $ifNull: [ `$data.${field}`, '' ] } },
+                    regex: `.*${escapeRegExp(String(parsedFilters.textQuery))}.*`,
                     options: 'i'
                   }
                 }

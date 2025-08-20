@@ -17,6 +17,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
 
     const {
       name,
+      type = "personal",
       tone,
       objective,
       customPrompt,
@@ -28,6 +29,21 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
 
     const IaConfig = getIaConfigModel(conn);
 
+    if (type === 'general') {
+      const existingGeneral = await IaConfig.findOne({ type: 'general' });
+      if (existingGeneral) {
+        res.status(400).json({ message: "Ya existe una configuración de tipo 'general'." });
+        return;
+      }
+    }
+    if (type === 'interno') {
+      const existingInterno = await IaConfig.findOne({ type: 'interno' });
+      if (existingInterno) {
+        res.status(400).json({ message: "Ya existe una configuración de tipo 'interno'." });
+        return;
+      }
+    }
+
     const existing = await IaConfig.findOne({ name });
     if (existing) {
       res.status(400).json({ message: "Ya existe configuración con este nombre." });
@@ -36,6 +52,7 @@ export const createIAConfig = async (req: Request, res: Response): Promise<void>
 
     const newConfig = new IaConfig({
       name,
+      type,
       tone,
       objective,
       customPrompt,
@@ -131,6 +148,24 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
       console.log("Intento de modificación de IaConfig general por un usuario no admin.",user);
       res.status(403).json({ message: "No se puede modificar el IaConfig general." });
       return;
+    }
+
+    if (updates.type === 'general') {
+      // Allow updating the existing 'general' doc, block only if another exists
+      const existingGeneral = await IaConfig.findOne({ type: 'general', _id: { $ne: updates._id } });
+      if (existingGeneral) {
+        res.status(400).json({ message: "Ya existe otra configuración de tipo 'general'." });
+        return;
+      }
+    }
+
+    if (updates.type === 'interno') {
+      // Allow updating the existing 'interno' doc, block only if another exists
+      const existingInterno = await IaConfig.findOne({ type: 'interno', _id: { $ne: updates._id } });
+      if (existingInterno) {
+        res.status(400).json({ message: "Ya existe otra configuración de tipo 'interno'." });
+        return;
+      }
     }
 
     // Si no es general o el usuario es admin, realiza la actualización normalmente

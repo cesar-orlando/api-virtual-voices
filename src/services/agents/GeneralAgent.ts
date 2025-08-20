@@ -2,11 +2,12 @@ import { BaseAgent } from './BaseAgent';
 import { tool } from '@openai/agents';
 import { z } from 'zod';
 import { getConnectionByCompanySlug } from '../../config/connectionManager';
-import getIaConfigModel from '../../models/iaConfig.model';
+import getIaConfigModel, { IIaConfig } from '../../models/iaConfig.model';
 import getToolModel from '../../models/tool.model';
 import { ToolExecutor } from '../toolExecutor';
 import { ITool } from '../../types/tool.types';
 import getRecordModel from '../../models/record.model';
+import getCompanyModel from '../../models/company.model';
 
 export class GeneralAgent extends BaseAgent {
   private customPrompt: string | null = null;
@@ -47,9 +48,21 @@ export class GeneralAgent extends BaseAgent {
       console.log(`🔧 Loading custom prompt for ${this.company}`);
       const conn = await getConnectionByCompanySlug(this.company);
       const IaConfig = getIaConfigModel(conn);
-      
-      // Buscar configuración general de la empresa
-      const config = await IaConfig.findOne({ _id: this.agentContext.iaConfigId });
+      const Company = getCompanyModel(conn);
+      // Fetch internal phones from the single company doc in this tenant DB
+      const company = await Company.findOne({});
+      const internalPhones = Array.isArray(company?.internalPhones) ? company.internalPhones : [];
+      const normalize = (p: any) => (typeof p === 'string' ? p.replace('@c.us', '').trim() : '');
+      const phoneUserStr = normalize(this.agentContext.phoneUser);
+      const isInternalPhone = phoneUserStr && internalPhones.some(p => normalize(p) === phoneUserStr);
+
+      let config: IIaConfig
+
+      if (isInternalPhone){
+        config = await IaConfig.findOne({ type: 'interno' });
+      } else {
+        config = await IaConfig.findOne({ _id: this.agentContext.iaConfigId });
+      }
       
       if (config && config.customPrompt) {
         this.customPrompt = config.customPrompt;

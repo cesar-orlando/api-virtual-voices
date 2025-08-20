@@ -26,8 +26,10 @@ export async function handleAudioMessage(message: Message, statusText?: string):
   if (statusText) {
     message.body = `Contexto: "${statusText}"\n\nMensaje de voz: ${transcribedText}`;
     console.log(`📝 Contexto agregado al audio de ${message.from}: "${statusText}"`);
+  } else if (typeof message.body === 'string' && message.body.trim().length > 0){
+    message.body = `Mensaje escrito: ${message.body}\n\nMensaje de voz: ${transcribedText}`;
   } else {
-    message.body = transcribedText;
+    message.body = `Mensaje de voz: ${transcribedText}`;
   }
   return message;
 }
@@ -70,9 +72,11 @@ export async function handleImageMessage(message: Message, statusText?: string):
   const imageAnalysis = await analyzeImage(media.data, media.mimetype);
   console.log(`🖼️ Imagen analizada: ${imageAnalysis.description}`);
   if (statusText) {
-    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
+    message.body = `Contexto: "${statusText}"\n\nImagen: ${imageAnalysis.description}\n\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
+  } else if (typeof message.body === 'string' && message.body.trim().length > 0){
+    message.body = `Mensaje escrito: ${message.body}\n\nImagen: ${imageAnalysis.description}\n\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
   } else {
-    message.body = `Imagen: ${imageAnalysis.description}\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
+    message.body = `Imagen: ${imageAnalysis.description}\n\nTexto en imagen: ${imageAnalysis.extractedText}\n${s3Url}`;
   }
   return message;
 }
@@ -89,11 +93,25 @@ export async function handleVideoMessage(message: Message, statusText?: string):
     console.warn('⚠️ No se pudo descargar el archivo de video o está incompleto');
     return message;
   }
+
   const extension = media.mimetype.split('/')[1] || 'mp4';
   const filePath = `${videoDir}/${message.id.id}.${extension}`;
   const binaryData = Buffer.from(media.data, 'base64');
   fs.writeFileSync(filePath, binaryData);
   const videoAnalysis = await analyzeVideo(filePath, media.mimetype);
+
+  // Subir a AWS S3
+  const bucketName = process.env.AWS_BUCKET_NAME;
+  const s3Key = `whatsapp-videos/${message.id.id}.${extension}`;
+  const uploadParams = {
+    Bucket: bucketName,
+    Key: s3Key,
+    Body: fs.createReadStream(filePath),
+    ContentType: media.mimetype,
+  };
+  await s3.send(new PutObjectCommand(uploadParams));
+  const s3Url = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+
   // Elimina el archivo después del análisis
   try {
     fs.unlinkSync(filePath);
@@ -102,9 +120,11 @@ export async function handleVideoMessage(message: Message, statusText?: string):
     console.warn(`⚠️  No se pudo eliminar el archivo de video: ${filePath}`, deleteError);
   }
   if (statusText) {
-    message.body = `Contexto: "${statusText}"\n\nVideo: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}`;
+    message.body = `Contexto: "${statusText}"\n\nVideo: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
+  } else if (typeof message.body === 'string' && message.body.trim().length > 0){
+    message.body = `Mensaje escrito: ${message.body}\n\nVideo: ${videoAnalysis.description}\n\nAudio transcrito: ${videoAnalysis.transcribedAudio}\n\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
   } else {
-    message.body = `Video: ${videoAnalysis.description}\nAudio transcrito: ${videoAnalysis.transcribedAudio}\nTexto en video: ${videoAnalysis.extractedText}`;
+    message.body = `Video: ${videoAnalysis.description}\n\nAudio transcrito: ${videoAnalysis.transcribedAudio}\n\nTexto en video: ${videoAnalysis.extractedText}\n${s3Url}`;
   }
   return message;
 }

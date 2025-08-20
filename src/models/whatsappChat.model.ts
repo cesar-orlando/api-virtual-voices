@@ -47,6 +47,12 @@ const WhatsappChatSchema: Schema = new Schema(
   }
 );
 
+// Enforce uniqueness per phone and session.name (partial to ignore legacy nulls)
+WhatsappChatSchema.index(
+  { phone: 1, 'session.name': 1 },
+  { unique: true, partialFilterExpression: { phone: { $exists: true }, 'session.name': { $exists: true } } }
+);
+
 export function getWhatsappChatModel(conn: Connection): Model<IWhatsappChat> {
   return conn.model<IWhatsappChat>("Chat", WhatsappChatSchema);
 }

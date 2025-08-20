@@ -5,7 +5,7 @@ export default function advancedRecordFilter(records: any[], query: string, para
   if (!Array.isArray(records) || !query) return records;
   // Usar fuzzy search sobre todos los datos y el mensaje completo
   const fuzzyResults = applyFuzzySearchToToolResult(records, query);
-  const pageSize = 3;
+  const pageSize = 5;
   const page = parameters.page && Number(parameters.page) > 0 ? Number(parameters.page) : 1;
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize;
@@ -14,6 +14,6 @@ export default function advancedRecordFilter(records: any[], query: string, para
   // Si no hay coincidencias, devolver sugerencias con mensaje
   return {
     message: 'No encontramos propiedades exactas para tu búsqueda, pero aquí tienes algunas opciones que podrían interesarte:',
-    sugerencias: records.slice(0, 3)
+    sugerencias: records.slice(0, 5)
   };
 }

@@ -1,4 +1,5 @@
 import { Schema, Document, Connection, Model, Types } from "mongoose";
+import auditTrailPlugin from "../plugins/auditTrail";
 
 export interface IIaConfig extends Document {
   name: string;
@@ -40,6 +41,21 @@ const IaConfigSchema: Schema = new Schema(
   },
   { timestamps: true }
 );
+
+IaConfigSchema.plugin(auditTrailPlugin as any, {
+  rootPaths: [""], // watch whole doc
+  includePaths: [
+    'name',
+    'type',
+    'objective',
+    'customPrompt',
+    'welcomeMessage',
+    'tone'
+  ],
+  excludePaths: [ '__v', 'createdAt', 'updatedAt' ],
+  modelName: "IAConfig",
+});
+
 
 export default function getIaConfigModel(conn: Connection): Model<IIaConfig>{
   return conn.model<IIaConfig>("IaConfig", IaConfigSchema);

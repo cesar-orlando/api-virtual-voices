@@ -12,6 +12,15 @@ import { MessagingAgentService } from '../agents/MessagingAgentService';
 import { Assistant } from '../agents/Assistant';
 import * as fs from 'node:fs';
 
+// Track messages sent by our bot so we don't misclassify them as human outbound
+const botSentMessageIds = new Set<string>();
+function rememberBotSentMessage(id?: string) {
+  if (!id) return;
+  botSentMessageIds.add(id);
+  // Auto-expire after 5 minutes to avoid unbounded growth
+  setTimeout(() => botSentMessageIds.delete(id), 5 * 60 * 1000).unref?.();
+}
+
 // Initialize the MessagingAgent service
 const messagingAgentService = new MessagingAgentService();
 
@@ -252,13 +261,30 @@ export async function handleIncomingMessage(message: Message, client: Client, co
     const Record = getRecordModel(conn);
     const prospecto = await Record.findOne({ tableSlug: 'prospectos', c_name: company, 'data.number': { $in: [cleanUserPhone, Number(cleanUserPhone)] } });
     // Siempre anexar el mensaje actual de forma idempotente
-    const latestMessage = await updateChatRecord(company, existingRecord, message.fromMe ? "outbound" : "inbound", message, "human");
+    // If this message was sent by our bot (fromMe and ID is known), skip human classification here;
+    // it'll be recorded explicitly as outbound-api by sendCustomResponse.
+    let latestMessage;
+    if (message.fromMe && botSentMessageIds.has(message.id?.id)) {
+      latestMessage = undefined;
+    } else {
+      latestMessage = await updateChatRecord(
+        company,
+        existingRecord,
+        message.fromMe ? "outbound" : "inbound",
+        message,
+        "human"
+      );
+    }
+    let auditContext
+    auditContext = {
+      skipAudit: true,
+    };
     await prospecto?.updateOne({
       $set: {
         'data.lastmessage': message.body,
         'data.lastmessagedate': message.timestamp ? new Date(message.timestamp * 1000) : new Date()
       }
-    });
+    }).setOptions({ context: 'query', auditContext, $locals: { auditContext } } as any);
 
     if (session.status !== 'connected') {
       console.log(`🚫 AI desconectada para ${company}:${session.name}, ignorando mensaje.`);
@@ -275,7 +301,12 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       return;
     } else if (latestMessage.direction === "outbound") {
       console.log(`📤 Mensaje enviado por empleado, apagando IA`);
-      await prospecto?.updateOne({ $set: { 'data.ia': false } });
+      auditContext = {
+        _updatedByUser: { id: 'Bot', name: session?.IA.name },
+        _updatedBy: session?.IA.name,
+        _auditSource: 'Intervención Whatsapp',
+      }
+      await prospecto?.updateOne({ $set: { 'data.ia': false } }).setOptions({ context: 'query', auditContext, $locals: { auditContext } } as any);
       return;
     }
 
@@ -476,6 +507,8 @@ async function sendCustomResponse(
         const result = await getImageFromUrl({ imageUrls: foundImages[i], i });
         // Enviar imagen desde archivo local
         let sentMessage = await client.sendMessage(message.from, result.media, { caption: i === 0 ? textOnly : undefined });
+        // Mark as bot-sent before persisting so message_create won't be misclassified
+        rememberBotSentMessage(sentMessage.id?.id);
         sentMessage.body = (sentMessage.body || '') + '\n' + foundImages[i];
         await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
         fs.unlink(result.filePath, (err) => {
@@ -489,6 +522,8 @@ async function sendCustomResponse(
     } else {
       // Send the message as text only
       const sentMessage = await client.sendMessage(message.from, response);
+      // Mark as bot-sent before persisting
+      rememberBotSentMessage(sentMessage.id?.id);
       await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
     }
   } catch (error) {

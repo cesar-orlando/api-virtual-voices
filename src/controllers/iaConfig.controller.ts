@@ -9,6 +9,48 @@ import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 import { Agent } from "@openai/agents";
 import { AgentManager } from "../services/agents/AgentManager";
+import getAuditLogModel from "../models/auditLog.model";
+import { attachHistoryToData } from "../plugins/auditTrail";
+
+// Helpers to only update changed fields
+function getAt(obj: any, path: string): any {
+  if (!obj) return undefined;
+  return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+}
+
+function isObjectIdLike(v: any): boolean {
+  return !!(v && typeof v === 'object' && (typeof v.toHexString === 'function' || v._bsontype === 'ObjectId' || (v.constructor && v.constructor.name === 'ObjectId')));
+}
+
+function normalizeLeaf(v: any): any {
+  if (v instanceof Date) return v.toISOString();
+  if (isObjectIdLike(v)) return v.toString();
+  if (Buffer.isBuffer(v)) return `0x${v.toString('hex')}`;
+  return v;
+}
+
+function flattenObject(obj: any, prefix = '', forCompare = false, out: Record<string, any> = {}): Record<string, any> {
+  if (obj == null || typeof obj !== 'object' || obj instanceof Date) {
+    const val = forCompare ? normalizeLeaf(obj) : obj;
+    if (prefix) out[prefix] = val;
+    return out;
+  }
+  if (Array.isArray(obj)) {
+    // Treat arrays as scalars for updates (set whole array)
+    const val = forCompare ? JSON.stringify(obj.map(normalizeLeaf)) : obj;
+    if (prefix) out[prefix] = val;
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !(v instanceof Date) && !Buffer.isBuffer(v) && !isObjectIdLike(v) && !Array.isArray(v)) {
+      flattenObject(v, path, forCompare, out);
+    } else {
+      out[path] = forCompare ? normalizeLeaf(v) : v;
+    }
+  }
+  return out;
+}
 
 // 🔥 Crear configuración inicial si no existe
 export const createIAConfig = async (req: Request, res: Response): Promise<void> => {
@@ -94,6 +136,8 @@ export const getGeneralIAConfig = async (req: Request, res: Response): Promise<v
 export const getAllIAConfigs = async (req: Request, res: Response): Promise<void> => {
   try {
     const { c_name, user_id } = req.params;
+    const includeHistory = String((req.query.includeHistory as any) || '').toLowerCase() === 'true';
+    const historyLimit = Number(req.query.historyLimit || 5);
 
     const conn = await getConnectionByCompanySlug(c_name);
 
@@ -116,6 +160,10 @@ export const getAllIAConfigs = async (req: Request, res: Response): Promise<void
       configs = general_configs.concat(user_configs);
     } else {
       configs = await IaConfig.find({});
+    }
+
+    if (includeHistory) {
+      configs = await attachHistoryToData(conn, configs, 'IAConfig', Number.isFinite(historyLimit) ? historyLimit : 5);
     }
 
     res.json(configs);
@@ -168,12 +216,49 @@ export const updateIAConfig = async (req: Request, res: Response): Promise<void>
       }
     }
 
+    const { _id, ...bodyNoId } = updates || {};
+    const flatNew = flattenObject(bodyNoId, '', false);
+    const flatNewCmp = flattenObject(bodyNoId, '', true);
+    const flatCurCmp = flattenObject(docToUpdate, '', true);
+    const $set: Record<string, any> = {};
+    const $unset: Record<string, any> = {};
+    for (const [path, valCmp] of Object.entries(flatNewCmp)) {
+      const rawVal = flatNew[path];
+      if (rawVal === null) {
+        $unset[path] = 1;
+        continue;
+      }
+      const curVal = getAt(flatCurCmp, path) ?? flatCurCmp[path];
+      if (JSON.stringify(curVal) !== JSON.stringify(valCmp)) {
+        $set[path] = rawVal;
+      }
+    }
+
+    const updateOps: any = {};
+    if (Object.keys($set).length) updateOps.$set = $set;
+    if (Object.keys($unset).length) updateOps.$unset = $unset;
+
+    if (!Object.keys(updateOps).length) {
+      res.status(200).json({ message: "No changes detected", session: docToUpdate });
+      return;
+    }
+
+    // Contexto para plugin de auditoría: pásalo en las opciones de la query
+    const auditContext = {
+      _updatedByUser: { id: user_id, name: user?.name },
+      _updatedBy: user_id,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    };
+
     // Si no es general o el usuario es admin, realiza la actualización normalmente
     const updatedConfig = await IaConfig.findOneAndUpdate(
       { _id: updates._id }, 
       updates, 
-      { new: true, sort: { createdAt: 1 } }
-    );
+      { new: true, sort: { createdAt: 1 }, context: 'query' } as any
+    ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
     if (!updatedConfig) {
       res.status(404).json({ message: "Configuración no encontrada." });

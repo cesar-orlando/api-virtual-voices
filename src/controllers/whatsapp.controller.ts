@@ -355,7 +355,7 @@ export async function enviarFichaTecnica(req: Request, res: Response): Promise<a
 export async function assignChatToAdvisor(req: Request, res: Response): Promise<void> {
   try {
     const { c_name } = req.params;
-    const { data } = req.body; // { sessionId, number, advisorId?, isVisibleToAll? }
+    const { data, updatedBy } = req.body; // { sessionId, number, advisorId?, isVisibleToAll? }
 
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
@@ -449,6 +449,15 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
       console.log(`🔄 Asignación secuencial: Usuario ${nextUserIndex + 1}/${allUsers.length} - ${selectedUser.name} (Contador: ${currentCounter + 1})`);
     }
 
+    const auditContext = {
+      _updatedByUser: { id: 'Bot', name: updatedBy },
+      _updatedBy: updatedBy,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    };
+
     // Actualizar el chat con el asesor asignado (o null para desasignar)
     const chat = await Record.findOneAndUpdate(
       { "data.number": Number(data.number) },
@@ -460,8 +469,8 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
           'data.assignedBy': 'system'
         }
       },
-      { new: true }
-    ).lean();
+      { new: true, context: 'query' } as any
+    ).setOptions({ auditContext, $locals: { auditContext } } as any).lean();
 
     if (!chat) {
       res.status(404).json({ 

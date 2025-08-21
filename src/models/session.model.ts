@@ -1,4 +1,5 @@
 import { Schema, Document, Connection, Model, Types } from "mongoose";
+import auditTrailPlugin from "../plugins/auditTrail";
 
 // Define la interfaz para la tabla
 export interface ISession extends Document {
@@ -67,6 +68,20 @@ const SessionSchema: Schema = new Schema(
     timestamps: true, // Agrega createdAt y updatedAt automáticamente
   }
 );
+
+SessionSchema.plugin(auditTrailPlugin as any, {
+  rootPaths: [""], // watch whole doc
+  includePaths: [
+    'status',
+    'IA.name',
+    'user.name',
+    'branch.name',
+    'phone',
+    'name'
+  ],
+  excludePaths: [ '__v', 'createdAt', 'updatedAt', 'metadata' ],
+  modelName: "Session",
+});
 
 // Exporta el modelo
 export function getSessionModel(conn: Connection): Model<ISession>{

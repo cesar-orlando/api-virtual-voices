@@ -188,6 +188,10 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
       const userData = await User.findOne({ _id: user_id });
 
+      const auditContext = {
+        skipAudit: true,
+      };
+
       // Atomic upsert: only insert if not exists
       const result = await Record.findOneAndUpdate(
         { tableSlug: 'prospectos', c_name: company, 'data.number': num },
@@ -208,8 +212,9 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
             'data.lastmessagedate': lastMessageData?.lastMessageDate || new Date(),
           }
         },
-        { upsert: true, new: false, timestamps: { updatedAt: false } }
-      );
+        { upsert: true, new: false, timestamps: { updatedAt: false }, context: 'query' } as any
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
+
       if (!result) {
         console.log(`✅ Prospecto guardado: ${num} con ${lastMessageData.lastMessage}`);
       }

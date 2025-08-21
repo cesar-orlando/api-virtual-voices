@@ -1,8 +1,12 @@
 import { Request, Response } from "express";
+import { Types } from "mongoose";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import getTableModel from "../models/table.model";
 import getRecordModel from "../models/record.model";
 import { IMPORT_CONFIG, validateImportSize, generateImportReport } from "../config/importConfig";
+import getUserModel from "../core/users/user.model";
+import getAuditLogModel from "../models/auditLog.model";
+import { attachHistoryToData } from "../plugins/auditTrail";
 
 // Accent-insensitive utilities
 // - buildAccentInsensitivePattern: builds a regex pattern string that matches both accented and unaccented variants
@@ -55,8 +59,30 @@ function normalizeForCompare(s: unknown): string {
     .toLowerCase();
 }
 
+// Normalize Mongo Extended JSON recursively: {$oid}, {$date}
+function normalizeExtendedJson(value: any): any {
+  if (value == null) return value;
+  if (Array.isArray(value)) return value.map(normalizeExtendedJson);
+  if (typeof value === 'object') {
+    if (Object.prototype.hasOwnProperty.call(value, '$oid') && typeof (value as any).$oid === 'string') {
+      const oid = (value as any).$oid;
+      return Types.ObjectId.isValid(oid) ? new Types.ObjectId(oid) : oid;
+    }
+    if (Object.prototype.hasOwnProperty.call(value, '$date')) {
+      const d = (value as any).$date;
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? d : dt;
+    }
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) out[k] = normalizeExtendedJson(v);
+    return out;
+  }
+  return value;
+}
+
 // Función para validar el valor de un campo según su tipo
-const validateFieldValue = (value: any, field: any): any => {
+const validateFieldValue = (rawValue: any, field: any): any => {
+  const value = normalizeExtendedJson(rawValue);
   if (value === undefined || value === null) {
     return field.defaultValue !== undefined ? field.defaultValue : null;
   }
@@ -134,6 +160,14 @@ const validateFieldValue = (value: any, field: any): any => {
     case 'file':
       // Para archivos, asumimos que ya viene procesado
       return value;
+
+    case 'object':
+    case 'json': {
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`Campo '${field.label}' debe ser un objeto`);
+      }
+      return value;
+    }
 
     default:
       return value;
@@ -242,11 +276,13 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     limit = 100,
     sortBy = 'createdAt',
     sortOrder = 'desc',
-    filters
+    filters,
+    includeHistory,
+    historyLimit
   } = req.query;
 
   try {
-    const allowedParams = ['page', 'limit', 'sortBy', 'sortOrder', 'filters'];
+    const allowedParams = ['page', 'limit', 'sortBy', 'sortOrder', 'filters','includeHistory','historyLimit'];
     const extraFilters = Object.keys(req.query).filter(key => !allowedParams.includes(key));
 
     if (extraFilters.length > 0) {
@@ -369,8 +405,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               const textSearch = textFields.map(field => ({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: `$data.${field}` },
-                    regex: String(value),
+                    input: { $toString: { $ifNull: [ `$data.${field}`, '' ] } },
+                    regex: `.*${escapeRegExp(String(value))}.*`,
                     options: 'i'
                   }
                 }
@@ -415,8 +451,8 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               otherFilters.push({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: `$data.${fieldName}` },
-                    regex: String(value),
+                    input: { $toString: { $ifNull: [ `$data.${fieldName}`, '' ] } },
+                    regex: `.*${escapeRegExp(String(value))}.*`,
                     options: 'i'
                   }
                 }
@@ -553,8 +589,16 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       }
     }
 
+    // Optionally enrich with changeHistory from auditlogs (Option A)
+    let finalRecords: any[] = scoredRecords as any[];
+    const withHistory = String(includeHistory || 'false').toLowerCase() === 'true';
+    const historyCap = Math.min(Number(historyLimit) || 10, 200);
+    if (withHistory && finalRecords.length > 0) {
+      finalRecords = await attachHistoryToData(conn, finalRecords, 'Record', historyCap);
+    }
+
     res.json({
-      records: scoredRecords,
+      records: finalRecords,
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -742,30 +786,115 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
       return;
     }
 
-    // Combinar datos existentes con nuevos datos para actualización parcial
-    const combinedData = { ...existingRecord.data, ...dataWithoutTableSlug };
-
-    // Validar datos combinados contra la estructura de tabla
-    let validatedData: Record<string, any>;
-    try {
-      validatedData = transformAndValidateData(combinedData, table);
-    } catch (error) {
-      res.status(400).json({ 
-        message: "Data validation failed", 
-        error: error instanceof Error ? error.message : "Unknown validation error"
-      });
+    // Validación parcial: validar únicamente los campos provistos
+    const updatableFieldNames = new Set<string>(table.fields.map((f: any) => f.name));
+    const partialValidated: Record<string, any> = {};
+    const partialErrors: string[] = [];
+    for (const [key, rawVal] of Object.entries(dataWithoutTableSlug)) {
+      if (!updatableFieldNames.has(key)) continue; // ignorar campos no definidos en la tabla
+      let fieldDef = table.fields.find((f: any) => f.name === key);
+      try {
+        partialValidated[key] = validateFieldValue(rawVal, fieldDef);
+      } catch (e: any) {
+        partialErrors.push(`${e?.message} for field '${key}' with value '${rawVal}'` || `Invalid value for field '${key}'`);
+      }
+    }
+    if (partialErrors.length > 0) {
+      res.status(400).json({ message: "Data validation failed", errors: partialErrors });
       return;
     }
 
-    // Actualizar el registro
-    existingRecord.data = validatedData;
+    const User = getUserModel(conn);
+    // Resolve updatedBy flexibly to avoid ObjectId cast errors
+    let user: any = null;
+    let userId: any = undefined;
+    let userName: string | undefined = undefined;
+
+    try {
+      // Support Extended JSON ({ $oid })
+      const updatedByObjId =
+        (typeof updatedBy === 'object' && updatedBy && '$oid' in updatedBy && Types.ObjectId.isValid((updatedBy as any).$oid))
+          ? new Types.ObjectId((updatedBy as any).$oid)
+          : (typeof updatedBy === 'string' && Types.ObjectId.isValid(updatedBy))
+            ? new Types.ObjectId(updatedBy)
+            : null;
+
+      if (updatedByObjId) {
+        user = await User.findById(updatedByObjId);
+      } else if (typeof updatedBy === 'string') {
+        // Try by email, then by name; do NOT query by _id to avoid cast errors
+        if (!user && updatedBy.includes('@')) {
+          user = await User.findOne({ email: updatedBy });
+        }
+        if (!user) {
+          user = await User.findOne({ name: updatedBy });
+        }
+      }
+    } catch (_) {
+      // Swallow lookup errors; we'll fall back to string actor
+    }
+
+    if (user) {
+      userId = user._id;
+      userName = user.name;
+    } else if (data?.sessionId) {
+      // Bot-driven update
+      userId = 'Bot';
+      userName = typeof updatedBy === 'string' ? updatedBy : undefined;
+    } else if (typeof updatedBy === 'string') {
+      // Fallback: treat the string as actor id/name (e.g., "SophIA")
+      userId = updatedBy;
+      userName = updatedBy;
+    }
+
+    // Actualizar el registro parcialmente
+    const oldData = { ...(existingRecord.data || {}) };
+
+    // console.log('Partial update diff:', { oldKeys: Object.keys(oldData), newKeys: Object.keys(partialValidated) });
+
+    // Build change entries solo para los campos enviados
+    const fields = new Set<string>(Object.keys(partialValidated));
+    const changes: Array<{
+      user: { id?: any; name?: string };
+      field: string;
+      oldValue: any;
+      newValue: any;
+      changedAt: Date;
+    }> = [];
+
+    for (const field of fields) {
+      const before = oldData[field];
+      const after = partialValidated[field];
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        changes.push({
+          user: { id: userId, name: userName },
+          field,
+          oldValue: before,
+          newValue: after,
+          changedAt: new Date(),
+        });
+    // Aplicar el cambio sin reemplazar todo el objeto data
+        existingRecord.data[field] = after;
+      }
+    }
+
+    // Mixed type (Schema.Types.Mixed) requires explicit marking when mutating nested keys
+    if (changes.length) existingRecord.markModified('data');
+
+    // No reemplazar existingRecord.data completo; ya aplicamos cambios puntuales arriba
     existingRecord.updatedBy = updatedBy;
-    
+
+    // Contexto para plugin de auditoría
+    (existingRecord as any)._updatedByUser = { id: userId, name: userName };
+    (existingRecord as any)._updatedBy = userId;
+    (existingRecord as any)._auditSource = 'API';
+    (existingRecord as any)._requestId = (req.headers['x-request-id'] as string) || undefined;
+
     // Si el tableSlug cambió, actualizarlo también
     if (isTableSlugChanged) {
       existingRecord.tableSlug = newTableSlug;
     }
-    
+
     await existingRecord.save();
 
     res.status(200).json({ 
@@ -780,6 +909,7 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
       previousTableSlug: isTableSlugChanged ? currentTableSlug : undefined
     });
   } catch (error) {
+    console.log("Error updating dynamic record:", error);
     res.status(500).json({ message: "Error updating dynamic record", error });
   }
 };
@@ -1911,8 +2041,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
               const numberSearch = numberFields.map(field => ({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: `$data.${field}` },
-                    regex: String(parsedFilters.textQuery),
+                    input: { $toString: { $ifNull: [ `$data.${field}`, '' ] } },
+                    regex: `.*${escapeRegExp(String(parsedFilters.textQuery))}.*`,
                     options: 'i'
                   }
                 }

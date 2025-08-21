@@ -7,7 +7,7 @@ export interface IUser extends Document {
   password: string;
   role: 'SuperAdmin' | 'Administrador' | 'Gerente' | 'Marketing' | 'Asesor' | 'Asistente';
   companySlug?: string;
-  status: 'active' | 'inactive' | 'eliminado';
+  status: string;
   permissions?: string[];
   metadata?: Record<string, any>;
   // ACTUALIZADO: Referencia a sucursal usando el nuevo modelo independiente
@@ -34,7 +34,6 @@ const UserSchema: Schema = new Schema(
     companySlug: { type: String, required: false },
     status: {
       type: String,
-      enum: ['active', 'inactive', 'eliminado'],
       default: 'active'
     },
     permissions: [{ type: String }],

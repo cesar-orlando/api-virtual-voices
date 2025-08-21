@@ -410,7 +410,7 @@ export abstract class BaseAgent {
       .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U')
       .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
       .replace(/¿/g, '').replace(/¡/g, '') // Remove Spanish punctuation
-      .substring(0, 150) // Limit length
+      .substring(0, 100) // Limit length
       .trim();
   }
 

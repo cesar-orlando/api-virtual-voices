@@ -9,6 +9,48 @@ import getUserModel from "../core/users/user.model";
 import fs from "fs";
 import path from "path";
 import { loadRecentFacebookMessages } from "../services/meta/messenger";
+import getAuditLogModel from "../models/auditLog.model";
+import { attachHistoryToData } from "../plugins/auditTrail";
+
+// Helpers to only update changed fields
+function getAt(obj: any, path: string): any {
+  if (!obj) return undefined;
+  return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+}
+
+function isObjectIdLike(v: any): boolean {
+  return !!(v && typeof v === 'object' && (typeof v.toHexString === 'function' || v._bsontype === 'ObjectId' || (v.constructor && v.constructor.name === 'ObjectId')));
+}
+
+function normalizeLeaf(v: any): any {
+  if (v instanceof Date) return v.toISOString();
+  if (isObjectIdLike(v)) return v.toString();
+  if (Buffer.isBuffer(v)) return `0x${v.toString('hex')}`;
+  return v;
+}
+
+function flattenObject(obj: any, prefix = '', forCompare = false, out: Record<string, any> = {}): Record<string, any> {
+  if (obj == null || typeof obj !== 'object' || obj instanceof Date) {
+    const val = forCompare ? normalizeLeaf(obj) : obj;
+    if (prefix) out[prefix] = val;
+    return out;
+  }
+  if (Array.isArray(obj)) {
+    // Treat arrays as scalars for updates (set whole array)
+    const val = forCompare ? JSON.stringify(obj.map(normalizeLeaf)) : obj;
+    if (prefix) out[prefix] = val;
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !(v instanceof Date) && !Buffer.isBuffer(v) && !isObjectIdLike(v) && !Array.isArray(v)) {
+      flattenObject(v, path, forCompare, out);
+    } else {
+      out[path] = forCompare ? normalizeLeaf(v) : v;
+    }
+  }
+  return out;
+}
 
 export const createFacebookSession = async (req: Request, res: Response) => {
     try {
@@ -89,7 +131,7 @@ export const updateFacebookSession = async (req: Request, res: Response) => {
         const { c_name } = req.params;
         const updates = req.body;
         const conn = await getConnectionByCompanySlug(c_name);
-        const FacebookSession = getSessionModel(conn);
+  const FacebookSession = getSessionModel(conn);
 
         // NUEVO: Manejar actualización de branch
         if (updates.branch) {
@@ -117,11 +159,72 @@ export const updateFacebookSession = async (req: Request, res: Response) => {
             }
         }
 
-        const session = await FacebookSession.findOneAndUpdate(
-            { _id: updates._id, platform: 'facebook' },
-            updates,
-            { new: true }
-        );
+    // Fetch current to compute diff
+    const current = await FacebookSession.findOne({ _id: updates._id, platform: 'facebook' }).lean();
+    if (!current) {
+      res.status(404).json({ message: "Session not found" });
+      return;
+    }
+
+    // Remove _id from updates and build ops
+    const { _id, ...bodyNoId } = updates || {};
+    const flatNew = flattenObject(bodyNoId, '', false);
+    const flatNewCmp = flattenObject(bodyNoId, '', true);
+    const flatCurCmp = flattenObject(current, '', true);
+    const $set: Record<string, any> = {};
+    const $unset: Record<string, any> = {};
+    for (const [path, valCmp] of Object.entries(flatNewCmp)) {
+      const rawVal = flatNew[path];
+      if (rawVal === null) {
+        $unset[path] = 1;
+        continue;
+      }
+      const curVal = getAt(flatCurCmp, path) ?? flatCurCmp[path];
+      if (JSON.stringify(curVal) !== JSON.stringify(valCmp)) {
+        $set[path] = rawVal;
+      }
+    }
+
+    const updateOps: any = {};
+    if (Object.keys($set).length) updateOps.$set = $set;
+    if (Object.keys($unset).length) updateOps.$unset = $unset;
+
+    if (!Object.keys(updateOps).length) {
+      res.status(200).json({ message: "No changes detected", session: current });
+      return;
+    }
+
+    // Build audit context if we can resolve a user
+    let fbUserId: string | undefined = (req.params as any).userId || updates?.user?.id || updates?.user_id;
+    let fbUserName: string | undefined = undefined;
+    if (fbUserId) {
+      try {
+        const User = getUserModel(conn);
+        const u = await User.findById(fbUserId).lean();
+        fbUserName = u?.name;
+      } catch {}
+    }
+
+    const fbAuditContext = fbUserId
+      ? {
+          _updatedByUser: { id: fbUserId, name: fbUserName },
+          _updatedBy: fbUserId,
+          _auditSource: 'API',
+          _requestId: (req.headers['x-request-id'] as string) || undefined,
+          ip: req.ip,
+          userAgent: req.get('user-agent') || undefined,
+        }
+      : undefined;
+
+    const session = await FacebookSession.findOneAndUpdate(
+      { _id: updates._id, platform: 'facebook' },
+      updateOps,
+      { new: true, context: 'query' } as any
+    ).setOptions(
+      fbAuditContext
+        ? ({ auditContext: fbAuditContext, $locals: { auditContext: fbAuditContext } } as any)
+        : ({} as any)
+    );
 
         if (!session) {
             res.status(404).json({ message: "Session not found" });
@@ -150,6 +253,8 @@ export const updateFacebookSession = async (req: Request, res: Response) => {
 export const getAllFacebookSessions = async (req: Request, res: Response) => {
   try {
     const { c_name, user_id } = req.params;
+    const includeHistory = String((req.query.includeHistory as any) || '').toLowerCase() === 'true';
+    const historyLimit = Number(req.query.historyLimit || 5);
 
     const conn = await getConnectionByCompanySlug(c_name);
 
@@ -169,6 +274,10 @@ export const getAllFacebookSessions = async (req: Request, res: Response) => {
       sessions = await FacebookSession.find({ "user.id": user_id, platform: 'facebook' });
     } else {
       sessions = await FacebookSession.find({ platform: 'facebook' });
+    }
+
+    if (includeHistory) {
+      sessions = await attachHistoryToData(conn, sessions, 'Session', Number.isFinite(historyLimit) ? historyLimit : 5);
     }
 
     res.status(200).json(sessions);
@@ -270,6 +379,8 @@ export const createWhatsappSession = async (req: Request, res: Response) => {
 export const getAllWhatsappSessions = async (req: Request, res: Response) => {
   try {
     const { c_name, user_id } = req.params;
+    const includeHistory = String((req.query.includeHistory as any) || '').toLowerCase() === 'true';
+    const historyLimit = Number(req.query.historyLimit || 5);
 
     const conn = await getConnectionByCompanySlug(c_name);
 
@@ -291,6 +402,10 @@ export const getAllWhatsappSessions = async (req: Request, res: Response) => {
       sessions = await WhatsappSession.find({ platform: { $ne: 'facebook' } });
     }
 
+    if (includeHistory) {
+      sessions = await attachHistoryToData(conn, sessions, 'Session', Number.isFinite(historyLimit) ? historyLimit : 5);
+    }
+
     res.status(200).json(sessions);
   } catch (error) {
     res.status(500).json({ message: "Error fetching sessions", error });
@@ -298,7 +413,7 @@ export const getAllWhatsappSessions = async (req: Request, res: Response) => {
 };
 
 export const updateWhatsappSession = async (req: Request, res: Response) => {
-  const { c_name } = req.params;
+  const { c_name, userId } = req.params;
   const updates = req.body;
 
   try {
@@ -385,11 +500,62 @@ export const updateWhatsappSession = async (req: Request, res: Response) => {
     }
 
     const WhatsappSession = getSessionModel(conn);
+    const current = await WhatsappSession.findOne({ _id: updates._id }).lean();
+    if (!current) {
+      res.status(404).json({ message: "Session not found" });
+      return;
+    }
+
+    const { _id, ...bodyNoId } = updates || {};
+    const flatNew = flattenObject(bodyNoId, '', false);
+    const flatNewCmp = flattenObject(bodyNoId, '', true);
+    const flatCurCmp = flattenObject(current, '', true);
+    const $set: Record<string, any> = {};
+    const $unset: Record<string, any> = {};
+    for (const [path, valCmp] of Object.entries(flatNewCmp)) {
+      const rawVal = flatNew[path];
+      if (rawVal === null) {
+        $unset[path] = 1;
+        continue;
+      }
+      const curVal = getAt(flatCurCmp, path) ?? flatCurCmp[path];
+      if (JSON.stringify(curVal) !== JSON.stringify(valCmp)) {
+        $set[path] = rawVal;
+      }
+    }
+
+    const updateOps: any = {};
+    if (Object.keys($set).length) updateOps.$set = $set;
+    if (Object.keys($unset).length) updateOps.$unset = $unset;
+
+    if (!Object.keys(updateOps).length) {
+      res.status(200).json({ message: "No changes detected", session: current });
+      return;
+    }
+
+    const User = getUserModel(conn);
+    const user = await User.findById(userId).lean();
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    // Contexto para plugin de auditoría: pásalo en las opciones de la query
+    const auditContext = {
+      _updatedByUser: { id: userId, name: user?.name },
+      _updatedBy: userId,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: req.ip,
+      userAgent: req.get('user-agent') || undefined,
+    };
+
     const session = await WhatsappSession.findOneAndUpdate(
       { _id: updates._id },
-      updates,
-      { new: true }
-    );
+      updateOps,
+      { new: true, context: 'query' } as any
+    ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
     if (!session) {
       res.status(404).json({ message: "Session not found" });

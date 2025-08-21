@@ -2,6 +2,7 @@ import { Model } from 'mongoose';
 import { Message } from 'whatsapp-web.js';
 import { ISession } from '../../models/session.model';
 import { io } from '../../server';
+import { IWhatsappChat } from '../../models/whatsappChat.model';
 
 // Create a new WhatsApp chat record
 export async function createNewChatRecord(
@@ -43,10 +44,9 @@ export async function updateChatRecord(
   message: Message,
   respondedBy: string,
 ) {
-  const WhatsappChat = chatRecord.constructor; // Get the model from the document instance
+  const WhatsappChat: Model<IWhatsappChat> = chatRecord.constructor; // Get the model from the document instance
 
   try {
-    let updatedChat = null;
     // Step 1: Mark inbound messages as read if outbound
     if (direction === "outbound" || direction === "outbound-api") {
       await WhatsappChat.updateOne(
@@ -72,7 +72,7 @@ export async function updateChatRecord(
     } as any;
 
     // Only push if not duplicate
-    updatedChat = await WhatsappChat.findOneAndUpdate(
+    const updatedChat = await WhatsappChat.findOneAndUpdate(
       { _id: chatRecord._id, ...(message.id?.id ? { "messages.msgId": { $ne: message.id?.id } } : {}) },
       { $push: { messages: newMessage } },
       { new: true }
@@ -82,6 +82,7 @@ export async function updateChatRecord(
       return;
     }
     io.emit(`whatsapp-message-${company}`, updatedChat);
+    return updatedChat.messages[updatedChat.messages.length - 1];
   } catch (saveError) {
     console.error("❌ Error guardando mensaje:", saveError);
   }

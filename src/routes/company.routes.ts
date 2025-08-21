@@ -17,7 +17,7 @@ router.post("/", createCompanyAndDatabase);
 router.get("/", getAllCompanies); // Nuevo: listar todas las empresas
 router.get("/global/stats", getGlobalStats); // Nuevo: estadísticas globales
 router.get("/:name", getCompany);
-router.put("/:name", updateCompany);
+router.patch("/:name", updateCompany);
 
 // ===== RUTAS PARA BRANCHES =====
 router.get("/:c_name/branches", getBranches); // Obtener todas las sucursales

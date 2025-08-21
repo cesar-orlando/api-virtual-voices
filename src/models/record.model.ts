@@ -1,12 +1,13 @@
 import { Schema, Document, Connection, Model } from "mongoose";
+import auditTrailPlugin from "../plugins/auditTrail";
 
 // Define la interfaz para un registro
 export interface IRecord extends Document {
-  tableSlug: string;        // Slug de la tabla dinámica asociada
-  c_name: string;           // Nombre de la empresa
-  data: Record<string, any>; // Objeto dinámico con los datos del registro
-  createdBy: string;        // Usuario que creó el registro
-  updatedBy?: string;       // Usuario que actualizó el registro
+  tableSlug: string;
+  c_name: string;
+  data: Record<string, any>;
+  createdBy: string;
+  updatedBy?: string;
   getFormattedData(): Record<string, any>; // Método de instancia
 }
 
@@ -23,14 +24,14 @@ export interface IRecordModel extends Model<IRecord> {
 // Define el esquema para los registros
 const RecordSchema: Schema = new Schema(
   {
-    tableSlug: { type: String, required: true }, // Relación con la tabla dinámica
-    c_name: { type: String, required: true },    // Nombre de la empresa
-    data: { type: Schema.Types.Mixed, required: true }, // Objeto dinámico con los datos
-    createdBy: { type: String, required: true }, // Usuario que creó el registro
-    updatedBy: { type: String, required: false }, // Usuario que actualizó el registro
+    tableSlug: { type: String, required: true },
+    c_name: { type: String, required: true },
+    data: { type: Schema.Types.Mixed, required: true },
+    createdBy: { type: String, required: true },
+    updatedBy: { type: String, required: false },
   },
   {
-    timestamps: true, // Agrega createdAt y updatedAt automáticamente
+    timestamps: true,
   }
 );
 
@@ -38,6 +39,12 @@ const RecordSchema: Schema = new Schema(
 RecordSchema.index({ tableSlug: 1, c_name: 1 }); // Índice compuesto para búsquedas por tabla y empresa
 RecordSchema.index({ c_name: 1, createdAt: -1 }); // Índice para listar registros por empresa ordenados por fecha
 RecordSchema.index({ createdBy: 1, c_name: 1 }); // Índice para búsquedas por usuario creador
+
+// Plugin de auditoría: genera diffs por campo (data.*) y guarda en AuditLog (sin historial embebido)
+RecordSchema.plugin(auditTrailPlugin as any, {
+  includePaths: ["data"],
+  modelName: "Record",
+});
 
 // Middleware para actualizar updatedBy automáticamente
 RecordSchema.pre('save', function(next) {

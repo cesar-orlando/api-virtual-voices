@@ -26,7 +26,8 @@
     "check:user-in-quicklearning-db": "cross-env NODE_ENV=production ts-node src/scripts/checkUserInQuickLearningDb.ts",
     "test:login-controller": "cross-env NODE_ENV=production ts-node src/scripts/testLoginController.ts",
     "test:twilio-quicklearning": "cross-env NODE_ENV=development ts-node src/scripts/testTwilioQuickLearning.ts",
-    "test:upload": "cross-env NODE_ENV=development ts-node src/scripts/testUploadEndpoint.ts"
+    "test:upload": "cross-env NODE_ENV=development ts-node src/scripts/testUploadEndpoint.ts",
+    "migrate:backfill-field-ids": "cross-env NODE_ENV=development ts-node src/scripts/backfillTableFieldIds.ts"
   },
   "keywords": [],
   "author": "",

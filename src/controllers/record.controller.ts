@@ -890,12 +890,34 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
     (existingRecord as any)._auditSource = 'API';
     (existingRecord as any)._requestId = (req.headers['x-request-id'] as string) || undefined;
 
-    // Si el tableSlug cambió, actualizarlo también
+    // Si el tableSlug cambió, actualizarlo también en memoria
     if (isTableSlugChanged) {
       existingRecord.tableSlug = newTableSlug;
     }
 
-    await existingRecord.save();
+    // Persist with an atomic updateOne (faster, triggers audit middleware)
+    const setOps: any = { updatedBy, updatedAt: new Date() };
+    for (const ch of changes) {
+      setOps[`data.${ch.field}`] = ch.newValue;
+    }
+    if (isTableSlugChanged) {
+      setOps.tableSlug = newTableSlug;
+    }
+
+    const auditContext = {
+      _updatedByUser: { id: userId, name: userName },
+      _updatedBy: userId,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: (req as any).ip,
+      userAgent: req.headers['user-agent'],
+    };
+
+    await Record.updateOne(
+      { _id: id, c_name },
+      { $set: setOps },
+      { auditContext }
+    );
 
     res.status(200).json({ 
       message: "Dynamic record updated successfully", 

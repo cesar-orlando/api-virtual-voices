@@ -154,49 +154,6 @@ export default function auditTrailPlugin(schema: Schema, opts: AuditPluginOption
     }
   }
 
-  // Pre-save: compare current doc vs snapshot if available
-  schema.pre('save', async function (next) {
-    try {
-  // Allow callers to skip audit on direct save() operations
-  if ((this as any)._skipAudit === true) return next();
-      if (this.isNew) return next();
-      // If the doc has a previous snapshot, compare; otherwise, skip
-      const prev: FlattenMaps<any> | undefined = this._originalDoc;
-      const changes: Array<{ path: string; oldValue: any; newValue: any }> = [];
-      if (prev) {
-        let flatPrev: Record<string, any> = {};
-        let flatCurr: Record<string, any> = {};
-        for (const root of roots) {
-          const prevVal = getAtPath(prev, root);
-          const currVal = root ? this.get(root) : this.toObject({ depopulate: true });
-          Object.assign(flatPrev, flatten(prevVal, root));
-          Object.assign(flatCurr, flatten(currVal, root));
-        }
-        const paths = new Set([...Object.keys(flatPrev), ...Object.keys(flatCurr)]);
-        for (const p of paths) {
-          if (!shouldTrack(p, opts)) continue;
-          const a = flatPrev[p];
-          const b = flatCurr[p];
-          if (JSON.stringify(a) !== JSON.stringify(b)) {
-            changes.push({ path: p, oldValue: redact(p, a, opts), newValue: redact(p, b, opts) });
-          }
-        }
-      }
-      if (changes.length) {
-        // Ensure Mixed changes are persisted: mark changed top-level paths if Mixed
-        const tops = new Set(changes.map(c => c.path.split('.')[0]).filter(Boolean));
-        for (const top of tops) {
-          const p = this.schema?.path(top);
-          if (p && (p.instance === 'Mixed' || (p as any).$isMongooseArray && (p as any).caster?.instance === 'Mixed')) {
-            this.markModified(top);
-          }
-        }
-        await writeAudit.call(this, changes);
-      }
-      next();
-    } catch (err) { next(err as any); }
-  });
-
   // Pre findOneAndUpdate: compute diffs against current stored doc
   schema.pre(['findOneAndUpdate', 'updateOne'], async function (next) {
     try {

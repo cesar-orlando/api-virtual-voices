@@ -48,6 +48,7 @@ const assignFieldOrders = (fields: any[]): any[] => {
     
     // Limpiar propiedades redundantes
     const cleanField = {
+  ...(field._id ? { _id: field._id } : {}), // Preservar _id de subdocumento si viene del cliente/UI
       name: field.name,
       label: field.label,
       type: field.type,
@@ -355,41 +356,95 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
         return;
       }
 
-      // --- ACTUALIZAR RECORDS SI HAY RENOMBRES DE CAMPOS O CAMBIO DE LABEL ---
-      const oldFields = currentTable.fields || [];
-      const newFields = fieldsWithOrders;
-      const renames = [];
-      for (const oldField of oldFields) {
-        // Buscar campo nuevo con mismo orden (o alguna otra lógica de emparejamiento)
-        const newField = newFields.find(f => f.order === oldField.order);
-        if (newField) {
-          // Si cambió el label, genera un nuevo name y actualiza el campo
-          if (oldField.label !== newField.label) {
-            const generatedName = slugify(newField.label);
-            renames.push({ oldKey: oldField.name, newKey: generatedName });
-            newField.name = generatedName; // Actualiza el name en el array de fields
-          } else if (oldField.name !== newField.name) {
-            // Si solo cambió el name manualmente
-            renames.push({ oldKey: oldField.name, newKey: newField.name });
+      // --- ACTUALIZAR RECORDS SOLO CUANDO HAY RENOMBRES EXPLÍCITOS ---
+      // Importante: NO usar el "order" para emparejar campos. Si se elimina un campo,
+      // los órdenes se desplazan y eso provoca reasignaciones incorrectas de valores.
+      const oldFields = (currentTable.fields || []) as any[];
+      const newFields = fieldsWithOrders as any[];
+
+      // Mapas auxiliares para emparejar de forma segura
+      const oldById = new Map<string, any>();
+      const oldByName = new Map<string, any>();
+      for (const ofld of oldFields) {
+        if (ofld && ofld._id) oldById.set(String(ofld._id), ofld);
+        if (ofld && ofld.name) oldByName.set(ofld.name, ofld);
+      }
+
+      type Rename = { oldKey: string; newKey: string };
+      const renames: Rename[] = [];
+
+      // Detectar renombres de forma explícita y segura:
+      // 1) Si el nuevo campo conserva el mismo _id de subdocumento y cambió el name
+      // 2) Si el nuevo campo trae una pista explícita: previousName | renamedFrom | oldName
+      for (const nf of newFields) {
+        const hint = nf?.previousName || nf?.renamedFrom || nf?.oldName; // opcionales del cliente/UI
+        if (nf?._id && oldById.has(String(nf._id))) {
+          const old = oldById.get(String(nf._id));
+          if (old?.name && nf?.name && old.name !== nf.name) {
+            renames.push({ oldKey: old.name, newKey: nf.name });
+          }
+        } else if (hint && nf?.name && hint !== nf.name) {
+          // Solo si el hint existía en los campos viejos (evita colisiones/ambigüedades)
+          if (oldByName.has(hint)) {
+            renames.push({ oldKey: hint, newKey: nf.name });
           }
         }
       }
-      if (renames.length > 0) {
+      // Detectar campos eliminados (por nombre), excluyendo los que se renombraron
+      const newNamesSet = new Set(
+        (newFields || []).map((f: any) => f?.name).filter(Boolean)
+      );
+      const renamedOldKeys = new Set(renames.map(r => r.oldKey));
+      const removedFieldNames: string[] = (oldFields || [])
+        .map((f: any) => f?.name)
+        .filter((n: any): n is string => Boolean(n))
+        .filter((n: string) => !newNamesSet.has(n) && !renamedOldKeys.has(n));
+
+      if (renames.length > 0 || removedFieldNames.length > 0) {
         const Record = getRecordModel(conn);
-        const records = await Record.find({ tableSlug: currentTable.slug });
-        for (const record of records) {
-          let updated = false;
-          for (const { oldKey, newKey } of renames) {
-            if (record.data && record.data[oldKey] !== undefined) {
-              console.log(`[DEBUG] Actualizando registro ${record._id}: renombrando ${oldKey} a ${newKey}`);
-              record.data[newKey] = record.data[oldKey];
-              delete record.data[oldKey];
-              updated = true;
-            }
+        const baseFilter = { tableSlug: currentTable.slug, c_name } as any;
+
+        // 1) Procesar renombres de forma masiva y segura en dos pasos por cada par
+        for (const { oldKey, newKey } of renames) {
+          const oldPath = `data.${oldKey}`;
+          const newPath = `data.${newKey}`;
+
+          // 1.a) Renombrar cuando el destino NO existe
+          const filterRename = {
+            ...baseFilter,
+            [oldPath]: { $exists: true },
+            [newPath]: { $exists: false }
+          } as any;
+          const renameUpdate = { $rename: { [oldPath]: newPath } } as any;
+          const r1 = await Record.updateMany(filterRename, renameUpdate);
+          if (r1.modifiedCount) {
+            console.log(`[DEBUG] Renombrados ${r1.modifiedCount} registros para ${c_name}: ${oldKey} -> ${newKey}`);
           }
-          if (updated) {
-            record.markModified('data');
-            await record.save();
+
+          // 1.b) Si el destino YA existe, eliminar el origen para evitar duplicados/colisiones
+          const filterUnsetDup = {
+            ...baseFilter,
+            [oldPath]: { $exists: true },
+            [newPath]: { $exists: true }
+          } as any;
+          const unsetDupUpdate = { $unset: { [oldPath]: "" } } as any;
+          const r2 = await Record.updateMany(filterUnsetDup, unsetDupUpdate);
+          if (r2.modifiedCount) {
+            console.warn(`[WARN] Eliminado campo duplicado ${oldKey} para ${c_name} en ${r2.modifiedCount} registros porque ${newKey} ya existía`);
+          }
+        }
+
+        // 2) Eliminar campos removidos de forma masiva
+        if (removedFieldNames.length > 0) {
+          const orConds = removedFieldNames.map((n) => ({ [`data.${n}`]: { $exists: true } }));
+          const unsetObj = removedFieldNames.reduce((acc: any, n) => {
+            acc[`data.${n}`] = "";
+            return acc;
+          }, {} as any);
+
+          const r3 = await Record.updateMany({ ...baseFilter, $or: orConds }, { $unset: unsetObj });
+          if (r3.modifiedCount) {
+            console.log(`[DEBUG] Eliminados campos removidos para ${c_name} en ${r3.modifiedCount} registros: ${removedFieldNames.join(", ")}`);
           }
         }
       }

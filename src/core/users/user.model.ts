@@ -10,6 +10,20 @@ export interface IUser extends Document {
   status: string;
   permissions?: string[];
   metadata?: Record<string, any>;
+  
+  // 📧 NUEVA SECCIÓN: Configuración de email para envío de correos
+  emailConfig?: {
+    smtpEmail: string;        // Email para SMTP (puede ser diferente al email de login)
+    smtpPassword: string;     // Contraseña/App Password para SMTP
+    signature?: string;       // Firma del usuario (HTML/texto)
+    footerImage?: string;     // URL/path de la imagen del footer
+    isEnabled: boolean;       // Si está habilitado el envío de correos
+    provider?: 'gmail' | 'outlook' | 'yahoo' | 'custom'; // Proveedor SMTP
+    smtpHost?: string;        // Host personalizado (si es custom)
+    smtpPort?: number;        // Puerto personalizado (si es custom)
+    smtpSecure?: boolean;     // SSL/TLS (si es custom)
+  };
+  
   // ACTUALIZADO: Referencia a sucursal usando el nuevo modelo independiente
   branch?: {
     branchId: Types.ObjectId; // ID de la sucursal independiente
@@ -38,6 +52,24 @@ const UserSchema: Schema = new Schema(
     },
     permissions: [{ type: String }],
     metadata: { type: Schema.Types.Mixed },
+    
+    // 📧 NUEVA SECCIÓN: Configuración de email
+    emailConfig: {
+      smtpEmail: { type: String },
+      smtpPassword: { type: String },
+      signature: { type: String },
+      footerImage: { type: String },
+      isEnabled: { type: Boolean, default: false },
+      provider: { 
+        type: String, 
+        enum: ['gmail', 'outlook', 'yahoo', 'custom'],
+        default: 'gmail'
+      },
+      smtpHost: { type: String },
+      smtpPort: { type: Number },
+      smtpSecure: { type: Boolean }
+    },
+    
     // ACTUALIZADO: Campo para sucursal con referencia al modelo independiente
     branch: {
       branchId: { 
@@ -79,6 +111,51 @@ UserSchema.methods.canViewAllCompanies = function(): boolean {
 // Método para verificar si el usuario está activo
 UserSchema.methods.isActive = function(): boolean {
   return this.status === 'active';
+};
+
+// 📧 NUEVOS MÉTODOS: Para configuración de email
+UserSchema.methods.hasEmailConfig = function(): boolean {
+  return this.emailConfig && this.emailConfig.isEnabled && 
+         this.emailConfig.smtpEmail && this.emailConfig.smtpPassword;
+};
+
+UserSchema.methods.getSmtpConfig = function() {
+  if (!this.hasEmailConfig()) return null;
+  
+  const config = this.emailConfig;
+  const smtpConfigs = {
+    gmail: { host: 'smtp.gmail.com', port: 587, secure: false },
+    outlook: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+    yahoo: { host: 'smtp.mail.yahoo.com', port: 587, secure: false },
+    custom: { 
+      host: config.smtpHost || 'smtp.gmail.com', 
+      port: config.smtpPort || 587, 
+      secure: config.smtpSecure || false 
+    }
+  };
+  
+  const providerConfig = smtpConfigs[config.provider || 'gmail'];
+  
+  return {
+    host: providerConfig.host,
+    port: providerConfig.port,
+    secure: providerConfig.secure,
+    user: config.smtpEmail,
+    pass: config.smtpPassword
+  };
+};
+
+UserSchema.methods.getEmailSignature = function(): string {
+  if (!this.emailConfig?.signature) return '';
+  
+  let signature = this.emailConfig.signature;
+  
+  // Si hay imagen de footer, agregarla
+  if (this.emailConfig.footerImage) {
+    signature += `<br><br><img src="${this.emailConfig.footerImage}" alt="Footer" style="max-width: 400px;">`;
+  }
+  
+  return signature;
 };
 
 // Create and export the User model

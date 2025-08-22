@@ -72,5 +72,13 @@ export function initializeProjects(): void {
     console.warn('⚠️ No se pudo cargar configuración de Quick Learning:', error);
   }
 
+  // Importar y registrar Mitsubishi
+  try {
+    const { mitsubishiConfig } = require('../projects/mitsubishi/config');
+    registerProject(mitsubishiConfig);
+  } catch (error) {
+    console.warn('⚠️ No se pudo cargar configuración de Mitsubishi:', error);
+  }
+
   console.log(`📊 Proyectos cargados: ${projectConfigs.size}`);
 } 

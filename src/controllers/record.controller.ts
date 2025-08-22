@@ -1732,18 +1732,6 @@ export const deleteFieldsFromAllRecords = async (req: Request, res: Response) =>
       return;
     }
 
-    // Verificar que los campos existen en la tabla
-    const existingFields = table.fields.map(field => field.name);
-    const invalidFields = fieldNames.filter(fieldName => !existingFields.includes(fieldName));
-    
-    if (invalidFields.length > 0) {
-      res.status(400).json({ 
-        message: "Some fields do not exist in table structure", 
-        invalidFields 
-      });
-      return;
-    }
-
     // Construir objeto de eliminación
     const unsetObject: any = {};
     fieldNames.forEach(fieldName => {

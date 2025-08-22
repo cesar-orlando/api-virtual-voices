@@ -5,7 +5,7 @@ import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { TableField } from "../types";
 
 // Tipos de campo permitidos
-const ALLOWED_FIELD_TYPES = ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency'];
+const ALLOWED_FIELD_TYPES = ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency', 'object'];
 
 // Función para validar la estructura de un campo
 const validateField = (field: any, index: number): { isValid: boolean; error?: string } => {
@@ -431,20 +431,6 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
           const r2 = await Record.updateMany(filterUnsetDup, unsetDupUpdate);
           if (r2.modifiedCount) {
             console.warn(`[WARN] Eliminado campo duplicado ${oldKey} para ${c_name} en ${r2.modifiedCount} registros porque ${newKey} ya existía`);
-          }
-        }
-
-        // 2) Eliminar campos removidos de forma masiva
-        if (removedFieldNames.length > 0) {
-          const orConds = removedFieldNames.map((n) => ({ [`data.${n}`]: { $exists: true } }));
-          const unsetObj = removedFieldNames.reduce((acc: any, n) => {
-            acc[`data.${n}`] = "";
-            return acc;
-          }, {} as any);
-
-          const r3 = await Record.updateMany({ ...baseFilter, $or: orConds }, { $unset: unsetObj });
-          if (r3.modifiedCount) {
-            console.log(`[DEBUG] Eliminados campos removidos para ${c_name} en ${r3.modifiedCount} registros: ${removedFieldNames.join(", ")}`);
           }
         }
       }

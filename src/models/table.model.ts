@@ -1,4 +1,5 @@
 import { Schema, Document, Connection, Model } from "mongoose";
+import auditTrailPlugin from "../plugins/auditTrail";
 
 // Define la interfaz para un campo de tabla
 export interface TableField {
@@ -88,6 +89,26 @@ TableSchema.pre('save', function(next) {
   }
   
   next();
+});
+
+TableSchema.plugin(auditTrailPlugin as any, {
+  rootPaths: [""], // watch whole doc
+  includePaths: [
+    'name',
+    'slug',
+    'icon',
+    'isActive',
+    'fields'
+  ],
+  excludePaths: [ 
+    '__v', 
+    'createdAt', 
+    'updatedAt'
+  ],
+  excludePatterns: [
+    /^fields\.\d+\.width$/  // Exclude width for any field in the array
+  ],
+  modelName: "Table",
 });
 
 // Exporta el modelo

@@ -183,7 +183,22 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
       const table = await Table.findOne({ slug: 'prospectos', c_name: company, isActive: true });
       if (!table) {
-        return;
+        const newTable = new Table({
+          name: "Prospectos",
+          slug: "prospectos",
+          icon: "👤",
+          c_name: company,
+          createdBy: 'whatsapp-bot',
+          fields: [
+            { name: "name", label: "Nombre", type: "text", order: 1 },
+            { name: "number", label: "Número", type: "number", order: 2 },
+            { name: "ia", label: "IA", type: "boolean", order: 3 },
+            { name: "asesor", label: "Asesor", type: "object", required: false, options: [], order: 4 },
+            { name: "lastmessage", label: "Ultimo Mensaje", type: "text", required: false, options: [], order: 5 },
+            { name: "lastmessagedate", label: "Fecha Ultimo Mensaje", type: "date", required: false, options: [], order: 6 }
+          ]
+        });
+        await newTable.save();
       }
 
       const userData = await User.findOne({ _id: user_id });

@@ -3,6 +3,8 @@ import getTableModel, { ITable } from "../models/table.model";
 import getRecordModel from "../models/record.model";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { TableField } from "../types";
+import getUserModel from "../core/users/user.model";
+import { attachHistoryToData } from "../plugins/auditTrail";
 
 // Tipos de campo permitidos
 const ALLOWED_FIELD_TYPES = ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency', 'object'];
@@ -213,6 +215,8 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 export const getTables = async (req: Request, res: Response) => {
   try {
     const { c_name } = req.params;
+    const includeHistory = String((req.query.includeHistory as any) || '').toLowerCase() === 'true';
+    const historyLimit = Number(req.query.historyLimit || 5);
     const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const Record = getRecordModel(conn);
@@ -223,7 +227,7 @@ export const getTables = async (req: Request, res: Response) => {
       .lean();
 
     // Para cada tabla, contar registros eficientemente
-    const tablesWithCount = await Promise.all(
+    let tablesWithCount = await Promise.all(
       tables.map(async (table) => {
         const recordsCount = await Record.countDocuments({ 
           tableSlug: table.slug, 
@@ -237,6 +241,10 @@ export const getTables = async (req: Request, res: Response) => {
         };
       })
     );
+
+    if (includeHistory) {
+      tablesWithCount = await attachHistoryToData(conn, tablesWithCount, 'Table', Number.isFinite(historyLimit) ? historyLimit : 5);
+    }
 
     res.json({
       tables: tablesWithCount,
@@ -287,7 +295,7 @@ export const getTableBySlug = async (req: Request, res: Response) => {
 
 // Actualizar una tabla manteniendo la integridad de datos
 export const updateTable = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id, userId } = req.params;
   const { name, slug, icon, c_name, isActive, fields } = req.body;
 
   if (!c_name) {
@@ -438,10 +446,22 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
 
       // TODO: Validar que no se eliminen campos con datos existentes
       // Esto requeriría consultar la colección de datos de la tabla
-      
+
+      const User = getUserModel(conn);
+      const user = await User.findById(userId);
+
       // Actualizar con los nuevos campos
-      const updatedTable = await Table.findByIdAndUpdate(
-        id,
+      const auditContext = {
+        _updatedByUser: { id: userId, name: user.name },
+        _updatedBy: userId,
+        _auditSource: 'API',
+        _requestId: (req.headers['x-request-id'] as string) || undefined,
+        ip: (req as any).ip,
+        userAgent: req.headers['user-agent'],
+      };
+
+      const updatedTable = await Table.findOneAndUpdate(
+        { _id: id },
         { 
           $set: { 
             ...(name && { name }), 
@@ -452,7 +472,7 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
           } 
         },
         { new: true, runValidators: true }
-      );
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
       res.status(200).json({ 
         message: "Table updated successfully", 

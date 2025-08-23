@@ -31,7 +31,7 @@ router.post("/:c_name/bulk-create-from-excel", validateBulkTableCreation, bulkCr
 // Rutas generales
 router.post("/", createTable);
 router.get("/:c_name", getTables);
-router.put("/:id", updateTable);
+router.put("/:id/:userId", updateTable);
 router.delete("/:c_name/:id", deleteTable);
 
 // Rutas de campos (mantener compatibilidad)

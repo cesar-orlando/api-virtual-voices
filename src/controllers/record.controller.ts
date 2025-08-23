@@ -915,9 +915,8 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
 
     await Record.updateOne(
       { _id: id, c_name },
-      { $set: setOps },
-      { auditContext }
-    );
+      { $set: setOps }
+    ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
     res.status(200).json({ 
       message: "Dynamic record updated successfully", 

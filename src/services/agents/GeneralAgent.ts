@@ -66,9 +66,13 @@ export class GeneralAgent extends BaseAgent {
       
       if (config && config.customPrompt) {
         this.customPrompt = config.customPrompt;
+        this.agentContext.timezone = config.timezone;
+        this.agentContext.type = config.type;
       } else {
         console.log(`⚠️ No custom prompt found for ${this.company}, using fallback`);
         this.customPrompt = null;
+        this.agentContext.timezone = 'America/Mexico_City';
+        this.agentContext.type = config.type;
       }
     } catch (error) {
       console.error(`❌ Error loading custom prompt for ${this.company}:`, error);
@@ -167,7 +171,7 @@ export class GeneralAgent extends BaseAgent {
               const result = await ToolExecutor.execute({
                 toolName: companyTool.name,
                 parameters: { ...cleanParams(params), 
-                  number: this.agentContext.phoneUser.replace('@c.us', ''), 
+                  number: this.agentContext.type === 'interno' && params.number ? String(params.number) : this.agentContext.phoneUser.replace('@c.us', ''), 
                   sessionId: this.agentContext.sessionId },
                 c_name: this.company,
                 executedBy: 'GeneralAgent'

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import getToolModel, { getToolExecutionModel, getToolCategoryModel } from "../models/tool.model";
-import { ToolExecutor } from "../services/toolExecutor";
+import { ToolExecutor } from "../services/agents/toolExecutor";
 import { 
   ITool, 
   ToolExecutionRequest, 

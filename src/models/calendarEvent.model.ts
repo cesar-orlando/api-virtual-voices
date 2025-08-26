@@ -48,7 +48,7 @@ const CalendarEventSchema = new Schema<ICalendarEvent>({
   
   status: { 
     type: String, 
-    enum: ['active', 'cancelled', 'deleted'], 
+    enum: ['active', 'cancelled', 'deleted', 'inactive'], 
     default: 'active' 
   },
   googleCalendarUrl: { type: String },
@@ -84,6 +84,66 @@ CalendarEventSchema.methods.getUserFriendlyInfo = function() {
     status: this.status
   };
 };
+
+// Static method to automatically update expired events to inactive
+CalendarEventSchema.statics.updateExpiredEvents = async function() {
+  const now = new Date();
+  try {
+    const result = await this.updateMany(
+      { 
+        endDateTime: { $lt: now },
+        status: 'active'
+      },
+      { 
+        status: 'inactive',
+        updatedAt: now
+      }
+    );
+    
+    if (result.modifiedCount > 0) {
+      console.log(`📅 Updated ${result.modifiedCount} expired events to inactive status`);
+    }
+    
+    return result.modifiedCount;
+  } catch (error) {
+    console.error('❌ Error updating expired events:', error);
+    return 0;
+  }
+};
+
+// Instance method to check if event has expired and update if needed
+CalendarEventSchema.methods.checkAndUpdateIfExpired = async function() {
+  const now = new Date();
+  if (this.endDateTime < now && this.status === 'active') {
+    this.status = 'inactive';
+    this.updatedAt = now;
+    await this.save();
+    console.log(`📅 Event "${this.title}" automatically marked as inactive (expired)`);
+    return true;
+  }
+  return false;
+};
+
+// Pre-find middleware to automatically update expired events
+CalendarEventSchema.pre(['find', 'findOne', 'findOneAndUpdate'], async function() {
+  // Auto-update expired events before any query
+  const now = new Date();
+  try {
+    await this.model.updateMany(
+      { 
+        endDateTime: { $lt: now },
+        status: 'active'
+      },
+      { 
+        status: 'inactive',
+        updatedAt: now
+      }
+    );
+  } catch (error) {
+    // Silent fail to not break queries, but log the error
+    console.error('❌ Error in pre-query expired event update:', error);
+  }
+});
 
 export default function getCalendarEventModel(connection: Connection): Model<ICalendarEvent> {
   return connection.model<ICalendarEvent>('CalendarEvent', CalendarEventSchema);

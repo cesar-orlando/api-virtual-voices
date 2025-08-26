@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getCalendarEventService } from '../services/calendarEventService';
+import { getCalendarEventService } from '../services/google/calendarEventService';
 
 /**
  * Get calendar events for a company

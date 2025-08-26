@@ -1958,7 +1958,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
       limit = 50,
       sortBy = 'updatedAt',
       sortOrder = 'desc',
-      filters
+      filters,
+      sessionId // ✅ NEW: Session filter parameter
     } = req.query; // ADDED FILTER PARAMETERS
     
     const conn = await getConnectionByCompanySlug(c_name);
@@ -1974,6 +1975,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
+    let lastMessageDateFilter: any = null; // ✅ NEW: Variable to store last message date filter
 
     function isNumberOrConvertible(val: any): boolean {
       if (typeof val === 'number' && !isNaN(val)) return true;
@@ -1988,6 +1990,67 @@ export async function getRecordByPhone(req: Request, res: Response) {
         
         for (const [fieldName, value] of Object.entries(parsedFilters)) {
           if (value === undefined || value === null || value === '') continue;
+          
+          // ✅ NEW: Handle special case for lastMessageDate filters
+          if (fieldName === 'lastMessageDate' || fieldName === 'lastMessageDateGte' || fieldName === 'lastMessageDateLte' || fieldName === 'lastMessageDateMax') {
+            if (typeof value === 'string') {
+              const dateValue = new Date(value);
+              if (!isNaN(dateValue.getTime())) {
+                // Determine if this is a $gte or $lte filter
+                const isGteFilter = fieldName === 'lastMessageDate' || fieldName === 'lastMessageDateGte';
+                const isLteFilter = fieldName === 'lastMessageDateLte' || fieldName === 'lastMessageDateMax';
+                
+                // Initialize the filter if it doesn't exist
+                if (!lastMessageDateFilter) {
+                  lastMessageDateFilter = {
+                    $expr: {
+                      $and: [
+                        // Ensure chats array exists and is not empty
+                        { $gt: [{ $size: "$chats" }, 0] },
+                        // Check that at least one chat has messages
+                        {
+                          $anyElementTrue: {
+                            $map: {
+                              input: "$chats",
+                              as: "chat",
+                              in: { $gt: [{ $size: { $ifNull: ["$$chat.messages", []] } }, 0] }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  };
+                }
+                
+                // Add the appropriate date comparison
+                const maxDateExpression = {
+                  $max: {
+                    $reduce: {
+                      input: "$chats",
+                      initialValue: [],
+                      in: {
+                        $concatArrays: [
+                          "$$value",
+                          { $ifNull: ["$$this.messages.createdAt", []] }
+                        ]
+                      }
+                    }
+                  }
+                };
+                
+                if (isGteFilter) {
+                  lastMessageDateFilter.$expr.$and.push({
+                    $gte: [maxDateExpression, dateValue]
+                  });
+                } else if (isLteFilter) {
+                  lastMessageDateFilter.$expr.$and.push({
+                    $lte: [maxDateExpression, dateValue]
+                  });
+                }
+              }
+            }
+            continue; // Skip normal field processing for this special filter
+          }
           
           const fieldDef = table.fields.find((f: any) => f.name === fieldName);
           if (!fieldDef) continue;
@@ -2083,18 +2146,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
         }
       },
       
-      // Stage 2: Sort + pagination EARLY (with dynamic sorting)
-      {
-        $sort: { [sortBy as string]: sortOrder === 'desc' ? -1 : 1 }
-      },
-      {
-        $skip: (Number(page) - 1) * Number(limit)
-      },
-      {
-        $limit: Number(limit)
-      },
-      
-      // Stage 3: Add phone variants for lookup
+      // Stage 2: Add phone variants for lookup (MOVED UP - needed for message date filter)
       {
         $addFields: {
           phoneVariants: [
@@ -2105,7 +2157,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
         }
       },
       
-      // Stage 4: Lookup chats by ANY phone variant
+      // Stage 3: Lookup chats by ANY phone variant
       {
         $lookup: {
           from: "chats",
@@ -2134,7 +2186,23 @@ export async function getRecordByPhone(req: Request, res: Response) {
         }
       },
       
-      // Stage 5: Add summary (super simple)
+      // ✅ NEW: Stage 4: Apply last message date filter (if specified)
+      ...(lastMessageDateFilter ? [{
+        $match: lastMessageDateFilter
+      }] : []),
+      
+      // Stage 5: Sort + pagination (AFTER message date filter)
+      {
+        $sort: { [sortBy as string]: sortOrder === 'desc' ? -1 : 1 }
+      },
+      {
+        $skip: (Number(page) - 1) * Number(limit)
+      },
+      {
+        $limit: Number(limit)
+      },
+      
+      // Stage 6: Add summary (super simple)
       {
         $addFields: {
           totalChats: { $size: "$chats" },
@@ -2142,7 +2210,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
         }
       },
       
-      // Stage 6: Clean output (remove phoneVariants)
+      // Stage 7: Clean output (remove phoneVariants)
       {
         $project: {
           phoneVariants: 0  // Remove internal field
@@ -2156,11 +2224,71 @@ export async function getRecordByPhone(req: Request, res: Response) {
     // Execute super fast aggregation
     const results = await Record.aggregate(pipeline);
     
-    // Get total (simple query)  
-    const totalCount = await Record.countDocuments({
-      tableSlug: "prospectos",
-      c_name: c_name
-    });
+    // ✅ NEW: Get total count (with last message date filter if applied)
+    let totalCount: number;
+    if (lastMessageDateFilter) {
+      // If we have a last message date filter, we need to get the count with the same pipeline logic
+      const countPipeline = [
+        {
+          $match: {
+            tableSlug: "prospectos",
+            c_name: c_name,
+            ...dynamicMatchFilters
+          }
+        },
+        {
+          $addFields: {
+            phoneVariants: [
+              "$data.name",
+              { $concat: [{ $toString: "$data.number" }, "@c.us"] },
+              { $toString: "$data.number" }
+            ]
+          }
+        },
+        {
+          $lookup: {
+            from: "chats",
+            let: { phones: "$phoneVariants" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ["$phone", "$$phones"]
+                  }
+                }
+              },
+              {
+                $project: {
+                  phone: 1,
+                  session: 1,
+                  advisor: 1,
+                  botActive: 1,
+                  messageCount: { $size: { $ifNull: ["$messages", []] } },
+                  messages: "$messages"
+                }
+              }
+            ],
+            as: "chats"
+          }
+        },
+        {
+          $match: lastMessageDateFilter
+        },
+        {
+          $count: "total"
+        }
+      ];
+      
+      const countResult = await Record.aggregate(countPipeline);
+      totalCount = countResult.length > 0 ? countResult[0].total : 0;
+    } else {
+      // Simple count when no message date filter
+      totalCount = await Record.countDocuments({
+        tableSlug: "prospectos",
+        c_name: c_name,
+        ...dynamicMatchFilters
+      });
+    }
     
     const endTime = Date.now();
     const executionTime = endTime - startTime;
@@ -2178,20 +2306,24 @@ export async function getRecordByPhone(req: Request, res: Response) {
         pages: Math.ceil(totalCount / Number(limit))
       },
       performance: {
-        method: "Lightning-Fast MongoDB Aggregation + Dynamic Filters", 
+        method: "Lightning-Fast MongoDB Aggregation + Dynamic Filters + Last Message Date Filter", 
         stages: pipeline.length,
         executionTimeMs: executionTime,
         recordsWithChats,
         includesMessages: "all messages included",
         phoneMatching: "name + number + @c.us variants",
         dynamicFilters: Object.keys(dynamicMatchFilters).length > 0,
-        filtersApplied: Object.keys(dynamicMatchFilters),
+        lastMessageDateFilter: lastMessageDateFilter !== null, // ✅ NEW: Indicate if date filter was applied
+        filtersApplied: [
+          ...Object.keys(dynamicMatchFilters),
+          ...(lastMessageDateFilter ? ['lastMessageDateFilter'] : [])
+        ],
         sortBy: sortBy as string,
         sortOrder: sortOrder as string,
-        earlyPagination: true,
+        earlyPagination: false, // ✅ UPDATED: Not early when message date filter is applied
         optimized: true
       },
-      message: `Found ${results.length} records (${recordsWithChats} with chats) in ${executionTime}ms`
+      message: `Found ${results.length} records (${recordsWithChats} with chats) in ${executionTime}ms${lastMessageDateFilter ? ' with last message date filter' : ''}`
     });
 
   } catch (error) {

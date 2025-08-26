@@ -1,7 +1,11 @@
 import OpenAI from "openai";
+import { getEnvironmentConfig } from '../config/environments';
+
+const config = getEnvironmentConfig();
+
 // Configuración OpenAI
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY_DEV
+  apiKey: config.openaiApiKey,
 });
 import nodemailer from 'nodemailer';
 import { Request, Response } from 'express';

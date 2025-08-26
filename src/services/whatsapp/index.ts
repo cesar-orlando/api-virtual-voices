@@ -224,7 +224,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
         const userData = await User.findOne({ _id: user_id });
 
-        const auditContext = {
+        let auditContext = {
           skipAudit: true,
         };
 
@@ -294,16 +294,22 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           const doc = result as any;
           if (prospectName && 
               (!doc.data?.name || doc.data.name === number || doc.data.name.includes('@c.us'))) {
+
+            let auditContext = {
+              _updatedByUser: { id: 'Bot', name: `whatsapp-bot-${source}` },
+              _updatedBy: `whatsapp-bot-${source}`,
+              _auditSource: 'Whatsapp Start',
+            };
+
             await Record.findOneAndUpdate(
               { _id: doc._id },
               { 
                 $set: { 
                   'data.name': prospectName,
-                  updatedAt: new Date(),
                   updatedBy: `whatsapp-bot-${source}`
                 }
               },
-              { context: 'query' }
+              { context: 'query', timestamps: { updatedAt: false } }
             ).setOptions({ auditContext, $locals: { auditContext } } as any);
             
             console.log(`${config.logPrefix} ✨ Nombre actualizado para ${num}: "${prospectName}"`);

@@ -160,7 +160,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
         existingRecord,
         message.fromMe ? "outbound" : "inbound",
         message,
-        "human"
+        "human",
+        prospecto
       );
     }
     let auditContext
@@ -216,9 +217,6 @@ async function handleDelayedResponse(
   conn: Connection
 ) {
   const DELAY_MS = 15000; // 15 segundos para mejor responsividad
-
-  // Always record the incoming message first
-  await updateChatRecord(company, existingRecord, "inbound", message, "human");
 
   // Check if there's already a pending response for this user
   const existingPending = pendingResponses.get(userPhone);
@@ -352,7 +350,7 @@ async function sendCustomResponse(
         // Mark as bot-sent before persisting so message_create won't be misclassified
         rememberBotSentMessage(sentMessage.id?.id);
         sentMessage.body = (sentMessage.body || '') + '\n' + foundImages[i];
-        await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
+        await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot", null);
         fs.unlink(result.filePath, (err) => {
           if (err) {
             console.error(`Error deleting file ${result.filePath}:`, err);
@@ -366,7 +364,7 @@ async function sendCustomResponse(
       const sentMessage = await client.sendMessage(message.from, response);
       // Mark as bot-sent before persisting
       rememberBotSentMessage(sentMessage.id?.id);
-      await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot");
+      await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot", null);
     }
   } catch (error) {
     console.error(`❌ Error sending custom response for ${company}:`, error);

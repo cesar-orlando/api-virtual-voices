@@ -1,40 +1,9 @@
 import { Model } from 'mongoose';
 import { Message } from 'whatsapp-web.js';
-import { ISession } from '../../models/session.model';
 import { io } from '../../server';
 import { IWhatsappChat } from '../../models/whatsappChat.model';
-
-// Create a new WhatsApp chat record
-export async function createNewChatRecord(
-  WhatsappChat: Model<any>,
-  tableSlug: string,
-  phone: string,
-  message: Message,
-  session: ISession | null
-) {
-  const newChat = new WhatsappChat({
-    tableSlug: tableSlug,
-    phone: phone,
-    session: {
-      id: session?.id,
-      name: session?.name
-    },
-    advisor: {
-      id: session?.user.id,
-      name: session?.user.name
-    },
-    messages: [
-      {
-        msgId: message.id?.id || '',
-        direction: message.fromMe ? "outbound" : "inbound",
-        body: message.body,
-        respondedBy: "human",
-      },
-    ],
-  });
-  await newChat.save();
-  return newChat;
-}
+import { NotificationService } from '../internal/notification.service';
+import { IRecord } from '../../types';
 
 // Update WhatsApp chat record
 export async function updateChatRecord(
@@ -43,6 +12,7 @@ export async function updateChatRecord(
   direction: string,
   message: Message,
   respondedBy: string,
+  prospecto: IRecord
 ) {
   const WhatsappChat: Model<IWhatsappChat> = chatRecord.constructor; // Get the model from the document instance
 
@@ -77,6 +47,17 @@ export async function updateChatRecord(
       { $push: { messages: newMessage } },
       { new: true }
     );
+
+    if (direction === "inbound") {
+      NotificationService.createChatNotification({
+        company,
+        userId: prospecto.data.asesor.id,
+        phoneNumber: chatRecord.phone,
+        senderName: prospecto.data.name,
+        messagePreview: newMessage.body,
+        chatId: chatRecord._id
+      });
+    }
 
     if (!updatedChat) {
       return;

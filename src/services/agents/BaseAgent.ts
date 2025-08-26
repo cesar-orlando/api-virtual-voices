@@ -1,5 +1,6 @@
 import { Agent, tool, run } from '@openai/agents';
 import { getEnvironmentConfig } from '../../config/environments';
+import { DateTime } from 'luxon';
 
 interface AgentContext {
   company: string;
@@ -98,12 +99,17 @@ export abstract class BaseAgent {
         .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U')
         .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
         .replace(/¿/g, '').replace(/¡/g, ''); // Remove Spanish punctuation
+
+      const nowInTimezone = DateTime.now().setZone(this.agentContext.timezone);
+      const currentTime = nowInTimezone.toFormat('cccc, dd/MM/yyyy HH:mm');
+
+      const currentTimeText = `Hora local actual: ${currentTime}`;
       
       // Add conversation context to the message
       const messageWithContext = conversationContext ? 
-        `${conversationContext}\n\nMENSAJE ACTUAL DEL USUARIO:\n${cleanMessage}` : 
-        cleanMessage;
-      
+        `${conversationContext}\n\nMENSAJE ACTUAL DEL USUARIO:\n${cleanMessage}\n${currentTimeText}` : 
+        `${cleanMessage}\n${currentTimeText}`;
+
       const agentContext: AgentContext = {
         company: this.company,
         ...context
@@ -114,8 +120,8 @@ export abstract class BaseAgent {
       let contextThreshold = 4000; // Default
       
       if (messageWithContext.length > contextThreshold) {
-        const smartContext = this.buildSmartContext(context?.chatHistory || [], message);
-        
+        const smartContext = this.buildSmartContext(context?.chatHistory || [], message) + `\n${currentTimeText}`;
+
         const result = await run(this.agent, smartContext, {
           context: agentContext
         });

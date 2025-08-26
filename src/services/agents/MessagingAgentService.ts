@@ -21,7 +21,6 @@ export class MessagingAgentService {
     iaConfigId?: string,
     sessionId?: string,
     providedChatHistory?: any[],
-    isCalendarFallback: boolean = false
   ): Promise<string> {
     try {
       
@@ -52,7 +51,7 @@ export class MessagingAgentService {
           console.log(`🤖 Agent response received: ${response.substring(0, 50)}...`);
           
           // Check for transfer signals and disable AI if needed (skip for calendar fallback)
-          if (!isCalendarFallback && (response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:') ||
+          if ((response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:') ||
               (response.includes('transferencia bancaria') && response.includes('pagoscinf@quicklearning.com')))) {
             console.log(`🔄 Señal de transferencia detectada, desactivando IA para ${phoneUser}`);
             try {
@@ -63,7 +62,7 @@ export class MessagingAgentService {
             }
             // Clean the response from transfer signals
             return response.replace('TRANSFER_PAYMENT_INFO:', '').replace('TRANSFER_TO_ADVISOR:', '').trim();
-          } else if (isCalendarFallback && (response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:'))) {
+          } else if (response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:')) {
             console.log(`📅 Calendar fallback received transfer signal - cleaning but NOT disabling AI`);
             // Clean the response from transfer signals but don't disable AI
             return response.replace('TRANSFER_PAYMENT_INFO:', '').replace('TRANSFER_TO_ADVISOR:', '').trim();
@@ -75,21 +74,14 @@ export class MessagingAgentService {
           
           if (attempt === 3) {
             console.log(`⚠️ Todos los intentos fallaron`);
-            
-            // Only disable AI if this is NOT a calendar fallback
-            if (!isCalendarFallback) {
-              console.log(`⚠️ Disactivando IA y transfiriendo a asesor`);
-              try {
-                await this.disableAIForUser(phoneUser, conn, company);
-                console.log(`🔴 IA desactivada automáticamente para ${phoneUser} después de 3 intentos fallidos`);
-                return "Disculpa, en este momento no puedo ayudarte como quisiera. Voy a pasar tu consulta a uno de mis compañeros que te podrá atender mejor. Te contactará en unos minutos.";
-              } catch (disableError) {
-                console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
-                return "Disculpa, no me es posible ayudarte en este momento. Voy a transferir tu consulta para que te atiendan de la mejor manera. Te contactarán pronto.";
-              }
-            } else {
-              console.log(`📅 Calendar fallback failed - NOT disabling AI, returning error message`);
-              return "Lo siento, hubo un problema procesando tu solicitud de calendario. Por favor intenta de nuevo o contacta a soporte.";
+            console.log(`⚠️ Desactivando IA y transfiriendo a asesor`);
+            try {
+              await this.disableAIForUser(phoneUser, conn, company);
+              console.log(`🔴 IA desactivada automáticamente para ${phoneUser} después de 3 intentos fallidos`);
+              return "Disculpa, en este momento no puedo ayudarte como quisiera. Voy a pasar tu consulta a uno de mis compañeros que te podrá atender mejor. Te contactará en unos minutos.";
+            } catch (disableError) {
+              console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
+              return "Disculpa, no me es posible ayudarte en este momento. Voy a transferir tu consulta para que te atiendan de la mejor manera. Te contactarán pronto.";
             }
           } else {
             // Wait before retry (exponential backoff)
@@ -103,21 +95,13 @@ export class MessagingAgentService {
       console.error(`❌ Error in WhatsAppAgentService for ${company}:`, error);
       console.error(`❌ Error details:`, error.message);
       
-      // Only disable AI if this is NOT a calendar fallback
-      if (!isCalendarFallback) {
-        try {
-          await this.disableAIForUser(phoneUser, conn, company);
-          console.log(`🔴 IA desactivada automáticamente para ${phoneUser} debido a error`);
-        } catch (disableError) {
-          console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
-        }
-        
-        // Fallback response (human-like, no mention of technical error)
-        return "Disculpa, necesito que uno de mis compañeros te ayude con esto. Te van a contactar muy pronto para darte toda la información que necesitas.";
-      } else {
-        console.log(`📅 Calendar fallback error - NOT disabling AI`);
-        return "Lo siento, hubo un problema procesando tu solicitud de calendario. Por favor intenta de nuevo o contacta a soporte.";
+      try {
+        await this.disableAIForUser(phoneUser, conn, company);
+        console.log(`🔴 IA desactivada automáticamente para ${phoneUser} debido a error`);
+      } catch (disableError) {
+        console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
       }
+      
     }
   }
 

@@ -48,7 +48,6 @@ export class TwilioTestController {
         config?._id.toString(),
         config?.name,
         chatHistory,
-        false // isCalendarFallback
       );
 
       const responseTime = Date.now() - startTime;
@@ -113,7 +112,6 @@ export class TwilioTestController {
             config?._id.toString(),
             undefined, // sessionId not available in test
             undefined, // providedChatHistory
-            false // isCalendarFallback
           );
 
           const responseTime = Date.now() - startTime;

@@ -108,120 +108,217 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
   return new Promise<Client>((resolve, reject) => {
 
-  async function cleanUpResources(reason: string) {
-    console.log(`🧹 Limpiando recursos para ${clientKey} por: ${reason}`);
-    if (clients[clientKey]) {
-      try {
-        await clients[clientKey].destroy();
-      } catch (err) {
-        console.warn("Error al destruir cliente:", err);
-      }
-      
-      setTimeout(() => {
+    async function cleanUpResources(reason: string) {
+      console.log(`🧹 Limpiando recursos para ${clientKey} por: ${reason}`);
+      if (clients[clientKey]) {
         try {
-          delete clients[clientKey];
-          const sessionFolder = path.join(
-            process.cwd(),
-            ".wwebjs_auth",
-            `session-${clientId}`
-          );
-          if (fs.existsSync(sessionFolder)) {
-              fs.rmSync(sessionFolder, { recursive: true, force: true });
-          }
-        } catch (err:any) {
-          if (err.code === 'EPERM' || err.code === 'EBUSY') {
-            console.warn("No se pudo eliminar la carpeta/archivo de sesión porque está en uso. Se ignorará este error.");
-          } else {
-            console.error("Error al destruir el cliente:", err);
-          }
+          await clients[clientKey].destroy();
+        } catch (err) {
+          console.warn("Error al destruir cliente:", err);
         }
-      }, 5000);
-    }
-  }
-
-  async function updateSessionStatus(status: string, reason?: string) {
-    const conn = await getDbConnection(company);
-    const WhatsappSession = getSessionModel(conn);
-    const existingSession = await WhatsappSession.findOne({ name: sessionName });
-    if (existingSession) {
-      existingSession.status = status;
-      existingSession.save();
-      io.emit(`whatsapp-status-${company}-${user_id}`, { status, session: sessionName, message: reason });
-    }
-  }
-
-  // Función para validar si el número es de usuario real (no status, no grupo)
-  function isValidUserNumber(number: string): boolean {
-    return (
-      !!number &&
-      number.endsWith('@c.us') &&
-      !number.startsWith('status@') &&
-      !number.includes('broadcast')
-    );
-  }
-
-  // Extrae solo los dígitos antes de @c.us para el campo number
-  function extractNumberFromWhatsAppId(id: string): number | null {
-    const match = id.match(/^(\d+)@c\.us$/);
-    return match ? Number(match[1]) : null;
-  }
-
-  // Función para guardar prospecto si no existe
-  async function saveProspectIfNotExists(lastMessageData: { lastMessage: string, lastMessageDate: Date }, company: string, number: string, name?: string, activateIA?: boolean) {
-    try {
-      if (!isValidUserNumber(number)) {
-        return;
+        
+        setTimeout(() => {
+          try {
+            delete clients[clientKey];
+            const sessionFolder = path.join(
+              process.cwd(),
+              ".wwebjs_auth",
+              `session-${clientId}`
+            );
+            if (fs.existsSync(sessionFolder)) {
+                fs.rmSync(sessionFolder, { recursive: true, force: true });
+            }
+          } catch (err:any) {
+            if (err.code === 'EPERM' || err.code === 'EBUSY') {
+              console.warn("No se pudo eliminar la carpeta/archivo de sesión porque está en uso. Se ignorará este error.");
+            } else {
+              console.error("Error al destruir el cliente:", err);
+            }
+          }
+        }, 5000);
       }
-      const num = extractNumberFromWhatsAppId(number);
-      if (!num) {
-        return;
-      }
+    }
+
+    async function updateSessionStatus(status: string, reason?: string) {
       const conn = await getDbConnection(company);
-      const Table = getTableModel(conn);
-      const Record = getRecordModel(conn);
-      const User = getUserModel(conn);
-
-      const table = await Table.findOne({ slug: 'prospectos', c_name: company, isActive: true });
-      if (!table) {
-        return;
+      const WhatsappSession = getSessionModel(conn);
+      const existingSession = await WhatsappSession.findOne({ name: sessionName });
+      if (existingSession) {
+        existingSession.status = status;
+        existingSession.save();
+        io.emit(`whatsapp-status-${company}-${user_id}`, { status, session: sessionName, message: reason });
       }
+    }
 
-      const userData = await User.findOne({ _id: user_id });
+    // Función para validar si el número es de usuario real (no status, no grupo)
+    function isValidUserNumber(number: string): boolean {
+      return (
+        !!number &&
+        number.endsWith('@c.us') &&
+        !number.startsWith('status@') &&
+        !number.includes('broadcast')
+      );
+    }
 
-      const auditContext = {
-        skipAudit: true,
-      };
+    // Extrae solo los dígitos antes de @c.us para el campo number
+    function extractNumberFromWhatsAppId(id: string): number | null {
+      const match = id.match(/^(\d+)@c\.us$/);
+      return match ? Number(match[1]) : null;
+    }
 
-      // Atomic upsert: only insert if not exists
-      const result = await Record.findOneAndUpdate(
-        { tableSlug: 'prospectos', c_name: company, 'data.number': num },
-        {
-          $setOnInsert: {
-            tableSlug: 'prospectos',
+    // Enum para identificar el origen de la creación del prospecto
+    enum ProspectCreationSource {
+      BULK_IMPORT = 'bulk_import',
+      REAL_TIME_MESSAGE = 'real_time_message'
+    }
+
+    // Función centralizada para manejar la creación/actualización de prospectos
+    async function upsertProspect(params: {
+      company: string;
+      number: string;
+      lastMessageData: { lastMessage: string, lastMessageDate: Date };
+      name?: string;
+      activateIA?: boolean;
+      source: ProspectCreationSource;
+    }) {
+      const { company, number, lastMessageData, name, activateIA, source } = params;
+      
+      try {
+        if (!isValidUserNumber(number)) {
+          console.log(`⚠️ Número inválido ignorado: ${number}`);
+          return null;
+        }
+        
+        const num = extractNumberFromWhatsAppId(number);
+        if (!num) {
+          console.log(`⚠️ No se pudo extraer número de: ${number}`);
+          return null;
+        }
+
+        const conn = await getDbConnection(company);
+        const Table = getTableModel(conn);
+        const Record = getRecordModel(conn);
+        const User = getUserModel(conn);
+
+        // Asegurar que existe la tabla de prospectos
+        let table = await Table.findOne({ slug: 'prospectos', c_name: company, isActive: true });
+        if (!table) {
+          table = new Table({
+            name: "Prospectos",
+            slug: "prospectos",
+            icon: "👤",
             c_name: company,
             createdBy: 'whatsapp-bot',
-            'data.name': name || '',
-            'data.number': num,
-            'data.ia': activateIA === true,
-            'data.asesor.id': user_id,
-            'data.asesor.name': userData?.name,
-            updatedAt: new Date(),
-          },
-          $set: {
-            'data.lastmessage': lastMessageData?.lastMessage || '',
-            'data.lastmessagedate': lastMessageData?.lastMessageDate || new Date(),
-          }
-        },
-        { upsert: true, new: false, timestamps: { updatedAt: false }, context: 'query' } as any
-      ).setOptions({ auditContext, $locals: { auditContext } } as any);
+            fields: [
+              { name: "name", label: "Nombre", type: "text", order: 1 },
+              { name: "number", label: "Número", type: "number", order: 2 },
+              { name: "ia", label: "IA", type: "boolean", order: 3 },
+              { name: "asesor", label: "Asesor", type: "object", required: false, options: [], order: 4 },
+              { name: "lastmessage", label: "Ultimo Mensaje", type: "text", required: false, options: [], order: 5 },
+              { name: "lastmessagedate", label: "Fecha Ultimo Mensaje", type: "date", required: false, options: [], order: 6 }
+            ]
+          });
+          await table.save();
+          console.log(`✅ Tabla 'prospectos' creada para ${company}`);
+        }
 
-      if (!result) {
-        console.log(`✅ Prospecto guardado: ${num} con ${lastMessageData.lastMessage}`);
+        const userData = await User.findOne({ _id: user_id });
+
+        const auditContext = {
+          skipAudit: true,
+        };
+
+        // Determinar el nombre más apropiado
+        const prospectName = name && name !== number && !name.includes('@c.us') ? name : '';
+        
+        // Configuración específica por fuente
+        const sourceConfig = {
+          [ProspectCreationSource.BULK_IMPORT]: {
+            priority: 1,
+            defaultIA: false,
+            logPrefix: '📦 BULK'
+          },
+          [ProspectCreationSource.REAL_TIME_MESSAGE]: {
+            priority: 2,
+            defaultIA: true,
+            logPrefix: '⚡ REALTIME'
+          }
+        };
+
+        const config = sourceConfig[source];
+
+        // Upsert con lógica inteligente de prioridad
+        const result = await Record.findOneAndUpdate(
+          { 
+            tableSlug: 'prospectos', 
+            c_name: company, 
+            'data.number': num 
+          },
+          {
+            $setOnInsert: {
+              tableSlug: 'prospectos',
+              c_name: company,
+              createdBy: 'whatsapp-bot',
+              'data.number': num,
+              'data.name': prospectName,
+              'data.ia': activateIA ?? config.defaultIA,
+              'data.asesor.id': user_id,
+              'data.asesor.name': userData?.name,
+              'data._source': source,
+              'data._priority': config.priority,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            $set: {
+              'data.lastmessage': lastMessageData?.lastMessage || '',
+              'data.lastmessagedate': lastMessageData?.lastMessageDate || new Date(),
+            },
+            // Solo actualizar nombre si el nuevo es mejor (no vacío y actual está vacío o es el número)
+            ...(prospectName && {
+              $setOnInsert: {
+                'data.name': prospectName
+              }
+            })
+          },
+          { 
+            upsert: true, 
+            new: true, 
+            timestamps: { updatedAt: false }, 
+            context: 'query',
+            setDefaultsOnInsert: true
+          } as any
+        ).setOptions({ auditContext, $locals: { auditContext } } as any);
+
+        if (result) {
+          // Verificar si necesitamos actualizar el nombre (convertir a documento para acceder a las propiedades)
+          const doc = result as any;
+          if (prospectName && 
+              (!doc.data?.name || doc.data.name === number || doc.data.name.includes('@c.us'))) {
+            await Record.findOneAndUpdate(
+              { _id: doc._id },
+              { 
+                $set: { 
+                  'data.name': prospectName,
+                  updatedAt: new Date(),
+                  updatedBy: `whatsapp-bot-${source}`
+                }
+              },
+              { context: 'query' }
+            ).setOptions({ auditContext, $locals: { auditContext } } as any);
+            
+            console.log(`${config.logPrefix} ✨ Nombre actualizado para ${num}: "${prospectName}"`);
+          }
+          return result;
+        } else {
+          console.log(`${config.logPrefix} 🆕 Prospecto creado: ${num} - ${prospectName || 'Sin nombre'}`);
+          return null; // Nuevo registro creado
+        }
+        
+      } catch (err) {
+        console.error(`❌ Error procesando prospecto desde ${source}:`, err);
+        return null;
       }
-    } catch (err) {
-      console.error('Error guardando prospecto:', err);
     }
-  }
 
     whatsappClient.on('qr', async (qr) => {
       if (qrSent[clientKey]) {
@@ -246,7 +343,7 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       }
     });
 
-  // Evento cuando el usuario escanea el QR
+    // Evento cuando el usuario escanea el QR
     whatsappClient.on('loading_screen', async (percent, message) => {
       if (io) {
         io.emit(`whatsapp-status-${company}-${user_id}`, { 
@@ -374,15 +471,18 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               ? chatRecord.messages[chatRecord.messages.length - 1]
               : null;
             if (!lastMsg) continue;
-            saveProspectIfNotExists(
-              {
+            
+            await upsertProspect({
+              company,
+              number: chat.id._serialized,
+              lastMessageData: {
                 lastMessage: lastMsg.body || '',
                 lastMessageDate: lastMsg.createdAt || new Date()
               },
-              company,
-              chat.id._serialized,
-              chat.name
-            );
+              name: chat.name,
+              activateIA: false, // No activar IA en bulk import
+              source: ProspectCreationSource.BULK_IMPORT
+            });
           }
         } catch (err) {
           console.error('Error guardando chats masivamente:', err);
@@ -470,12 +570,17 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         // Guardar prospecto si no existe (solo chats individuales)
         const number = message.from;
         try {
-          await saveProspectIfNotExists(
-            { 
+          await upsertProspect({
+            company,
+            number,
+            lastMessageData: { 
               lastMessage: message.body, 
               lastMessageDate: message.timestamp ? new Date(message.timestamp * 1000) : new Date() 
             },
-            company, number, (message as any).notifyName || number, true); // activa IA
+            name: (message as any).notifyName,
+            activateIA: true, // Activar IA en mensajes en tiempo real
+            source: ProspectCreationSource.REAL_TIME_MESSAGE
+          });
         } catch (prospectError) {
           console.warn('Error guardando prospecto:', prospectError);
         }

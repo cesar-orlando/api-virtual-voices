@@ -10,6 +10,7 @@ import {
   ALLOWED_DOMAINS,
   FORBIDDEN_PARAMETERS 
 } from "../types/tool.types";
+import auditTrailPlugin from "../plugins/auditTrail";
 
 // Extender ITool para incluir métodos de Document
 export interface IToolDocument extends Omit<ITool, '_id'>, Document {
@@ -140,6 +141,26 @@ const ToolSchema: Schema = new Schema(
     timestamps: true,
   }
 );
+
+ToolSchema.plugin(auditTrailPlugin as any, {
+  rootPaths: [""], // watch whole doc
+  includePaths: [
+    'name',
+    'displayName',
+    'description',
+    'category',
+    'isActive',
+    'config',
+    'parameters'
+  ],
+  excludePaths: [ 
+    '__v', 
+    'createdAt', 
+    'updatedAt', 
+    'parameters.required'
+  ],
+  modelName: "Tool",
+});
 
 // Índices para optimizar consultas
 ToolSchema.index({ c_name: 1, isActive: 1 }); // Herramientas activas por empresa

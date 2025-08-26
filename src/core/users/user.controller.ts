@@ -357,6 +357,7 @@ export const compareLogin = async (
             role: existingUser.role,
             c_name: dbName,
             companySlug: dbName, // AGREGAR: Para que el middleware lo detecte
+            branchId: existingUser.branch.branchId,
             id: existingUser._id,
           },
           getJwtSecret(existingUser.companySlug),
@@ -369,6 +370,7 @@ export const compareLogin = async (
           role: existingUser.role,
           c_name: dbName,
           companySlug: dbName, // AGREGAR: Para consistencia
+          branchId: existingUser.branch.branchId, // NUEVO: Incluir branchId en la respuesta
           token,
         });
         console.log(
@@ -681,6 +683,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         role: user.role,
         companySlug: user.companySlug,
         status: user.status,
+        branchId: user.branch.branchId, // Incluir branchId en la respuesta
       },
     });
     return;
@@ -959,7 +962,262 @@ export const getUsersByBranch = async (req: Request, res: Response): Promise<voi
       total: users.length
     });
   } catch (error) {
-    console.error('Error getting users by branch:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+}; 
+
+// 📧 EMAIL CONFIGURATION ENDPOINTS - Mínimos necesarios
+
+/**
+ * Actualizar configuración completa de email del usuario
+ * PUT /api/users/:userId/email-config
+ */
+export const updateEmailConfig = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+  const { smtpEmail, smtpPassword, signature, footerImage, provider = 'gmail', isEnabled } = req.body;
+
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const User = getUserModel(conn);
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado" });
+      return;
+    }
+
+    // Actualizar configuración
+    user.emailConfig = {
+      smtpEmail: smtpEmail || user.emailConfig?.smtpEmail,
+      smtpPassword: smtpPassword || user.emailConfig?.smtpPassword,
+      signature: signature !== undefined ? signature : user.emailConfig?.signature,
+      footerImage: footerImage !== undefined ? footerImage : user.emailConfig?.footerImage,
+      isEnabled: (isEnabled !== undefined ? isEnabled : !!(smtpEmail && smtpPassword)),
+      provider,
+      smtpHost: user.emailConfig?.smtpHost,
+      smtpPort: user.emailConfig?.smtpPort,
+      smtpSecure: user.emailConfig?.smtpSecure
+    };
+
+    await user.save();
+
+    res.json({ 
+      success: true,
+      message: "Configuración actualizada",
+      emailConfig: {
+        smtpEmail: user.emailConfig.smtpEmail,
+        signature: user.emailConfig.signature,
+        footerImage: user.emailConfig.footerImage,
+        provider: user.emailConfig.provider,
+        isEnabled: user.emailConfig.isEnabled
+      }
+    });
+  } catch (error) {
+    console.error('Error updating email config:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+/**
+ * Obtener configuración de email del usuario
+ * GET /api/users/:userId/email-config
+ */
+export const getEmailConfig = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const User = getUserModel(conn);
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado" });
+      return;
+    }
+
+    res.json({
+      emailConfig: user.emailConfig ? {
+        smtpEmail: user.emailConfig.smtpEmail,
+        signature: user.emailConfig.signature,
+        footerImage: user.emailConfig.footerImage,
+        provider: user.emailConfig.provider,
+        isEnabled: user.emailConfig.isEnabled
+      } : null
+    });
+  } catch (error) {
+    console.error('Error getting email config:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+/**
+ * 🔧 FUNCIÓN INTERNA: Obtener configuración completa con contraseña (solo para uso interno del sistema)
+ * Esta función SÍ incluye la contraseña para poder enviar emails
+ */
+export const getEmailConfigInternal = async (companySlug: string, userId: string) => {
+  try {
+    const conn = await getConnectionByCompanySlug(companySlug);
+    const User = getUserModel(conn);
+    
+    const user = await User.findById(userId);
+    if (!user || !user.emailConfig || !user.emailConfig.isEnabled) {
+      return null;
+    }
+
+    const emailConfig = user.emailConfig;
+    
+    // Configuraciones SMTP por proveedor
+    const smtpConfigs = {
+      gmail: { host: 'smtp.gmail.com', port: 587, secure: false },
+      outlook: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+      yahoo: { host: 'smtp.mail.yahoo.com', port: 587, secure: false },
+      custom: { 
+        host: emailConfig.smtpHost || 'smtp.gmail.com', 
+        port: emailConfig.smtpPort || 587, 
+        secure: emailConfig.smtpSecure || false 
+      }
+    };
+    
+    const providerConfig = smtpConfigs[emailConfig.provider || 'gmail'];
+    
+    // Preparar firma con imagen si existe
+    let signature = emailConfig.signature || '';
+    if (emailConfig.footerImage) {
+      signature += `<br><br><img src="${emailConfig.footerImage}" alt="Footer" style="max-width: 400px;">`;
+    }
+
+    return {
+      smtpConfig: {
+        host: providerConfig.host,
+        port: providerConfig.port,
+        secure: providerConfig.secure,
+        user: emailConfig.smtpEmail,
+        pass: emailConfig.smtpPassword // ✅ Incluye la contraseña
+      },
+      signature,
+      userInfo: {
+        name: user.name,
+        email: user.email,
+        smtpEmail: emailConfig.smtpEmail
+      }
+    };
+  } catch (error) {
+    console.error('Error getting internal email config:', error);
+    return null;
+  }
+};
+
+/**
+ * Eliminar configuración de email del usuario
+ * DELETE /api/users/:userId/email-config
+ */
+export const deleteEmailConfig = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(companyContext.slug);
+    const User = getUserModel(conn);
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ message: "Usuario no encontrado" });
+      return;
+    }
+
+    user.emailConfig = undefined;
+    await user.save();
+
+    res.json({ 
+      success: true,
+      message: "Configuración de email eliminada" 
+    });
+  } catch (error) {
+    console.error('Error deleting email config:', error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+/**
+ * 📧 NUEVO: Enviar email usando la configuración del usuario
+ * POST /api/users/:userId/send-email
+ */
+export const sendEmailFromUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { to, subject, text, html } = req.body;
+
+    if (!to || !subject || !text) {
+      res.status(400).json({ 
+        message: "Los campos 'to', 'subject' y 'text' son requeridos" 
+      });
+      return;
+    }
+
+    const companyContext = getCurrentCompanyContext(req);
+    if (!companyContext) {
+      res.status(401).json({ message: "Contexto de empresa requerido" });
+      return;
+    }
+
+    // Obtener configuración completa del usuario (con contraseña)
+    const userEmailConfig = await getEmailConfigInternal(companyContext.slug, userId);
+    if (!userEmailConfig) {
+      res.status(400).json({ 
+        message: "Usuario no tiene configuración de email habilitada" 
+      });
+      return;
+    }
+
+    // Preparar contenido HTML con firma
+    const htmlContent = html || `<div>${text.replace(/\n/g, '<br>')}</div>`;
+    const finalHtml = `${htmlContent}<br><br>${userEmailConfig.signature}`;
+
+    // Datos para enviar al endpoint de email existente
+    const emailData = {
+      to,
+      subject,
+      text,
+      html: finalHtml,
+      smtpConfig: userEmailConfig.smtpConfig
+    };
+
+    // Aquí puedes llamar directamente a la función sendEmail del email.controller
+    // O hacer una petición HTTP interna al endpoint existente
+    res.json({
+      success: true,
+      message: "Email configurado para envío",
+      emailData: {
+        to: emailData.to,
+        subject: emailData.subject,
+        from: userEmailConfig.smtpConfig.user,
+        hasSignature: !!userEmailConfig.signature,
+        provider: userEmailConfig.smtpConfig.host
+      },
+      // Para usar en el frontend: hacer POST a /api/email/send/companySlug con emailData
+      endpoint: `/api/email/send/${companyContext.slug}`,
+      payload: emailData
+    });
+
+  } catch (error) {
+    console.error('Error preparing email from user:', error);
     res.status(500).json({ message: "Error interno del servidor" });
   }
 }; 

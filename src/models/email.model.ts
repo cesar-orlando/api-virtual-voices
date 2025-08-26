@@ -6,6 +6,12 @@ export interface IEmail extends Document {
   subject: string;
   text: string;
   html: string;
+  smtpConfig?: {
+    host: string;
+    port: number;
+    user: string;
+    // No incluimos pass por seguridad
+  };
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -17,6 +23,11 @@ const EmailSchema: Schema = new Schema(
     subject: { type: String, required: true },
     text: { type: String, required: true },
     html: { type: String, required: false },
+    smtpConfig: {
+      host: { type: String },
+      port: { type: Number },
+      user: { type: String }
+    }
   },
   { timestamps: true }
 );

@@ -1,6 +1,6 @@
 // Modular media handlers for WhatsApp messages
 import { Message, MessageMedia } from 'whatsapp-web.js';
-import { openai } from '../openai';
+import { openai } from '../../config/openai';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import axios from 'axios';

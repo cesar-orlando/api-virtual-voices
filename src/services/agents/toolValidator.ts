@@ -4,7 +4,7 @@ import {
   ToolValidationResult,
   ALLOWED_DOMAINS,
   FORBIDDEN_PARAMETERS 
-} from "../types/tool.types";
+} from "../../types/tool.types";
 
 export class ToolValidator {
   

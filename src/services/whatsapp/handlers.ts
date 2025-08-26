@@ -9,7 +9,6 @@ import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import getIaConfigModel from '../../models/iaConfig.model';
 import { MessagingAgentService } from '../agents/MessagingAgentService';
-import { Assistant } from '../agents/Assistant';
 import * as fs from 'node:fs';
 
 // Track messages sent by our bot so we don't misclassify them as human outbound
@@ -25,117 +24,6 @@ function rememberBotSentMessage(id?: string) {
 const messagingAgentService = new MessagingAgentService();
 
 // Store Calendar Assistant instances per company
-const calendarAssistants = new Map<string, Assistant>();
-
-// Calendar keywords to detect calendar-related messages
-const CALENDAR_KEYWORDS = [
-  // Spanish calendar terms
-  'cita', 'reunión', 'evento', 'calendario', 'agendar', 'programar', 'reservar',
-  'cancelar', 'editar', 'modificar', 'cambiar', 'reprogramar', 'mover',
-  'cita médica', 'junta', 'llamada', 'videollamada', 'zoom', 'meet',
-  'crear evento', 'nuevo evento', 'eliminar evento', 'borrar evento',
-  // English equivalents
-  'meeting', 'appointment', 'event', 'calendar', 'schedule', 'book',
-  'cancel', 'edit', 'modify', 'change', 'reschedule', 'move',
-  'call', 'videocall', 'create event', 'new event', 'delete event'
-];
-
-// Time keywords that need to be combined with action words
-const TIME_KEYWORDS = [
-  'hora', 'fecha', 'día', 'semana', 'mes',
-  'mañana', 'hoy', 'pasado mañana', 'ayer', 'ahora', 'tarde', 'noche',
-  'próxima semana', 'la semana que viene', 'el próximo', 'la próxima',
-  'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo',
-  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
-  'time', 'date', 'tomorrow', 'today', 'yesterday', 'now',
-  'next week', 'next', 'monday', 'tuesday', 'wednesday', 'thursday',
-  'friday', 'saturday', 'sunday'
-];
-
-// Action verbs for calendar operations
-const ACTION_KEYWORDS = [
-  'quiero', 'necesito', 'puedes', 'agenda', 'programa', 'crea', 'elimina', 'borra',
-  'want', 'need', 'can you', 'create', 'delete', 'schedule', 'book'
-];
-
-// NUEVA CONFIGURACIÓN: Teléfonos autorizados para usar Calendar Assistant por empresa
-const AUTHORIZED_PHONES = {
-  'mitsubishi': [
-    '5216441500358',    // Ejemplo de teléfono autorizado
-    '5210000000000',    // Otro teléfono autorizado
-    // Agregar más teléfonos según sea necesario
-  ],
-  'quicklearning': [
-    '5210000000000',    // Teléfono autorizado para quicklearning
-    // Agregar más teléfonos
-  ],
-  // Agregar más empresas según sea necesario
-};
-
-// Función para verificar si un teléfono está autorizado para usar Calendar Assistant
-function isPhoneAuthorizedForCalendar(company: string, phone: string): boolean {
-  const cleanPhone = phone.replace('@c.us', '').replace(/\D/g, ''); // Limpiar formato de WhatsApp y caracteres no numéricos
-  const authorizedPhones = AUTHORIZED_PHONES[company] || [];
-  
-  console.log(`🔍 Verificando autorización para Calendar Assistant:`);
-  console.log(`   - Empresa: ${company}`);
-  console.log(`   - Teléfono: ${cleanPhone}`);
-  console.log(`   - Teléfonos autorizados:`, authorizedPhones);
-  
-  const isAuthorized = authorizedPhones.some(authPhone => {
-    // Permitir coincidencia exacta o que el teléfono termine con el número autorizado
-    return cleanPhone === authPhone || cleanPhone.endsWith(authPhone);
-  });
-  
-  console.log(`   - ${isAuthorized ? '✅ Autorizado' : '❌ No autorizado'}`);
-  return isAuthorized;
-}
-
-function isCalendarRelatedMessage(message: string): boolean {
-  const lowerMessage = message.toLowerCase();
-  
-  // Direct calendar keywords (strong indicators)
-  const hasDirectCalendarKeyword = CALENDAR_KEYWORDS.some(keyword => 
-    lowerMessage.includes(keyword.toLowerCase())
-  );
-  
-  if (hasDirectCalendarKeyword) {
-    return true;
-  }
-  
-  // Check for combination of action + time keywords
-  const hasActionKeyword = ACTION_KEYWORDS.some(keyword => 
-    lowerMessage.includes(keyword.toLowerCase())
-  );
-  
-  const hasTimeKeyword = TIME_KEYWORDS.some(keyword => 
-    lowerMessage.includes(keyword.toLowerCase())
-  );
-  
-  // Return true only if we have both action and time keywords
-  return hasActionKeyword && hasTimeKeyword;
-}
-
-function getCalendarAssistant(company: string): Assistant {
-  if (!calendarAssistants.has(company)) {
-    const assistant = new Assistant(company);
-    calendarAssistants.set(company, assistant);
-  }
-  return calendarAssistants.get(company)!;
-}
-
-async function initializeCalendarAssistant(company: string): Promise<Assistant> {
-  const assistant = getCalendarAssistant(company);
-  
-  try {
-    await assistant.initialize();
-    return assistant;
-  } catch (error) {
-    console.error(`❌ Failed to initialize Calendar Assistant for company ${company}:`, error);
-    throw new Error(`Calendar Assistant initialization failed for ${company}: ${error.message}`);
-  }
-}
 
 // Store pending timeouts for each user
 const pendingResponses = new Map<string, {
@@ -403,74 +291,28 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
     const session = await sessionModel.findOne({ name: sessionName });
     const IaConfig = getIaConfigModel(conn);
     const config = await IaConfig.findOne({ _id: session?.IA?.id });
-    
   
-  // Check if any of the messages are calendar-related
-  const isCalendarMessage = messages.some(msg => isCalendarRelatedMessage(msg.body));
-  
-  /*if (isCalendarMessage) {
-    // NUEVA VERIFICACIÓN: Solo proceder si el teléfono está autorizado
-    const isAuthorized = isPhoneAuthorizedForCalendar(company, userPhone);
-    
-    if (!isAuthorized) {
-      console.log(`🚫 Calendar Assistant bloqueado para teléfono no autorizado: ${userPhone} (empresa: ${company})`);
-      
-      // Enviar mensaje de no autorización (opcional)
-      const notAuthorizedMessage = '🚫 Lo siento, no tienes autorización para usar el asistente de calendario. Contacta con el administrador si necesitas acceso.';
-      await sendCustomResponse(client, lastMessage, notAuthorizedMessage, company, sessionName, latestRecord, conn);
-      return;
-    }
-    
     try {
-      console.log(`✅ Calendar Assistant autorizado para: ${userPhone} (empresa: ${company})`);
-      const calendarAssistant = await initializeCalendarAssistant(company);
-      
-      // Combine all messages into context for the Calendar Assistant
-      const combinedMessage = messages.map(msg => msg.body).join(' ');
-      
-      const response = await calendarAssistant.processMessage(combinedMessage, {
+
+      const response = await messagingAgentService.processWhatsAppMessage(
         company,
-        phoneUser: userPhone.replace('@c.us', ''),
-        chatHistory: [] // You could populate this with recent chat history if needed
-      });
-      // Send the calendar assistant response
+        lastMessage.body,
+        userPhone,
+        conn,
+        config?._id.toString(),
+        session?._id.toString(),
+        undefined, // providedChatHistory
+      );
+      
+      // Send the response directly
       await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);
-      return; // CRITICAL: Return early to prevent regular agent processing
       
     } catch (error) {
-      console.error(`❌ Calendar Assistant Error for ${userPhone}:`, error);
-      console.error(`❌ Calendar Assistant error type:`, error.constructor.name);
-      console.error(`❌ Calendar Assistant error message:`, error.message);
-      
-      // Fallback to regular agent instead of showing error
-      // Don't return here - let it fall through to regular agent processing
+      console.error(`❌ Error with BaseAgent system:`, error);
+      // Fallback response
+      await sendCustomResponse(client, lastMessage, "En un momento un asesor se pondrá en contacto con usted.", company, sessionName, latestRecord, conn);
     }
-  }*/
-  
-  try {
-    
-    // Add a flag to indicate this is a calendar fallback
-    const isCalendarFallback = isCalendarMessage;
-    
-    const response = await messagingAgentService.processWhatsAppMessage(
-      company,
-      lastMessage.body,
-      userPhone,
-      conn,
-      config?._id.toString(),
-      session?._id.toString(),
-      undefined, // providedChatHistory
-      isCalendarFallback // Add calendar fallback flag
-    );
-    
-    // Send the response directly
-    await sendCustomResponse(client, lastMessage, response, company, sessionName, latestRecord, conn);
-    
-  } catch (error) {
-    console.error(`❌ Error with BaseAgent system:`, error);
-    // Fallback response
-    await sendCustomResponse(client, lastMessage, "En un momento un asesor se pondrá en contacto con usted.", company, sessionName, latestRecord, conn);
-  }
+
   } catch (error) {
     console.error(`❌ Error in processAccumulatedMessages:`, error);
     // Final fallback response

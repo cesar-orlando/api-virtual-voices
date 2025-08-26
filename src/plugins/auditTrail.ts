@@ -4,6 +4,7 @@ import getAuditLogModel from '../models/auditLog.model';
 type AuditPluginOptions = {
   includePaths?: string[]; // dot paths to include; if omitted, all root data.* paths are considered
   excludePaths?: string[];
+  excludePatterns?: RegExp[]; // regex patterns to exclude
   redactPaths?: string[]; // dot paths to mask
   embeddedHistoryPath?: string; // e.g., 'changeHistory'
   embeddedCap?: number; // keep last N entries
@@ -75,6 +76,21 @@ function flatten(obj: any, prefix = ''): Record<string, any> {
   for (const [k, v] of Object.entries(obj)) {
     const path = prefix ? `${prefix}.${k}` : k;
     const normalized = normalizeLeaf(v);
+    if (Array.isArray(v)) {
+      // Recurse into arrays by index for granular diffs, e.g., fields.0.label
+      v.forEach((el, idx) => {
+        const childPrefix = `${path}.${idx}`;
+        const normEl = normalizeLeaf(el);
+        if (normEl !== el) {
+          out[childPrefix] = normEl;
+        } else if (el && typeof el === 'object' && !Array.isArray(el) && !(el instanceof Date)) {
+          Object.assign(out, flatten(el, childPrefix));
+        } else {
+          out[childPrefix] = normEl;
+        }
+      });
+      continue;
+    }
     if (normalized !== v) {
       // Special types normalized to scalars
       out[path] = normalized;
@@ -88,8 +104,16 @@ function flatten(obj: any, prefix = ''): Record<string, any> {
 }
 
 function shouldTrack(path: string, opts: AuditPluginOptions) {
+  // Check excludePatterns first - regex patterns for flexible exclusions
+  if (opts.excludePatterns?.some(pattern => pattern.test(path))) return false;
+  
+  // Check excludePaths first - if excluded, don't track regardless of includes
   if (opts.excludePaths?.some(p => path === p || path.startsWith(p + '.'))) return false;
+  
+  // If no includePaths specified, track everything (except excluded)
   if (!opts.includePaths || opts.includePaths.length === 0) return true;
+  
+  // Only track if explicitly included
   return opts.includePaths.some(p => path === p || path.startsWith(p + '.'));
 }
 
@@ -140,7 +164,14 @@ export default function auditTrailPlugin(schema: Schema, opts: AuditPluginOption
     if (opts.embeddedHistoryPath) {
       const entries = payloads.map(p => ({
         user: p.user,
-        field: p.path.replace(/^data\./, ''),
+        field: (() => {
+          // Remove the first matching root prefix only (supports multiple roots like 'data' and 'fields')
+          for (const r of roots) {
+            if (r && p.path.startsWith(r + '.')) return p.path.slice(r.length + 1);
+            if (r === '') return p.path;
+          }
+          return p.path;
+        })(),
         oldValue: p.oldValue,
         newValue: p.newValue,
         changedAt: p.changedAt,
@@ -153,49 +184,6 @@ export default function auditTrailPlugin(schema: Schema, opts: AuditPluginOption
       this.set(opts.embeddedHistoryPath, sliced);
     }
   }
-
-  // Pre-save: compare current doc vs snapshot if available
-  schema.pre('save', async function (next) {
-    try {
-  // Allow callers to skip audit on direct save() operations
-  if ((this as any)._skipAudit === true) return next();
-      if (this.isNew) return next();
-      // If the doc has a previous snapshot, compare; otherwise, skip
-      const prev: FlattenMaps<any> | undefined = this._originalDoc;
-      const changes: Array<{ path: string; oldValue: any; newValue: any }> = [];
-      if (prev) {
-        let flatPrev: Record<string, any> = {};
-        let flatCurr: Record<string, any> = {};
-        for (const root of roots) {
-          const prevVal = getAtPath(prev, root);
-          const currVal = root ? this.get(root) : this.toObject({ depopulate: true });
-          Object.assign(flatPrev, flatten(prevVal, root));
-          Object.assign(flatCurr, flatten(currVal, root));
-        }
-        const paths = new Set([...Object.keys(flatPrev), ...Object.keys(flatCurr)]);
-        for (const p of paths) {
-          if (!shouldTrack(p, opts)) continue;
-          const a = flatPrev[p];
-          const b = flatCurr[p];
-          if (JSON.stringify(a) !== JSON.stringify(b)) {
-            changes.push({ path: p, oldValue: redact(p, a, opts), newValue: redact(p, b, opts) });
-          }
-        }
-      }
-      if (changes.length) {
-        // Ensure Mixed changes are persisted: mark changed top-level paths if Mixed
-        const tops = new Set(changes.map(c => c.path.split('.')[0]).filter(Boolean));
-        for (const top of tops) {
-          const p = this.schema?.path(top);
-          if (p && (p.instance === 'Mixed' || (p as any).$isMongooseArray && (p as any).caster?.instance === 'Mixed')) {
-            this.markModified(top);
-          }
-        }
-        await writeAudit.call(this, changes);
-      }
-      next();
-    } catch (err) { next(err as any); }
-  });
 
   // Pre findOneAndUpdate: compute diffs against current stored doc
   schema.pre(['findOneAndUpdate', 'updateOne'], async function (next) {
@@ -240,24 +228,52 @@ export default function auditTrailPlugin(schema: Schema, opts: AuditPluginOption
           }
         }
       } else {
-        // Operator-based updates: consider $set and $unset
+        // Operator-based updates: consider $set and $unset (expand branches for granular diffs)
         const setOps = update.$set || {};
         const unsetOps = update.$unset || {};
+
         for (const [k, v] of Object.entries(setOps)) {
           const matchesRoot = roots.some(r => r === '' ? true : (k === r || k.startsWith(r + '.')));
           if (!matchesRoot) continue;
           if (!shouldTrack(k, opts)) continue;
-          const oldV = flatPrev[k];
-          if (JSON.stringify(oldV) !== JSON.stringify(v)) {
-            changes.push({ path: k, oldValue: redact(k, oldV, opts), newValue: redact(k, v, opts) });
+
+          if (v && typeof v === 'object') {
+            // Flatten the new subtree and compare to previous subtree keys
+            const flatNew = flatten(v, k);
+            const prevKeys = Object.keys(flatPrev).filter(p => p === k || p.startsWith(k + '.'));
+            const nextKeys = Object.keys(flatNew);
+            const all = new Set<string>([...prevKeys, ...nextKeys]);
+            for (const p of all) {
+              if (!shouldTrack(p, opts)) continue;
+              const a = flatPrev[p];
+              const b = flatNew[p];
+              if (JSON.stringify(a) !== JSON.stringify(b)) {
+                changes.push({ path: p, oldValue: redact(p, a, opts), newValue: redact(p, b, opts) });
+              }
+            }
+          } else {
+            const oldV = flatPrev[k];
+            if (JSON.stringify(oldV) !== JSON.stringify(v)) {
+              changes.push({ path: k, oldValue: redact(k, oldV, opts), newValue: redact(k, v, opts) });
+            }
           }
         }
+
         for (const k of Object.keys(unsetOps)) {
           const matchesRoot = roots.some(r => r === '' ? true : (k === r || k.startsWith(r + '.')));
           if (!matchesRoot) continue;
           if (!shouldTrack(k, opts)) continue;
-          const oldV = flatPrev[k];
-          changes.push({ path: k, oldValue: redact(k, oldV, opts), newValue: redact(k, null, opts) });
+
+          const prevKeys = Object.keys(flatPrev).filter(p => p === k || p.startsWith(k + '.'));
+          if (prevKeys.length === 0) {
+            const oldV = flatPrev[k];
+            changes.push({ path: k, oldValue: redact(k, oldV, opts), newValue: redact(k, null, opts) });
+          } else {
+            for (const p of prevKeys) {
+              const oldV = flatPrev[p];
+              changes.push({ path: p, oldValue: redact(p, oldV, opts), newValue: redact(p, null, opts) });
+            }
+          }
         }
       }
 

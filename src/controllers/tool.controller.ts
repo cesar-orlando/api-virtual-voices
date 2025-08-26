@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import getToolModel, { getToolExecutionModel, getToolCategoryModel } from "../models/tool.model";
-import { ToolExecutor } from "../services/toolExecutor";
+import { ToolExecutor } from "../services/agents/toolExecutor";
 import { 
   ITool, 
   ToolExecutionRequest, 
@@ -9,6 +9,8 @@ import {
   DEFAULT_CATEGORIES,
   COMPANY_LIMITS 
 } from "../types/tool.types";
+import getUserModel from "../core/users/user.model";
+import { attachHistoryToData } from "../plugins/auditTrail";
 
 // Crear una nueva herramienta
 export const createTool = async (req: Request, res: Response) => {
@@ -68,6 +70,9 @@ export const getTools = async (req: Request, res: Response) => {
     sortOrder = 'desc' 
   } = req.query;
 
+  const includeHistory = String((req.query.includeHistory as any) || '').toLowerCase() === 'true';
+  const historyLimit = Number(req.query.historyLimit || 5);
+
   try {
     const conn = await getConnectionByCompanySlug(c_name);
     const Tool = getToolModel(conn);
@@ -83,7 +88,7 @@ export const getTools = async (req: Request, res: Response) => {
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
     // Obtener herramientas con paginación
-    const tools = await Tool.find(filter)
+    let tools = await Tool.find(filter)
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
@@ -91,6 +96,10 @@ export const getTools = async (req: Request, res: Response) => {
 
     // Contar total
     const total = await Tool.countDocuments(filter);
+
+    if (includeHistory) {
+      tools = await attachHistoryToData(conn, tools, 'Tool', Number.isFinite(historyLimit) ? historyLimit : 5);
+    }
 
     res.json({
       tools,
@@ -148,9 +157,25 @@ export const updateTool = async (req: Request, res: Response) => {
       return;
     }
 
-    // Actualizar herramienta
-    Object.assign(existingTool, updateData, { updatedBy });
-    await existingTool.save();
+    const User = getUserModel(conn);
+    const user = await User.findById(updatedBy);
+
+    const auditContext = {
+      _updatedByUser: { id: updatedBy, name: user.name },
+      _updatedBy: updatedBy,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: (req as any).ip,
+      userAgent: req.headers['user-agent'],
+    };
+
+    await existingTool.updateOne(
+      { $set: { ...updateData, updatedBy } },
+      {
+        runValidators: true,
+        timestamps: true,
+      }
+    ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
     res.json({ 
       message: "Tool updated successfully", 

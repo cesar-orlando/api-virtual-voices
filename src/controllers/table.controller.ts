@@ -3,9 +3,11 @@ import getTableModel, { ITable } from "../models/table.model";
 import getRecordModel from "../models/record.model";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { TableField } from "../types";
+import getUserModel from "../core/users/user.model";
+import { attachHistoryToData } from "../plugins/auditTrail";
 
 // Tipos de campo permitidos
-const ALLOWED_FIELD_TYPES = ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency'];
+const ALLOWED_FIELD_TYPES = ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency', 'object'];
 
 // Función para validar la estructura de un campo
 const validateField = (field: any, index: number): { isValid: boolean; error?: string } => {
@@ -48,6 +50,7 @@ const assignFieldOrders = (fields: any[]): any[] => {
     
     // Limpiar propiedades redundantes
     const cleanField = {
+  ...(field._id ? { _id: field._id } : {}), // Preservar _id de subdocumento si viene del cliente/UI
       name: field.name,
       label: field.label,
       type: field.type,
@@ -212,6 +215,8 @@ export const createTable = async (req: Request, res: Response): Promise<void> =>
 export const getTables = async (req: Request, res: Response) => {
   try {
     const { c_name } = req.params;
+    const includeHistory = String((req.query.includeHistory as any) || '').toLowerCase() === 'true';
+    const historyLimit = Number(req.query.historyLimit || 5);
     const conn = await getConnectionByCompanySlug(c_name);
     const Table = getTableModel(conn);
     const Record = getRecordModel(conn);
@@ -222,7 +227,7 @@ export const getTables = async (req: Request, res: Response) => {
       .lean();
 
     // Para cada tabla, contar registros eficientemente
-    const tablesWithCount = await Promise.all(
+    let tablesWithCount = await Promise.all(
       tables.map(async (table) => {
         const recordsCount = await Record.countDocuments({ 
           tableSlug: table.slug, 
@@ -236,6 +241,10 @@ export const getTables = async (req: Request, res: Response) => {
         };
       })
     );
+
+    if (includeHistory) {
+      tablesWithCount = await attachHistoryToData(conn, tablesWithCount, 'Table', Number.isFinite(historyLimit) ? historyLimit : 5);
+    }
 
     res.json({
       tables: tablesWithCount,
@@ -286,7 +295,7 @@ export const getTableBySlug = async (req: Request, res: Response) => {
 
 // Actualizar una tabla manteniendo la integridad de datos
 export const updateTable = async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const { id, userId } = req.params;
   const { name, slug, icon, c_name, isActive, fields } = req.body;
 
   if (!c_name) {
@@ -355,41 +364,81 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
         return;
       }
 
-      // --- ACTUALIZAR RECORDS SI HAY RENOMBRES DE CAMPOS O CAMBIO DE LABEL ---
-      const oldFields = currentTable.fields || [];
-      const newFields = fieldsWithOrders;
-      const renames = [];
-      for (const oldField of oldFields) {
-        // Buscar campo nuevo con mismo orden (o alguna otra lógica de emparejamiento)
-        const newField = newFields.find(f => f.order === oldField.order);
-        if (newField) {
-          // Si cambió el label, genera un nuevo name y actualiza el campo
-          if (oldField.label !== newField.label) {
-            const generatedName = slugify(newField.label);
-            renames.push({ oldKey: oldField.name, newKey: generatedName });
-            newField.name = generatedName; // Actualiza el name en el array de fields
-          } else if (oldField.name !== newField.name) {
-            // Si solo cambió el name manualmente
-            renames.push({ oldKey: oldField.name, newKey: newField.name });
+      // --- ACTUALIZAR RECORDS SOLO CUANDO HAY RENOMBRES EXPLÍCITOS ---
+      // Importante: NO usar el "order" para emparejar campos. Si se elimina un campo,
+      // los órdenes se desplazan y eso provoca reasignaciones incorrectas de valores.
+      const oldFields = (currentTable.fields || []) as any[];
+      const newFields = fieldsWithOrders as any[];
+
+      // Mapas auxiliares para emparejar de forma segura
+      const oldById = new Map<string, any>();
+      const oldByName = new Map<string, any>();
+      for (const ofld of oldFields) {
+        if (ofld && ofld._id) oldById.set(String(ofld._id), ofld);
+        if (ofld && ofld.name) oldByName.set(ofld.name, ofld);
+      }
+
+      type Rename = { oldKey: string; newKey: string };
+      const renames: Rename[] = [];
+
+      // Detectar renombres de forma explícita y segura:
+      // 1) Si el nuevo campo conserva el mismo _id de subdocumento y cambió el name
+      // 2) Si el nuevo campo trae una pista explícita: previousName | renamedFrom | oldName
+      for (const nf of newFields) {
+        const hint = nf?.previousName || nf?.renamedFrom || nf?.oldName; // opcionales del cliente/UI
+        if (nf?._id && oldById.has(String(nf._id))) {
+          const old = oldById.get(String(nf._id));
+          if (old?.name && nf?.name && old.name !== nf.name) {
+            renames.push({ oldKey: old.name, newKey: nf.name });
+          }
+        } else if (hint && nf?.name && hint !== nf.name) {
+          // Solo si el hint existía en los campos viejos (evita colisiones/ambigüedades)
+          if (oldByName.has(hint)) {
+            renames.push({ oldKey: hint, newKey: nf.name });
           }
         }
       }
-      if (renames.length > 0) {
+      // Detectar campos eliminados (por nombre), excluyendo los que se renombraron
+      const newNamesSet = new Set(
+        (newFields || []).map((f: any) => f?.name).filter(Boolean)
+      );
+      const renamedOldKeys = new Set(renames.map(r => r.oldKey));
+      const removedFieldNames: string[] = (oldFields || [])
+        .map((f: any) => f?.name)
+        .filter((n: any): n is string => Boolean(n))
+        .filter((n: string) => !newNamesSet.has(n) && !renamedOldKeys.has(n));
+
+      if (renames.length > 0 || removedFieldNames.length > 0) {
         const Record = getRecordModel(conn);
-        const records = await Record.find({ tableSlug: currentTable.slug });
-        for (const record of records) {
-          let updated = false;
-          for (const { oldKey, newKey } of renames) {
-            if (record.data && record.data[oldKey] !== undefined) {
-              console.log(`[DEBUG] Actualizando registro ${record._id}: renombrando ${oldKey} a ${newKey}`);
-              record.data[newKey] = record.data[oldKey];
-              delete record.data[oldKey];
-              updated = true;
-            }
+        const baseFilter = { tableSlug: currentTable.slug, c_name } as any;
+
+        // 1) Procesar renombres de forma masiva y segura en dos pasos por cada par
+        for (const { oldKey, newKey } of renames) {
+          const oldPath = `data.${oldKey}`;
+          const newPath = `data.${newKey}`;
+
+          // 1.a) Renombrar cuando el destino NO existe
+          const filterRename = {
+            ...baseFilter,
+            [oldPath]: { $exists: true },
+            [newPath]: { $exists: false }
+          } as any;
+          const renameUpdate = { $rename: { [oldPath]: newPath } } as any;
+          const r1 = await Record.updateMany(filterRename, renameUpdate);
+          if (r1.modifiedCount) {
+            console.log(`[DEBUG] Renombrados ${r1.modifiedCount} registros para ${c_name}: ${oldKey} -> ${newKey}`);
           }
-          if (updated) {
-            record.markModified('data');
-            await record.save();
+
+          // 1.b) Si el destino YA existe, eliminar el origen para evitar duplicados/colisiones
+          const filterUnsetDup = {
+            ...baseFilter,
+            [oldPath]: { $exists: true },
+            [newPath]: { $exists: true }
+          } as any;
+          const unsetDupUpdate = { $unset: { [oldPath]: "" } } as any;
+          const r2 = await Record.updateMany(filterUnsetDup, unsetDupUpdate);
+          if (r2.modifiedCount) {
+            console.warn(`[WARN] Eliminado campo duplicado ${oldKey} para ${c_name} en ${r2.modifiedCount} registros porque ${newKey} ya existía`);
           }
         }
       }
@@ -397,10 +446,22 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
 
       // TODO: Validar que no se eliminen campos con datos existentes
       // Esto requeriría consultar la colección de datos de la tabla
-      
+
+      const User = getUserModel(conn);
+      const user = await User.findById(userId);
+
       // Actualizar con los nuevos campos
-      const updatedTable = await Table.findByIdAndUpdate(
-        id,
+      const auditContext = {
+        _updatedByUser: { id: userId, name: user.name },
+        _updatedBy: userId,
+        _auditSource: 'API',
+        _requestId: (req.headers['x-request-id'] as string) || undefined,
+        ip: (req as any).ip,
+        userAgent: req.headers['user-agent'],
+      };
+
+      const updatedTable = await Table.findOneAndUpdate(
+        { _id: id },
         { 
           $set: { 
             ...(name && { name }), 
@@ -411,7 +472,7 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
           } 
         },
         { new: true, runValidators: true }
-      );
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
       res.status(200).json({ 
         message: "Table updated successfully", 

@@ -11,7 +11,6 @@ import googleCalendarRoutes from "./routes/googleCalendar.routes";
 import chatMetricsRoutes from "./routes/chatMetrics.routes";
 import metaRoutes from './routes/meta.routes';
 import sessionRoutes from "./routes/session.routes";
-import calendarAssistantRoutes from "./routes/calendarAssistant.routes";
 import calendarEventRoutes from './routes/calendarEvent.routes';
 import taskRoutes from './routes/task.routes';
 
@@ -126,9 +125,6 @@ app.use("/api/google-calendar", googleCalendarRoutes);
 // app.get("/auth/google/callback", handleGoogleCallback);
 
 app.use("/api/chat-metrics", chatMetricsRoutes);
-
-// Calendar Assistant routes
-app.use("/api/calendar-assistant", calendarAssistantRoutes);
 
 // Calendar Event management routes
 app.use("/api/calendar-events", calendarEventRoutes);

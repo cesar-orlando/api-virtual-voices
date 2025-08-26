@@ -1,9 +1,9 @@
-import { getDbConnection } from "../config/connectionManager";
-import getToolModel, { getToolExecutionModel } from "../models/tool.model";
-import { IToolDocument } from "../models/tool.model";
-import { ToolExecutionRequest } from "../types/tool.types";
-import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
-import advancedRecordFilter from "../utils/advancedRecordFilter";
+import { getDbConnection } from "../../config/connectionManager";
+import getToolModel, { getToolExecutionModel } from "../../models/tool.model";
+import { IToolDocument } from "../../models/tool.model";
+import { ToolExecutionRequest } from "../../types/tool.types";
+import { applyFuzzySearchToToolResult } from "../../utils/fuzzyPropertySearch";
+import advancedRecordFilter from "../../utils/advancedRecordFilter";
 
 // NOTA IMPORTANTE:
 // El fuzzy search aquí SOLO se aplica como un filtro básico sobre los resultados de la herramienta (por ejemplo, una API externa),

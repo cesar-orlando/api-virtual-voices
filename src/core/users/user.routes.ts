@@ -11,7 +11,11 @@ import {
   getAvailableBranches,
   assignBranchToUser,
   removeBranchFromUser,
-  getUsersByBranch
+  getUsersByBranch,
+  updateEmailConfig,
+  getEmailConfig,
+  deleteEmailConfig,
+  sendEmailFromUser
 } from "./user.controller";
 import { detectCompanyFromToken } from "../auth/companyMiddleware";
 
@@ -335,5 +339,19 @@ router.delete("/:userId/remove-branch", detectCompanyFromToken, removeBranchFrom
 
 // Obtener usuarios por sucursal
 router.get("/by-branch/:branchId", detectCompanyFromToken, getUsersByBranch);
+
+// ===== RUTAS PARA CONFIGURACIÓN DE EMAIL =====
+
+// Obtener configuración de email del usuario
+router.get("/:userId/email-config", detectCompanyFromToken, getEmailConfig);
+
+// Actualizar configuración de email del usuario
+router.put("/:userId/email-config", detectCompanyFromToken, updateEmailConfig);
+
+// Eliminar configuración de email del usuario
+router.delete("/:userId/email-config", detectCompanyFromToken, deleteEmailConfig);
+
+// Enviar email usando la configuración del usuario
+router.post("/:userId/send-email", detectCompanyFromToken, sendEmailFromUser);
 
 export default router; 

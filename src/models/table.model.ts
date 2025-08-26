@@ -1,10 +1,11 @@
 import { Schema, Document, Connection, Model } from "mongoose";
+import auditTrailPlugin from "../plugins/auditTrail";
 
 // Define la interfaz para un campo de tabla
 export interface TableField {
   name: string;        // "nombre", "email", "telefono"
   label: string;       // "Nombre", "Email", "Teléfono"
-  type: 'text' | 'email' | 'number' | 'date' | 'boolean' | 'select' | 'file' | 'currency';
+  type: 'text' | 'email' | 'number' | 'date' | 'boolean' | 'select' | 'file' | 'currency' | 'object';
   required?: boolean;
   defaultValue?: any;
   options?: string[];  // Para campos tipo select
@@ -31,7 +32,7 @@ const TableFieldSchema: Schema = new Schema({
   label: { type: String, required: true },
   type: { 
     type: String, 
-    enum: ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency'],
+    enum: ['text', 'email', 'number', 'date', 'boolean', 'select', 'file', 'currency', 'object'],
     required: true 
   },
   required: { type: Boolean, default: false },
@@ -39,7 +40,7 @@ const TableFieldSchema: Schema = new Schema({
   options: [String], // Para campos tipo select
   order: { type: Number, required: true },
   width: { type: Number, default: 150 }
-}, { _id: false });
+});
 
 // Define el esquema para la tabla
 const TableSchema: Schema = new Schema(
@@ -88,6 +89,26 @@ TableSchema.pre('save', function(next) {
   }
   
   next();
+});
+
+TableSchema.plugin(auditTrailPlugin as any, {
+  rootPaths: [""], // watch whole doc
+  includePaths: [
+    'name',
+    'slug',
+    'icon',
+    'isActive',
+    'fields'
+  ],
+  excludePaths: [ 
+    '__v', 
+    'createdAt', 
+    'updatedAt'
+  ],
+  excludePatterns: [
+    /^fields\.\d+\.width$/  // Exclude width for any field in the array
+  ],
+  modelName: "Table",
 });
 
 // Exporta el modelo

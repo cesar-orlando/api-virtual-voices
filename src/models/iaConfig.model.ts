@@ -10,6 +10,7 @@ export interface IIaConfig extends Document {
   intents: [];
   dataTemplate: string;
   customPrompt: string;
+  timezone: string;
   createdAt?: Date;
   updatedAt?: Date;
   user: {
@@ -34,6 +35,7 @@ const IaConfigSchema: Schema = new Schema(
     intents: { type: [IAIntentSchema], default: [] },
     dataTemplate: { type: String, default: "{{label}}: {{value}}" },
     customPrompt: { type: String, default: "" },
+    timezone: { type: String, default: "America/Mexico_City" },
     user: {
       id: { type: Types.ObjectId, ref: "User" }, // Referencia al usuario
       name: { type: String }, // Nombre del usuario asociado
@@ -50,7 +52,8 @@ IaConfigSchema.plugin(auditTrailPlugin as any, {
     'objective',
     'customPrompt',
     'welcomeMessage',
-    'tone'
+    'tone',
+    'timezone'
   ],
   excludePaths: [ '__v', 'createdAt', 'updatedAt' ],
   modelName: "IAConfig",

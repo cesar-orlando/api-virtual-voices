@@ -1,15 +1,10 @@
 import { Request, Response } from "express";
 import getIaConfigModel, { IIaConfig } from "../models/iaConfig.model";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
-import { generateResponse, openai, preparePrompt } from "../services/openai";
 import getUserModel from "../core/users/user.model";
-import getRecordModel from "../models/record.model";
 import { MessagingAgentService } from "../services/agents/MessagingAgentService";
-import { applyFuzzySearchToToolResult } from "../utils/fuzzyPropertySearch";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
-import { Agent } from "@openai/agents";
 import { AgentManager } from "../services/agents/AgentManager";
-import getAuditLogModel from "../models/auditLog.model";
 import { attachHistoryToData } from "../plugins/auditTrail";
 
 // Helpers to only update changed fields
@@ -359,7 +354,6 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
         aiConfig?._id.toString(),
         aiConfig?.name,
         chatHistory,
-        false // isCalendarFallback
       );
 
       aiResponse = response || defaultResponse;

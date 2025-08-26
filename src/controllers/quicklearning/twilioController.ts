@@ -315,7 +315,6 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
         config?._id.toString(),
         conn,
         undefined, // providedChatHistory
-        false // isCalendarFallback
       );
 
       // Enviar respuesta

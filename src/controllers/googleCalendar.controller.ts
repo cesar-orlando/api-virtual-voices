@@ -454,7 +454,7 @@ export const editCalendarEvent = async (req: Request, res: Response): Promise<vo
 export const deleteCalendarEvent = async (req: Request, res: Response): Promise<void> => {
   try {
     const { eventId } = req.params;
-    const { calendarId = 'primary' } = req.body;
+    const { calendarId = 'primary' } = req.query;
 
     if (!eventId) {
       res.status(400).json({

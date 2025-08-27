@@ -7,6 +7,7 @@ import { IMPORT_CONFIG, validateImportSize, generateImportReport } from "../conf
 import getUserModel from "../core/users/user.model";
 import getAuditLogModel from "../models/auditLog.model";
 import { attachHistoryToData } from "../plugins/auditTrail";
+import { getWhatsappChatModel } from "../models/whatsappChat.model";
 
 // Accent-insensitive utilities
 // - buildAccentInsensitivePattern: builds a regex pattern string that matches both accented and unaccented variants
@@ -1965,6 +1966,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
+    const Chats = getWhatsappChatModel(conn);
 
     // Get table definition for filter processing
     const table = await Table.findOne({ slug: "prospectos", c_name, isActive: true });
@@ -1975,7 +1977,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
-    let lastMessageDateFilter: any = null; // ✅ NEW: Variable to store last message date filter
+    let lastMessageDate: any = null; // ✅ NEW: Variable to store last message date filter
 
     function isNumberOrConvertible(val: any): boolean {
       if (typeof val === 'number' && !isNaN(val)) return true;
@@ -1990,67 +1992,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
         
         for (const [fieldName, value] of Object.entries(parsedFilters)) {
           if (value === undefined || value === null || value === '') continue;
-          
-          // ✅ NEW: Handle special case for lastMessageDate filters
-          if (fieldName === 'lastMessageDate' || fieldName === 'lastMessageDateGte' || fieldName === 'lastMessageDateLte' || fieldName === 'lastMessageDateMax') {
-            if (typeof value === 'string') {
-              const dateValue = new Date(value);
-              if (!isNaN(dateValue.getTime())) {
-                // Determine if this is a $gte or $lte filter
-                const isGteFilter = fieldName === 'lastMessageDate' || fieldName === 'lastMessageDateGte';
-                const isLteFilter = fieldName === 'lastMessageDateLte' || fieldName === 'lastMessageDateMax';
-                
-                // Initialize the filter if it doesn't exist
-                if (!lastMessageDateFilter) {
-                  lastMessageDateFilter = {
-                    $expr: {
-                      $and: [
-                        // Ensure chats array exists and is not empty
-                        { $gt: [{ $size: "$chats" }, 0] },
-                        // Check that at least one chat has messages
-                        {
-                          $anyElementTrue: {
-                            $map: {
-                              input: "$chats",
-                              as: "chat",
-                              in: { $gt: [{ $size: { $ifNull: ["$$chat.messages", []] } }, 0] }
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  };
-                }
-                
-                // Add the appropriate date comparison
-                const maxDateExpression = {
-                  $max: {
-                    $reduce: {
-                      input: "$chats",
-                      initialValue: [],
-                      in: {
-                        $concatArrays: [
-                          "$$value",
-                          { $ifNull: ["$$this.messages.createdAt", []] }
-                        ]
-                      }
-                    }
-                  }
-                };
-                
-                if (isGteFilter) {
-                  lastMessageDateFilter.$expr.$and.push({
-                    $gte: [maxDateExpression, dateValue]
-                  });
-                } else if (isLteFilter) {
-                  lastMessageDateFilter.$expr.$and.push({
-                    $lte: [maxDateExpression, dateValue]
-                  });
-                }
-              }
-            }
-            continue; // Skip normal field processing for this special filter
-          }
           
           const fieldDef = table.fields.find((f: any) => f.name === fieldName);
           if (!fieldDef) continue;
@@ -2128,6 +2069,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
               dynamicMatchFilters.$or = textSearch;
             }
           }
+        } else if (parsedFilters.lastMessageDateLte) {
+          lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
         }
       } catch (error) {
         res.status(400).json({ message: "Invalid filters format" });
@@ -2135,170 +2078,141 @@ export async function getRecordByPhone(req: Request, res: Response) {
       }
     }
         
-    // ⚡ LIGHTNING FAST - EARLY PAGINATION + MINIMAL DATA + DYNAMIC FILTERS
-    const pipeline: any[] = [
-      // Stage 1: Match + DYNAMIC FILTERS (reduce dataset immediately)
-      {
-        $match: {
-          tableSlug: "prospectos",
-          c_name: c_name,
-          ...dynamicMatchFilters // ✅ DYNAMIC FILTERS INTEGRATED
-        }
-      },
-      
-      // Stage 2: Add phone variants for lookup (MOVED UP - needed for message date filter)
-      {
-        $addFields: {
-          phoneVariants: [
-            "$data.name",
-            { $concat: [{ $toString: "$data.number" }, "@c.us"] },
-            { $toString: "$data.number" }
-          ]
-        }
-      },
-      
-      // Stage 3: Lookup chats by ANY phone variant
-      {
-        $lookup: {
-          from: "chats",
-          let: { phones: "$phoneVariants" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $in: ["$phone", "$$phones"]
-                }
-              }
-            },
-            {
-              $project: {
-                phone: 1,
-                session: 1,
-                advisor: 1,
-                botActive: 1,
-                messageCount: { $size: { $ifNull: ["$messages", []] } },
-                // GET ALL MESSAGES - as requested
-                messages: "$messages"
-              }
+
+
+    // --- Application-level batching for early stop when enough records with chats are found ---
+    const startTime = Date.now();
+    const batchSize = Number(limit) * 5;
+    let foundRecordsWithChats: any[] = [];
+    let totalCandidates = 0;
+    let lastBatch = false;
+
+    // Build base query for dynamicrecords
+    const baseQuery: any = {
+      tableSlug: "prospectos",
+      c_name: c_name,
+      ...dynamicMatchFilters
+    };
+
+    // For total count (all candidates, not just with chats)
+    const totalCount = await Record.countDocuments(baseQuery);
+
+    // For performance info
+    let batches = 0;
+    let skipCandidates = 0;
+
+    // True pagination: accumulate all records-with-chats, then slice for requested page
+    while (!lastBatch && foundRecordsWithChats.length < Number(page) * Number(limit)) {
+      batches++;
+      // Fetch a batch of dynamicrecords
+      const candidates = await Record.find(baseQuery)
+        .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
+        .skip(skipCandidates)
+        .limit(batchSize)
+        .lean();
+
+      if (candidates.length === 0) break;
+      totalCandidates += candidates.length;
+      if (candidates.length < batchSize) lastBatch = true;
+
+      // --- Bulk chat lookup optimization ---
+      // 1. Collect all phone variants for all candidates
+      const recordPhoneMap = new Map(); // key: phone variant, value: array of record indexes
+      candidates.forEach((record, idx) => {
+        const phoneVariants = [
+          String(record.data?.number) + "@c.us",
+          String(record.data?.number)
+        ];
+        phoneVariants.forEach(variant => {
+          if (variant) {
+            if (!recordPhoneMap.has(variant)) recordPhoneMap.set(variant, []);
+            recordPhoneMap.get(variant).push(idx);
+          }
+        });
+      });
+      const allPhoneVariants = Array.from(recordPhoneMap.keys());
+
+      // 2. Build chat query for all variants in batch
+      const chatQuery: any = { phone: { $in: allPhoneVariants } };
+      if (sessionId) {
+        let sessionIdObj = undefined;
+        try {
+          if (Types.ObjectId.isValid(sessionId as string)) {
+            sessionIdObj = new Types.ObjectId(sessionId as string);
+          }
+        } catch (_) {}
+        chatQuery["$or"] = sessionIdObj ? [
+          { "session.id": sessionId },
+          { "session.id": sessionIdObj }
+        ] : [
+          { "session.id": sessionId }
+        ];
+      }
+      let chatsInBatch;
+      if (lastMessageDate) {
+        // Use aggregation to get only chats whose last message's createdAt matches the filter
+        chatsInBatch = await Chats.aggregate([
+          { $match: chatQuery },
+          { $addFields: {
+              lastMessageDate: { $max: "$messages.createdAt" }
             }
-          ],
-          as: "chats"
+          },
+          { $match: { lastMessageDate: { $lte: lastMessageDate } } },
+        ]);
+      } else {
+        chatsInBatch = await Chats.find(chatQuery);
+      }
+
+      // 3. Map chats to candidate records
+      //    For each chat, assign it to all records whose phoneVariants match
+      const recordChatsMap = new Map(); // key: candidate idx, value: array of chats
+      chatsInBatch.forEach(chat => {
+        const idxs = recordPhoneMap.get(chat.phone);
+        if (idxs) {
+          idxs.forEach(idx => {
+            if (!recordChatsMap.has(idx)) recordChatsMap.set(idx, []);
+            recordChatsMap.get(idx).push(chat);
+          });
         }
-      },
-      
-      // ✅ NEW: Stage 4: Apply last message date filter (if specified)
-      ...(lastMessageDateFilter ? [{
-        $match: lastMessageDateFilter
-      }] : []),
-      
-      // Stage 5: Sort + pagination (AFTER message date filter)
-      {
-        $sort: { [sortBy as string]: sortOrder === 'desc' ? -1 : 1 }
-      },
-      {
-        $skip: (Number(page) - 1) * Number(limit)
-      },
-      {
-        $limit: Number(limit)
-      },
-      
-      // Stage 6: Add summary (super simple)
-      {
-        $addFields: {
-          totalChats: { $size: "$chats" },
-          hasActiveBot: { $gt: [{ $size: "$chats" }, 0] }
-        }
-      },
-      
-      // Stage 7: Clean output (remove phoneVariants)
-      {
-        $project: {
-          phoneVariants: 0  // Remove internal field
+      });
+
+      // 4. For each candidate, check if it has chats
+      for (let idx = 0; idx < candidates.length; idx++) {
+        const record = candidates[idx];
+        const chats = recordChatsMap.get(idx) || [];
+
+        // Deduplication: only add if not already seen
+        if (chats.length > 0) {
+          // Add totalChats and hasActiveBot fields for compatibility
+          if (lastMessageDate && sessionId) {
+            record.data.lastmessagedate = chats[0].lastMessageDate;
+            record.data.lastmessage = chats[0].messages[chats[0].messages.length - 1].body;
+          } else if (sessionId) {
+            record.data.lastmessagedate = chats[0].messages[chats[0].messages.length - 1].createdAt;
+            record.data.lastmessage = chats[0].messages[chats[0].messages.length - 1].body;
+          }
+          foundRecordsWithChats.push({
+            ...record,
+            chats,
+            totalChats: chats.length,
+            hasActiveBot: chats.length > 0
+          });
         }
       }
-    ];
-
-    
-    const startTime = Date.now();
-    
-    // Execute super fast aggregation
-    const results = await Record.aggregate(pipeline);
-    
-    // ✅ NEW: Get total count (with last message date filter if applied)
-    let totalCount: number;
-    if (lastMessageDateFilter) {
-      // If we have a last message date filter, we need to get the count with the same pipeline logic
-      const countPipeline = [
-        {
-          $match: {
-            tableSlug: "prospectos",
-            c_name: c_name,
-            ...dynamicMatchFilters
-          }
-        },
-        {
-          $addFields: {
-            phoneVariants: [
-              "$data.name",
-              { $concat: [{ $toString: "$data.number" }, "@c.us"] },
-              { $toString: "$data.number" }
-            ]
-          }
-        },
-        {
-          $lookup: {
-            from: "chats",
-            let: { phones: "$phoneVariants" },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $in: ["$phone", "$$phones"]
-                  }
-                }
-              },
-              {
-                $project: {
-                  phone: 1,
-                  session: 1,
-                  advisor: 1,
-                  botActive: 1,
-                  messageCount: { $size: { $ifNull: ["$messages", []] } },
-                  messages: "$messages"
-                }
-              }
-            ],
-            as: "chats"
-          }
-        },
-        {
-          $match: lastMessageDateFilter
-        },
-        {
-          $count: "total"
-        }
-      ];
-      
-      const countResult = await Record.aggregate(countPipeline);
-      totalCount = countResult.length > 0 ? countResult[0].total : 0;
-    } else {
-      // Simple count when no message date filter
-      totalCount = await Record.countDocuments({
-        tableSlug: "prospectos",
-        c_name: c_name,
-        ...dynamicMatchFilters
-      });
+      // Move skip forward for next batch
+      skipCandidates += batchSize;
     }
-    
+
+    // Calculate start/end for true pagination
+    const startIdx = (Number(page) - 1) * Number(limit);
+    const endIdx = startIdx + Number(limit);
+    const pagedRecords = foundRecordsWithChats.slice(startIdx, endIdx);
     const endTime = Date.now();
     const executionTime = endTime - startTime;
-    
-    const recordsWithChats = results.filter(r => r.totalChats > 0).length;
-    
 
     res.status(200).json({
       success: true,
-      data: results,
+      data: pagedRecords,
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -2306,24 +2220,25 @@ export async function getRecordByPhone(req: Request, res: Response) {
         pages: Math.ceil(totalCount / Number(limit))
       },
       performance: {
-        method: "Lightning-Fast MongoDB Aggregation + Dynamic Filters + Last Message Date Filter", 
-        stages: pipeline.length,
+        method: "App-level batching with true pagination on records with chats",
+        batches,
         executionTimeMs: executionTime,
-        recordsWithChats,
+        recordsWithChats: foundRecordsWithChats.length,
         includesMessages: "all messages included",
         phoneMatching: "name + number + @c.us variants",
         dynamicFilters: Object.keys(dynamicMatchFilters).length > 0,
-        lastMessageDateFilter: lastMessageDateFilter !== null, // ✅ NEW: Indicate if date filter was applied
+        lastMessageDate: lastMessageDate !== null,
         filtersApplied: [
           ...Object.keys(dynamicMatchFilters),
-          ...(lastMessageDateFilter ? ['lastMessageDateFilter'] : [])
+          ...(lastMessageDate ? ['lastMessageDate'] : []),
+          ...(sessionId ? ['sessionIdFilter'] : [])
         ],
         sortBy: sortBy as string,
         sortOrder: sortOrder as string,
-        earlyPagination: false, // ✅ UPDATED: Not early when message date filter is applied
+        earlyPagination: false,
         optimized: true
       },
-      message: `Found ${results.length} records (${recordsWithChats} with chats) in ${executionTime}ms${lastMessageDateFilter ? ' with last message date filter' : ''}`
+      message: `Found ${pagedRecords.length} records (with chats, deduplicated) in ${executionTime}ms using app-level batching and true pagination.`
     });
 
   } catch (error) {

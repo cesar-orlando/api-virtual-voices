@@ -240,6 +240,8 @@ export class GeneralAgent extends BaseAgent {
           description += `\n\nConsultado por: ${this.agentContext.phoneUser.replace('@c.us','')}`;
           attendees.push(asesor.email);
 
+          if (this.agentContext.company === 'mitsubishi') attendees.push('coordinacion.bdc@mitsubishi-country.mx');
+
           const eventData = {
             summary,
             description: description,

@@ -13,6 +13,7 @@ import metaRoutes from './routes/meta.routes';
 import sessionRoutes from "./routes/session.routes";
 import calendarEventRoutes from './routes/calendarEvent.routes';
 import taskRoutes from './routes/task.routes';
+import notificationRoutes from './routes/notification.routes';
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -128,6 +129,9 @@ app.use("/api/chat-metrics", chatMetricsRoutes);
 
 // Calendar Event management routes
 app.use("/api/calendar-events", calendarEventRoutes);
+
+// Notification routes
+app.use("/api/notifications", notificationRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);

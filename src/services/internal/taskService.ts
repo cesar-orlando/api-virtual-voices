@@ -1,8 +1,8 @@
 import { Connection } from "mongoose";
-import getTaskModel, { ITask } from "../models/task.model";
-import getCompanyModel from "../models/company.model";
-import getUserModel from "../core/users/user.model";
-import { getCompanyConnection, getMainConnection } from "../config/database";
+import getTaskModel, { ITask } from "../../models/task.model";
+import getCompanyModel from "../../models/company.model";
+import getUserModel from "../../core/users/user.model";
+import { getCompanyConnection, getMainConnection } from "../../config/database";
 
 export class TaskService {
   

@@ -3,7 +3,7 @@ import { Connection } from "mongoose";
 import getTaskModel, { ITask } from "../models/task.model";
 import getUserModel from "../core/users/user.model";
 import { getCompanyConnection } from "../config/database";
-import { TaskService } from "../services/taskService";
+import { TaskService } from "../services/internal/taskService";
 import { 
   CreateTaskRequest, 
   UpdateTaskRequest, 

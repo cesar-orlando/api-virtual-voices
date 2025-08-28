@@ -224,12 +224,9 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
 
         const userData = await User.findOne({ _id: user_id });
 
-        const auditContext = {
+        let auditContext = {
           skipAudit: true,
         };
-
-        // Determinar el nombre más apropiado
-        const prospectName = name && name !== number && !name.includes('@c.us') ? name : '';
         
         // Configuración específica por fuente
         const sourceConfig = {
@@ -260,12 +257,10 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               c_name: company,
               createdBy: 'whatsapp-bot',
               'data.number': num,
-              'data.name': prospectName,
+              'data.name': name,
               'data.ia': activateIA ?? config.defaultIA,
               'data.asesor.id': user_id,
               'data.asesor.name': userData?.name,
-              'data._source': source,
-              'data._priority': config.priority,
               createdAt: new Date(),
               updatedAt: new Date(),
             },
@@ -273,44 +268,43 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
               'data.lastmessage': lastMessageData?.lastMessage || '',
               'data.lastmessagedate': lastMessageData?.lastMessageDate || new Date(),
             },
-            // Solo actualizar nombre si el nuevo es mejor (no vacío y actual está vacío o es el número)
-            ...(prospectName && {
-              $setOnInsert: {
-                'data.name': prospectName
-              }
-            })
           },
           { 
             upsert: true, 
-            new: true, 
+            new: false,
             timestamps: { updatedAt: false }, 
             context: 'query',
-            setDefaultsOnInsert: true
           } as any
         ).setOptions({ auditContext, $locals: { auditContext } } as any);
 
         if (result) {
           // Verificar si necesitamos actualizar el nombre (convertir a documento para acceder a las propiedades)
           const doc = result as any;
-          if (prospectName && 
+          if (name && 
               (!doc.data?.name || doc.data.name === number || doc.data.name.includes('@c.us'))) {
+
+            let auditContext = {
+              _updatedByUser: { id: 'Bot', name: `whatsapp-bot-${source}` },
+              _updatedBy: `whatsapp-bot-${source}`,
+              _auditSource: 'Whatsapp Start',
+            };
+
             await Record.findOneAndUpdate(
               { _id: doc._id },
               { 
                 $set: { 
-                  'data.name': prospectName,
-                  updatedAt: new Date(),
+                  'data.name': name,
                   updatedBy: `whatsapp-bot-${source}`
                 }
               },
-              { context: 'query' }
+              { context: 'query', timestamps: { updatedAt: false } }
             ).setOptions({ auditContext, $locals: { auditContext } } as any);
             
-            console.log(`${config.logPrefix} ✨ Nombre actualizado para ${num}: "${prospectName}"`);
+            console.log(`${config.logPrefix} ✨ Nombre actualizado para ${num}: "${name}"`);
           }
           return result;
         } else {
-          console.log(`${config.logPrefix} 🆕 Prospecto creado: ${num} - ${prospectName || 'Sin nombre'}`);
+          console.log(`${config.logPrefix} 🆕 Prospecto creado: ${num} - ${name || 'Sin nombre'}`);
           return null; // Nuevo registro creado
         }
         
@@ -566,18 +560,16 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           console.warn('Mensaje inválido recibido, saltando...');
           return;
         }
-        
-        // Guardar prospecto si no existe (solo chats individuales)
-        const number = message.from;
         try {
+          const chat = await message.getChat();
           await upsertProspect({
             company,
-            number,
+            number: chat.id._serialized,
             lastMessageData: { 
               lastMessage: message.body, 
               lastMessageDate: message.timestamp ? new Date(message.timestamp * 1000) : new Date() 
             },
-            name: (message as any).notifyName,
+            name: chat.name || chat.id._serialized,
             activateIA: true, // Activar IA en mensajes en tiempo real
             source: ProspectCreationSource.REAL_TIME_MESSAGE
           });

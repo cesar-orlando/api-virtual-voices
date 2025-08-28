@@ -7,6 +7,7 @@ import {
   getTokenStatus,
   ensureValidToken
 } from "../controllers/googleCalendar.controller";
+import { googleSearch } from "../services/google/googleSearch";
 
 const router = Router();
 
@@ -19,5 +20,8 @@ router.post("/ensure-valid-token", ensureValidToken);
 router.post("/events", createCalendarEvent);
 router.put("/events/:eventId", editCalendarEvent);
 router.delete("/events/:eventId", deleteCalendarEvent);
+
+// Google Search
+router.get("/search", googleSearch);
 
 export default router;

@@ -7,7 +7,7 @@ import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
 import toolRoutes from "./routes/tool.routes";
 import uploadRoutes from "./routes/upload.routes";
-import googleCalendarRoutes from "./routes/googleCalendar.routes";
+import googleCalendarRoutes from "./routes/google.routes";
 import chatMetricsRoutes from "./routes/chatMetrics.routes";
 import metaRoutes from './routes/meta.routes';
 import sessionRoutes from "./routes/session.routes";

@@ -329,7 +329,7 @@ export class GeneralAgent extends BaseAgent {
         }) as any,
         execute: async ({ eventId,eventReference, summary, description, startDateTime, endDateTime, location, attendees }) => {
           try {
-            console.log(`✏️ Editing calendar event. Reference: ${eventReference || 'most recent'}, Summary: ${summary}, Start: ${startDateTime}, End: ${endDateTime}`);
+            console.log(`✏️ Editing calendar event. Reference: ${eventReference || 'most recent'}, Summary: ${summary}, Start: ${startDateTime}, End: ${endDateTime} with: ${attendees}`);
             const calendarService = await getCalendarEventService(this.company);
             
             // Find the event to edit
@@ -358,33 +358,18 @@ export class GeneralAgent extends BaseAgent {
               }
             }
 
-            // Get current event data from Google Calendar
-            const currentResponse = await fetch(`http://localhost:3001/api/google-calendar/events/${eventId}`, {
-              method: 'GET',
-              headers: { 'Content-Type': 'application/json' }
-            });
-            
-            let currentEventData: any = {};
-            if (currentResponse.ok) {
-              const currentEvent = await currentResponse.json();
-              if (currentEvent.success) {
-                currentEventData = currentEvent.data;
-              }
-            }
-
             // Build update data with only provided parameters
             const updateData: any = {
-              ...currentEventData,
               timeZone: this.agentContext.timezone || 'America/Mexico_City'
             };
 
-            // Only update fields that were provided
-            if (summary !== null && summary !== undefined) updateData.summary = summary;
-            if (description !== null && description !== undefined) updateData.description = description;
-            if (startDateTime !== null && startDateTime !== undefined) updateData.startDateTime = startDateTime;
-            if (endDateTime !== null && endDateTime !== undefined) updateData.endDateTime = endDateTime;
-            if (location !== null && location !== undefined) updateData.location = location;
-            if (attendees !== null && attendees !== undefined) updateData.attendees = attendees;
+            // Update fields with provided values or fallback to current event values
+            updateData.summary = (summary !== null && summary !== undefined) ? summary : event.title;
+            updateData.description = (description !== null && description !== undefined) ? description : event.description;
+            updateData.startDateTime = (startDateTime !== null && startDateTime !== undefined) ? startDateTime : event.startDateTime;
+            updateData.endDateTime = (endDateTime !== null && endDateTime !== undefined) ? endDateTime : event.endDateTime;
+            updateData.location = (location !== null && location !== undefined) ? location : event.location;
+            updateData.attendees = (attendees !== null && attendees !== undefined && (!Array.isArray(attendees) || attendees.length > 0)) ? attendees : event.attendees;
 
             // Apply the update
             const response = await fetch(`http://localhost:3001/api/google-calendar/events/${eventId}`, {
@@ -392,9 +377,16 @@ export class GeneralAgent extends BaseAgent {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(updateData)
             });
-            
-            const responseData = await response.json();
-            
+
+            let responseData;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              responseData = await response.json();
+            } else {
+              const text = await response.text();
+              throw new Error(`Unexpected response from calendar API: ${text.substring(0, 200)}`);
+            }
+
             if (!response.ok || !responseData.success) {
               throw new Error(responseData.message || 'Failed to update event');
             }
@@ -404,8 +396,8 @@ export class GeneralAgent extends BaseAgent {
               title: updateData.summary || event.title,
               startDateTime: updateData.startDateTime ? new Date(updateData.startDateTime) : event.startDateTime,
               endDateTime: updateData.endDateTime ? new Date(updateData.endDateTime) : event.endDateTime,
-              location: updateData.location || event.location,
-              attendees: updateData.attendees || []
+              location: updateData.location || event.location || '',
+              attendees: updateData.attendees || event.attendees || []
             };
 
             // Update internal database with the changes
@@ -541,6 +533,7 @@ export class GeneralAgent extends BaseAgent {
               response += `   📅 ${event.date} a las ${event.time}\n`;
               if (event.location) response += `   📍 ${event.location}\n`;
               response += `   🆔 ID: ${event.googleEventId}\n\n`;
+              response += `   👥 Asistentes: ${event.attendees.join(', ')}`;
             });
 
             response += "💡 Para editar o eliminar, menciona el número o nombre del evento.";

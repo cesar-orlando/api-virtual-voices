@@ -27,7 +27,6 @@ export const googleSearch = async (req: Request, res: Response): Promise<void> =
     }
 
     try {
-        console.log("Search Filters:", parsedFilters.search);
         const response = await axios.get(`https://www.googleapis.com/customsearch/v1`, {
             params: {
                 key: apiKey,

@@ -252,7 +252,7 @@ export class GeneralAgent extends BaseAgent {
             timeZone: this.agentContext.timezone || 'America/Mexico_City'
           };
 
-          const response = await fetch('http://localhost:3001/api/google-calendar/events', {
+          const response = await fetch('http://localhost:3001/api/google/calendar/events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(eventData)
@@ -363,16 +363,24 @@ export class GeneralAgent extends BaseAgent {
               timeZone: this.agentContext.timezone || 'America/Mexico_City'
             };
 
+            const conn = await getConnectionByCompanySlug(this.agentContext.company);
+
+            const Record = getRecordModel(conn);
+            const prospecto = await Record.findOne({ 'data.number': Number(this.agentContext.phoneUser.replace('@c.us','')) });
+
+            const User = getUserModel(conn);
+            const asesor = await User.findById(prospecto.data.asesor.id);
+
             // Update fields with provided values or fallback to current event values
             updateData.summary = (summary !== null && summary !== undefined) ? summary : event.title;
             updateData.description = (description !== null && description !== undefined) ? description : event.description;
             updateData.startDateTime = (startDateTime !== null && startDateTime !== undefined) ? startDateTime : event.startDateTime;
             updateData.endDateTime = (endDateTime !== null && endDateTime !== undefined) ? endDateTime : event.endDateTime;
             updateData.location = (location !== null && location !== undefined) ? location : event.location;
-            updateData.attendees = (attendees !== null && attendees !== undefined && (!Array.isArray(attendees) || attendees.length > 0)) ? attendees : event.attendees;
+            updateData.attendees = (attendees !== null && attendees !== undefined && (!Array.isArray(attendees) || attendees.length > 0)) ? [...attendees, asesor.email] : event.attendees;
 
             // Apply the update
-            const response = await fetch(`http://localhost:3001/api/google-calendar/events/${eventId}`, {
+            const response = await fetch(`http://localhost:3001/api/google/calendar/events/${eventId}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(updateData)
@@ -404,7 +412,7 @@ export class GeneralAgent extends BaseAgent {
             try {
               await calendarService.updateCalendarEvent(eventId, {
                 title: updatedEvent.title,
-                description: updateData.description || event.description,
+                description: updateData.description,
                 startDateTime: updatedEvent.startDateTime,
                 endDateTime: updatedEvent.endDateTime,
                 location: updatedEvent.location,
@@ -475,7 +483,7 @@ export class GeneralAgent extends BaseAgent {
               }
             }
 
-            const response = await fetch(`http://localhost:3001/api/google-calendar/events/${eventId}?calendarId=${calendarId}`, {
+            const response = await fetch(`http://localhost:3001/api/google/calendar/events/${eventId}?calendarId=${calendarId}`, {
               method: 'DELETE',
               headers: { 'Content-Type': 'application/json' }
             });

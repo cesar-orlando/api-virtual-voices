@@ -8,20 +8,22 @@ import {
   ensureValidToken
 } from "../controllers/googleCalendar.controller";
 import { googleSearch } from "../services/google/googleSearch";
+import { scrapeProductHandler } from "../services/internal/webScraping.service";
 
 const router = Router();
 
 // Token management
-router.post("/get-access-token", getAccessTokenWithCredentials);
-router.get("/token-status", getTokenStatus);
-router.post("/ensure-valid-token", ensureValidToken);
+router.post("/calendar/get-access-token", getAccessTokenWithCredentials);
+router.get("/calendar/token-status", getTokenStatus);
+router.post("/calendar/ensure-valid-token", ensureValidToken);
 
 // Calendar event management
-router.post("/events", createCalendarEvent);
-router.put("/events/:eventId", editCalendarEvent);
-router.delete("/events/:eventId", deleteCalendarEvent);
+router.post("/calendar/events", createCalendarEvent);
+router.put("/calendar/events/:eventId", editCalendarEvent);
+router.delete("/calendar/events/:eventId", deleteCalendarEvent);
 
 // Google Search
-router.get("/search", googleSearch);
+router.get("/search", scrapeProductHandler);
+router.get("/recommend", googleSearch);
 
 export default router;

@@ -1,6 +1,7 @@
 import { getEnvironmentConfig } from "../../config/environments";
 import { Request, Response } from "express";
 import axios from 'axios';
+import { scrapeUrl } from "../internal/webScraping.service";
 
 // Obtener la configuración del entorno actual
 const config = getEnvironmentConfig();
@@ -26,6 +27,8 @@ export const googleSearch = async (req: Request, res: Response): Promise<void> =
         return;
     }
 
+    console.log("Searching Google for:", parsedFilters.search);
+
     try {
         const response = await axios.get(`https://www.googleapis.com/customsearch/v1`, {
             params: {
@@ -34,12 +37,11 @@ export const googleSearch = async (req: Request, res: Response): Promise<void> =
                 q: parsedFilters.search
             }
         });
-        const results = response.data.items.map(item => ({
+        const results = await Promise.all(response.data.items.map(async item => ({
             title: item.title,
             link: item.link,
-            snippet: item.snippet,
-        }));
-        console.log("Google Search Results:", results);
+            context: await scrapeUrl(item.link, parsedFilters.search),
+        })));
         res.status(200).json({ results });
         return;
     } catch (error) {

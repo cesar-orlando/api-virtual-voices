@@ -1,6 +1,6 @@
 import { chromium, Browser } from 'playwright';
 import { Request, Response } from 'express';
-import { openai, chatCompletionWithRetry } from '../../config/openai';
+import { openai } from '../../config/openai';
 import * as cheerio from 'cheerio'
 import axios from 'axios';
 
@@ -18,7 +18,7 @@ export async function scrapeUrl(url: string, search:string): Promise<string> {
         const response = await axios.get(url, { timeout: 10000 });
         const $ = cheerio.load(response.data);
         const text = $('body').text().replace(/\s+/g, ' ').slice(0, 3000); // Limita tokens
-		const completion = await chatCompletionWithRetry({
+		const completion = await openai.chat.completions.create({
 			model: "gpt-4",
 			messages: [
                 {
@@ -34,12 +34,11 @@ export async function scrapeUrl(url: string, search:string): Promise<string> {
 					content: text
 				}
 			],
-			temperature: 0.4
-		}, 3);
+            temperature: 0.4
+		});
 		return completion.choices[0].message.content;
 	} catch (e) {
-		console.error('[scrapeUrl] OpenAI error:', e?.message || e);
-		return `Error scraping ${url}: ${e?.message || 'OpenAI error'}`;
+		return `Error scraping ${url}`;
 	}
 }
 

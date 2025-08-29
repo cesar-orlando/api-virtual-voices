@@ -50,7 +50,7 @@ const ToolConfigSchema = new Schema({
     default: 'none' 
   },
   authConfig: { type: AuthConfigSchema, default: null },
-  timeout: { type: Number, default: 10000, min: 1000, max: 30000 }
+  timeout: { type: Number, default: 10000, min: 1000, max: 60000 }
 }, { _id: false });
 
 // Schema para propiedades de parámetros
@@ -225,8 +225,8 @@ ToolSchema.methods.validateSecurity = async function(): Promise<{ isValid: boole
   
   try {
     // Validar timeout
-    if (tool.config.timeout > (tool.security.maxTimeout || 30000)) {
-      errors.push(`Timeout exceeds maximum allowed: ${tool.security.maxTimeout || 30000}ms`);
+    if (tool.config.timeout > (tool.security.maxTimeout || 60000)) {
+      errors.push(`Timeout exceeds maximum allowed: ${tool.security.maxTimeout || 60000}ms`);
     }
 
     // Validar dominio del endpoint

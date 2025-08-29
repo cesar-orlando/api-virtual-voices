@@ -16,6 +16,8 @@ export interface EnvironmentConfig {
     phoneNumber: string;
     webhookUrl: string;
   };
+  googleApiKey: string;
+  googleSearchCx: string;
 }
 
 // Configuraciones por entorno
@@ -28,6 +30,8 @@ const environments: Record<string, EnvironmentConfig> = {
     corsOrigin: process.env.CORS_ORIGIN_DEV || '',
     jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_DEV || '',
     openaiApiKey: process.env.OPENAI_API_KEY_DEV || '',
+    googleApiKey: process.env.GOOGLE_API_KEY || '',
+    googleSearchCx: process.env.GOOGLE_SEARCH_CX || '',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN || '',
@@ -43,6 +47,8 @@ const environments: Record<string, EnvironmentConfig> = {
     corsOrigin: process.env.CORS_ORIGIN_QA || 'http://localhost:3001',
     jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_QA || 'qa-secret-key',
     openaiApiKey: process.env.OPENAI_API_KEY_QA || '',
+    googleApiKey: process.env.GOOGLE_API_KEY || '',
+    googleSearchCx: process.env.GOOGLE_SEARCH_CX || '',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID_QA || process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN_QA || process.env.TWILIO_AUTH_TOKEN || '',
@@ -58,6 +64,8 @@ const environments: Record<string, EnvironmentConfig> = {
     corsOrigin: process.env.CORS_ORIGIN_PROD || 'https://yourdomain.com',
     jwtSecret: process.env.JWT_SECRET || process.env.JWT_SECRET_PROD || 'prod-secret-key',
     openaiApiKey: process.env.OPENAI_API_KEY_PROD || '',
+    googleApiKey: process.env.GOOGLE_API_KEY || '',
+    googleSearchCx: process.env.GOOGLE_SEARCH_CX || '',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID_PROD || process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN_PROD || process.env.TWILIO_AUTH_TOKEN || '',

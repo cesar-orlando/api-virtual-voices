@@ -17,7 +17,7 @@ const getConnectionOptions = () => ({
   w: 'majority' as const,
   // Opciones adicionales para estabilidad
   heartbeatFrequencyMS: 10000,
-  maxIdleTimeMS: 30000,
+  maxIdleTimeMS: 60000,
 });
 
 export async function getDbConnection(dbName: string): Promise<Connection> {

@@ -27,7 +27,7 @@ export async function connectDB() {
       retryWrites: true,
       w: 'majority' as const,
       heartbeatFrequencyMS: 10000,
-      maxIdleTimeMS: 30000,
+      maxIdleTimeMS: 60000,
     };
     
     // Conectar a la base de datos principal

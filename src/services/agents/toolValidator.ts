@@ -101,8 +101,8 @@ export class ToolValidator {
     
     // Timeout válido
     if (config.timeout !== undefined) {
-      if (typeof config.timeout !== 'number' || config.timeout < 1000 || config.timeout > 30000) {
-        errors.push('Timeout must be a number between 1000 and 30000 milliseconds');
+      if (typeof config.timeout !== 'number' || config.timeout < 1000 || config.timeout > 60000) {
+        errors.push('Timeout must be a number between 1000 and 60000 milliseconds');
       }
     }
     

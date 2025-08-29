@@ -45,6 +45,7 @@ export class AgentManager {
       case 'simple-green':
       case 'virtualvoices':
       case 'virtual-voices':
+      case 'diocsa':
         try {
           agent = new GeneralAgent(company, agentContext);
           await agent.initialize();

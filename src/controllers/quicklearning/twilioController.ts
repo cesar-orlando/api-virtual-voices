@@ -467,70 +467,43 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
   }, 3000); // Esperar 3 segundos antes de procesar
 }
 
+// Campaign detection rules exactly matching the marketing messages
+const campaignRules: { [key: string]: { phrases: string[]; medio: string } } = {
+  'RMKT': { phrases: ['quiero info sobre los cursos de inglés (r)'], medio: 'Meta' },
+  'USA': { phrases: ['quiero info sobre los cursos de inglés (u)'], medio: 'Meta' },
+  'CAN': { phrases: ['quiero info sobre los cursos de inglés (c)'], medio: 'Meta' },
+  'PRESENCIAL': { 
+    phrases: [
+      'quiero más info sobre los cursos presenciales',
+      'quiero más info sobre el curso smart',
+      'quiero más info de la sucursal satélite'
+    ], 
+    medio: 'Meta' 
+  },
+  'VIRTUAL': { phrases: ['quiero más info sobre los cursos virtuales'], medio: 'Meta' },
+  'VIRTUAL PROMOS': { phrases: ['quiero info sobre la promo virtual'], medio: 'Meta' },
+  'ONLINE': { phrases: ['quiero más info sobre los cursos online'], medio: 'Meta' },
+  'ONLINE PROMOS': { phrases: ['quiero info sobre la promo online'], medio: 'Meta' },
+  'GENERAL': { phrases: ['quiero info sobre los cursos de inglés'], medio: 'Meta' },
+  'GOOGLE': { phrases: ['google', 'busque', 'busque en google', 'encantaría recibir información'], medio: 'Google' },
+  'ORGANICO': { phrases: [], medio: 'Organico' }
+};
+
 /**
  * Detect campaign based on message content
  */
 function detectCampaign(message: string): string {
-  if (!message) return 'LEAD';
+  if (!message) return 'ORGANICO';
   
-  const lowerCaseMessage = message.toLowerCase();
+  const lowerCaseMessage = message.toLowerCase().replace(/[^a-z0-9\s]/g, ''); // Normalize: lowercase, remove punctuation
   
-  // RMKT: Detectar remarketing - tiene "(r)" o "(rmkt)" en el mensaje
-  if (lowerCaseMessage.includes('(r)') || 
-      lowerCaseMessage.includes(' r)') || 
-      lowerCaseMessage.includes('(rmkt)')) {
-    return 'RMKT';
+  // Check for exact phrase matches in order
+  for (const [campaign, { phrases }] of Object.entries(campaignRules)) {
+    if (phrases.some(phrase => lowerCaseMessage.includes(phrase.toLowerCase()))) {
+      return campaign;
+    }
   }
   
-  // VIRTUAL PROMOS: Detectar promos virtuales primero (más específico)
-  if (lowerCaseMessage.includes('promo virtual')) {
-    return 'VIRTUAL PROMOS';
-  }
-  
-  // ONLINE PROMOS: Detectar promos online
-  if (lowerCaseMessage.includes('promo online')) {
-    return 'ONLINE PROMOS';
-  }
-  
-  // PRESENCIAL: Detectar cursos presenciales
-  if (lowerCaseMessage.includes('presencial')) {
-    return 'PRESENCIAL';
-  }
-  
-  // VIRTUAL: Detectar cursos virtuales (después de promos)
-  if (lowerCaseMessage.includes('virtual')) {
-    return 'VIRTUAL';
-  }
-  
-  // ONLINE: Detectar cursos online (después de promos)
-  if (lowerCaseMessage.includes('online')) {
-    return 'ONLINE';
-  }
-  
-  // GENERAL: Por defecto para cualquier mención de cursos de inglés
-  if (lowerCaseMessage.includes('cursos') || 
-      lowerCaseMessage.includes('inglés') || 
-      lowerCaseMessage.includes('ingles') ||
-      lowerCaseMessage.includes('información') ||
-      lowerCaseMessage.includes('info')) {
-    return 'GENERAL';
-  }
-
-  //GOOGLE: Hola, me encantaría recibir información de sus cursos.
-  if (lowerCaseMessage.includes('hola') || 
-      lowerCaseMessage.includes('información') || 
-      lowerCaseMessage.includes('info')) {
-    return 'GOOGLE';
-  }
-
-  //GOOGLE: Hola, quiero más información sobre los cursos de inglés de Quick Learning. Los busque en Google.
-  if (lowerCaseMessage.includes('google') || 
-      lowerCaseMessage.includes('busque') || 
-      lowerCaseMessage.includes('busque en google')) {
-    return 'GOOGLE';
-  }
-  
-  // Fallback a LEAD si no coincide con nada específico
   return 'ORGANICO';
 }
 
@@ -577,10 +550,17 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         });
       }
 
-      // Crear nuevo cliente en tabla prospectos con la estructura correcta
+      // Detectar campaña y medio
       const detectedCampaign = detectCampaign(body);
-      console.log(`🎯 Campaña detectada para ${phone}: ${detectedCampaign}`);
-      
+      const campaignInfo = campaignRules[detectedCampaign] || { medio: 'Organico' };
+      const medio = campaignInfo.medio;
+
+      console.log(`🎯 Campaña detectada para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
+
+      // Determinar si AI debe estar desactivada para campañas presenciales (incluyendo SMART y Satélite variants)
+      const aiEnabled = detectedCampaign !== 'PRESENCIAL';
+
+      // Crear nuevo cliente en tabla prospectos con la estructura correcta
       customer = new DynamicRecord({
         tableSlug: "prospectos",
         c_name: "quicklearning",
@@ -590,21 +570,21 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
           telefono: phone,
           email: null,
           clasificacion: "prospecto",
-          medio: "Meta",
+          medio: medio,
           curso: null,
           ciudad: null,
           campana: detectedCampaign,
           comentario: null,
           asesor: asesorRandom,
           ultimo_mensaje: body || null,
-          aiEnabled: true,
+          aiEnabled: aiEnabled,
           lastMessageDate: new Date(),
           createdBy: "twilio-webhook",
           createdAt: new Date()
         },
       });
       await customer.save();
-      console.log(`✅ Nuevo cliente creado: ${phone} con campaña: ${detectedCampaign}`);
+      console.log(`✅ Nuevo cliente creado: ${phone} con campaña: ${detectedCampaign}, medio: ${medio}, AI: ${aiEnabled ? 'activada' : 'desactivada'}`);
     }
 
     return customer;

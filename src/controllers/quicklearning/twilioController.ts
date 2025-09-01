@@ -467,44 +467,105 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
   }, 3000); // Esperar 3 segundos antes de procesar
 }
 
-// Campaign detection rules exactly matching the marketing messages
-const campaignRules: { [key: string]: { phrases: string[]; medio: string } } = {
-  'RMKT': { phrases: ['quiero info sobre los cursos de inglés (r)'], medio: 'Meta' },
-  'USA': { phrases: ['quiero info sobre los cursos de inglés (u)'], medio: 'Meta' },
-  'CAN': { phrases: ['quiero info sobre los cursos de inglés (c)'], medio: 'Meta' },
-  'PRESENCIAL': { 
-    phrases: [
-      'quiero más info sobre los cursos presenciales',
-      'quiero más info sobre el curso smart',
-      'quiero más info de la sucursal satélite'
-    ], 
-    medio: 'Meta' 
+// MENSAJES EXACTOS - Coincidencia exacta con los templates de marketing (SIN puntuación final)
+const EXACT_MESSAGE_MAPPING: { [key: string]: { campaign: string; medio: string } } = {
+  // USA
+  'hola, quiero info sobre los cursos de inglés (u)': {
+    campaign: 'USA',
+    medio: 'Meta'
   },
-  'VIRTUAL': { phrases: ['quiero más info sobre los cursos virtuales'], medio: 'Meta' },
-  'VIRTUAL PROMOS': { phrases: ['quiero info sobre la promo virtual'], medio: 'Meta' },
-  'ONLINE': { phrases: ['quiero más info sobre los cursos online'], medio: 'Meta' },
-  'ONLINE PROMOS': { phrases: ['quiero info sobre la promo online'], medio: 'Meta' },
-  'GENERAL': { phrases: ['quiero info sobre los cursos de inglés'], medio: 'Meta' },
-  'GOOGLE': { phrases: ['google', 'busque', 'busque en google', 'encantaría recibir información'], medio: 'Google' },
-  'ORGANICO': { phrases: [], medio: 'Organico' }
+  
+  // CAN
+  'hola, quiero info sobre los cursos de inglés (c)': {
+    campaign: 'CAN',
+    medio: 'Meta'
+  },
+  
+  // PRESENCIAL
+  'hola, quiero más info sobre los cursos presenciales': {
+    campaign: 'PRESENCIAL',
+    medio: 'Meta'
+  },
+  'hola, quiero más info sobre el curso smart': {
+    campaign: 'PRESENCIAL',
+    medio: 'Meta'
+  },
+  'hola. quiero más info de la sucursal satélite': {
+    campaign: 'PRESENCIAL',
+    medio: 'Meta'
+  },
+  
+  // VIRTUAL
+  'hola, quiero más info sobre los cursos virtuales': {
+    campaign: 'VIRTUAL',
+    medio: 'Meta'
+  },
+  
+  // VIRTUAL PROMOS
+  'hola, quiero info sobre la promo virtual': {
+    campaign: 'VIRTUAL PROMOS',
+    medio: 'Meta'
+  },
+  
+  // ONLINE
+  'hola, quiero más info sobre los cursos online': {
+    campaign: 'ONLINE',
+    medio: 'Meta'
+  },
+  
+  // ONLINE PROMOS
+  'hola, quiero info sobre la promo online': {
+    campaign: 'ONLINE PROMOS',
+    medio: 'Meta'
+  },
+  
+  // GENERAL
+  'hola, quiero info sobre los cursos de inglés': {
+    campaign: 'GENERAL',
+    medio: 'Meta'
+  },
+  
+  // RMKT
+  'hola, quiero info sobre los cursos de inglés (r)': {
+    campaign: 'RMKT',
+    medio: 'Meta'
+  },
+  
+  // GOOGLE - Variaciones conocidas
+  'hola, me encantaría recibir información de sus cursos': {
+    campaign: 'GOOGLE',
+    medio: 'Google'
+  },
+  'hola, quiero más información sobre los cursos de inglés de quick learning. los busque en google': {
+    campaign: 'GOOGLE',
+    medio: 'Google'
+  }
 };
 
 /**
- * Detect campaign based on message content
+ * Detecta la campaña basada en coincidencia exacta del mensaje
  */
-function detectCampaign(message: string): string {
-  if (!message) return 'ORGANICO';
-  
-  const lowerCaseMessage = message.toLowerCase().replace(/[^a-z0-9\s]/g, ''); // Normalize: lowercase, remove punctuation
-  
-  // Check for exact phrase matches in order
-  for (const [campaign, { phrases }] of Object.entries(campaignRules)) {
-    if (phrases.some(phrase => lowerCaseMessage.includes(phrase.toLowerCase()))) {
-      return campaign;
-    }
+function detectCampaign(message: string): { campaign: string; medio: string } {
+  if (!message) {
+    return { campaign: 'ORGANICO', medio: 'Interno' };
   }
   
-  return 'ORGANICO';
+  // Normalizar el mensaje: lowercase, trim, quitar espacios extra y puntuación final
+  const normalizedMessage = message.toLowerCase().trim()
+    .replace(/\s+/g, ' ') // Múltiples espacios a uno solo
+    .replace(/[.]{2,}/g, '.') // Múltiples puntos a uno solo
+    .replace(/[.,!?;:]$/, ''); // Quitar puntuación al final
+  
+  // Buscar coincidencia exacta
+  if (EXACT_MESSAGE_MAPPING[normalizedMessage]) {
+    const match = EXACT_MESSAGE_MAPPING[normalizedMessage];
+    console.log(`🎯 Campaña detectada (exacta): ${match.campaign} - Medio: ${match.medio} para mensaje: "${message}"`);
+    return match;
+  }
+  
+  // Si no hay coincidencia exacta, es ORGANICO
+  console.log(`🎯 Campaña detectada (fallback): ORGANICO - Medio: Interno para mensaje: "${message}"`);
+  return { campaign: 'ORGANICO', medio: 'Interno' };
 }
 
 /**
@@ -550,10 +611,10 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         });
       }
 
-      // Detectar campaña y medio
-      const detectedCampaign = detectCampaign(body);
-      const campaignInfo = campaignRules[detectedCampaign] || { medio: 'Organico' };
-      const medio = campaignInfo.medio;
+      // Detectar campaña y medio con coincidencia exacta
+      const detectionResult = detectCampaign(body);
+      const detectedCampaign = detectionResult.campaign;
+      const medio = detectionResult.medio;
 
       console.log(`🎯 Campaña detectada para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
 

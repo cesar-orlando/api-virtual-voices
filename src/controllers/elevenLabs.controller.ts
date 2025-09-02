@@ -38,7 +38,7 @@ export const getElevenLabsAgent = async (req: Request, res: Response) => {
     const { id } = req.params;
     const companySlug = req.query.companySlug as string;
     const agent = await ElevenLabsAgent.findOne({ _id: id, companySlug });
-    if (!agent) return res.status(404).json({ message: 'Agent not found' });
+    if (!agent) res.status(404).json({ message: 'Agent not found' });
     res.json(agent);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -52,7 +52,7 @@ export const updateElevenLabsAgent = async (req: Request, res: Response) => {
     const companySlug = req.query.companySlug as string;
     const updateData = req.body;
     const updated = await ElevenLabsAgent.findOneAndUpdate({ _id: id, companySlug }, updateData, { new: true });
-    if (!updated) return res.status(404).json({ message: 'Agent not found' });
+    if (!updated) res.status(404).json({ message: 'Agent not found' });
     await service.updateAgent(updated.agentId, updateData);
     res.json(updated);
   } catch (error) {
@@ -66,7 +66,7 @@ export const deleteElevenLabsAgent = async (req: Request, res: Response) => {
     const { id } = req.params;
     const companySlug = req.query.companySlug as string;
     const agent = await ElevenLabsAgent.findOne({ _id: id, companySlug });
-    if (!agent) return res.status(404).json({ message: 'Agent not found' });
+    if (!agent) res.status(404).json({ message: 'Agent not found' });
     await service.deleteAgent(agent.agentId);
     await agent.deleteOne();
     res.json({ message: 'Agent deleted' });

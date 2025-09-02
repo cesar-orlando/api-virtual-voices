@@ -98,9 +98,8 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       ],
       timeout: 60000,
     },
-    webVersion: '2.2402.5',
     webVersionCache: {
-      type: 'local'
+      type: 'none'
     }
   });
 

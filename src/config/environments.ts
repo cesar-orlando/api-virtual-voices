@@ -10,6 +10,7 @@ export interface EnvironmentConfig {
   corsOrigin: string;
   jwtSecret: string;
   openaiApiKey: string;
+  elevenLabsApiKey: string;
   twilio: {
     accountSid: string;
     authToken: string;
@@ -32,6 +33,7 @@ const environments: Record<string, EnvironmentConfig> = {
     openaiApiKey: process.env.OPENAI_API_KEY_DEV || '',
     googleApiKey: process.env.GOOGLE_API_KEY || '',
     googleSearchCx: process.env.GOOGLE_SEARCH_CX || '',
+    elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN || '',
@@ -49,6 +51,7 @@ const environments: Record<string, EnvironmentConfig> = {
     openaiApiKey: process.env.OPENAI_API_KEY_QA || '',
     googleApiKey: process.env.GOOGLE_API_KEY || '',
     googleSearchCx: process.env.GOOGLE_SEARCH_CX || '',
+    elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID_QA || process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN_QA || process.env.TWILIO_AUTH_TOKEN || '',
@@ -66,6 +69,7 @@ const environments: Record<string, EnvironmentConfig> = {
     openaiApiKey: process.env.OPENAI_API_KEY_PROD || '',
     googleApiKey: process.env.GOOGLE_API_KEY || '',
     googleSearchCx: process.env.GOOGLE_SEARCH_CX || '',
+    elevenLabsApiKey: process.env.ELEVENLABS_API_KEY || '',
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID_PROD || process.env.TWILIO_ACCOUNT_SID || '',
       authToken: process.env.TWILIO_AUTH_TOKEN_PROD || process.env.TWILIO_AUTH_TOKEN || '',
@@ -115,6 +119,7 @@ export function logEnvironmentInfo(config: EnvironmentConfig): void {
   console.log(`🗄️  MongoDB URI: ${config.mongoUri.replace(/\/\/.*@/, '//***:***@')}`);
   console.log(`🔐 JWT Secret: ${config.jwtSecret ? 'Configured' : 'Not configured'}`);
   console.log(`🤖 OpenAI API Key: ${config.openaiApiKey ? 'Configured' : 'Not configured'}`);
+  console.log(`👾 ElevenLabs API Key: ${config.elevenLabsApiKey ? 'Configured' : 'Not configured'}`);
   console.log(`📱 Twilio Account SID: ${config.twilio.accountSid ? 'Configured' : 'Not configured'}`);
   console.log(`📱 Twilio Phone Number: ${config.twilio.phoneNumber || 'Not configured'}`);
   console.log(`📱 Twilio Webhook URL: ${config.twilio.webhookUrl}`);

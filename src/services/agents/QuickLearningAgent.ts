@@ -7,7 +7,7 @@ export class QuickLearningAgent extends BaseAgent {
   protected async initializeAgent(): Promise<void> {
     this.agent = new Agent({
       name: 'NatalIA',
-      instructions: this.getSystemInstructions(),
+      instructions: this.getSystemInstructions() + this.getPresencialPlansUpdateInstructions(),
       model: 'gpt-4o-mini',
       modelSettings: {
         temperature: 0.3,
@@ -16,7 +16,7 @@ export class QuickLearningAgent extends BaseAgent {
       tools: [
         tool({
           name: 'check_transfer_keywords',
-          description: 'Check if user message contains keywords that require immediate transfer to advisor.',
+          description: 'Check if user message contains keywords that require immediate transfer to advisor (presencial or SMART/PLUS/MAX plans).',
           parameters: z.object({
             message: z.string().describe('The user message to analyze')
           }) as any,
@@ -24,31 +24,42 @@ export class QuickLearningAgent extends BaseAgent {
             try {
               console.log('🔧 DEBUG: Ejecutando check_transfer_keywords');
               console.log('🔧 DEBUG: message:', message);
+              const lowerMessage = message.toLowerCase();
+
+              // Base presencial/payment triggers
               const transferKeywords = [
-              'presencial', 'sucursal', 'en persona', 'fisico', 'direccion', 'ubicacion',
-              '68 sucursales', 'ir a la escuela', 'clases presenciales',
-                              'tarjeta', 'tarjeta de credito', 'tarjeta de debito', 'tarjeta bancaria',
-              'pago', 'informacion de pago', 'datos de pago'
-            ];
-            
-            const lowerMessage = message.toLowerCase();
-            const foundKeywords = transferKeywords.filter(keyword => 
-              lowerMessage.includes(keyword.toLowerCase())
-            );
-            
-            if (foundKeywords.length > 0) {
-              const result = `TRANSFER_TO_ADVISOR: Keywords detected: ${foundKeywords.join(', ')}`;
+                'presencial', 'sucursal', 'en persona', 'fisico', 'físico', 'direccion', 'dirección', 'ubicacion', 'ubicación',
+                '68 sucursales', 'ir a la escuela', 'clases presenciales',
+                'tarjeta', 'tarjeta de credito', 'tarjeta de crédito', 'tarjeta de debito', 'tarjeta de débito', 'tarjeta bancaria',
+                'pago', 'informacion de pago', 'información de pago', 'datos de pago'
+              ];
+
+              const foundKeywords = transferKeywords.filter(keyword => lowerMessage.includes(keyword));
+
+              // New presencial plan names (SMART / PLUS / MAX) — only trigger when paired with a course context word
+              const planNames = ['smart', 'plus', 'max'];
+              const contextWords = ['curso', 'cursos', 'plan', 'planes', 'paquete', 'paquetes', 'programa', 'programas', 'modalidad', 'modalidades', 'esquema', 'esquemas'];
+              const mentionsPlanWithContext = planNames.some(n => lowerMessage.includes(n)) && contextWords.some(w => lowerMessage.includes(w));
+
+              if (mentionsPlanWithContext) {
+                planNames.forEach(n => {
+                  if (lowerMessage.includes(n)) foundKeywords.push(n);
+                });
+              }
+
+              if (foundKeywords.length > 0) {
+                const result = `TRANSFER_TO_ADVISOR: Keywords detected: ${foundKeywords.join(', ')}`;
+                console.log('🔧 DEBUG: check_transfer_keywords result:', result);
+                return result;
+              }
+
+              const result = 'CONTINUE_CONVERSATION: No transfer keywords found';
               console.log('🔧 DEBUG: check_transfer_keywords result:', result);
               return result;
+            } catch (error) {
+              console.error('❌ ERROR en check_transfer_keywords:', error);
+              return 'ERROR en verificacion de palabras clave';
             }
-            
-            const result = 'CONTINUE_CONVERSATION: No transfer keywords found';
-            console.log('🔧 DEBUG: check_transfer_keywords result:', result);
-            return result;
-          } catch (error) {
-            console.error('❌ ERROR en check_transfer_keywords:', error);
-            return 'ERROR en verificacion de palabras clave';
-          }
           }
         }),
         tool({
@@ -260,7 +271,7 @@ export class QuickLearningAgent extends BaseAgent {
         }),
         tool({
           name: 'transfer_to_advisor_presencial',
-          description: 'Transfer user to human advisor when they choose presencial modality. This tool MUST be called when user mentions presencial, sucursal, or physical location.',
+          description: 'Transfer user to human advisor when they choose presencial modality or when they mention SMART/PLUS/MAX plan names. This tool MUST be called for presencial, sucursal, physical location, or SMART/PLUS/MAX course mentions.',
           parameters: z.object({
             userName: z.string().describe('Name of the user to include in the transfer message')
           }) as any,
@@ -402,6 +413,10 @@ export class QuickLearningAgent extends BaseAgent {
         })
       ]
     });
+  }
+
+  private getPresencialPlansUpdateInstructions(): string {
+    return '\n\nACTUALIZACION TRANSFERENCIA PRESENCIAL\n\nLos cursos presenciales ahora se denominan SMART, PLUS y MAX.\nNO brindes detalles sobre estos planes.\n\nCuando el usuario mencione SMART, PLUS o MAX (especialmente junto con palabras como curso, plan, paquete, programa, modalidad o esquema), transfiere inmediatamente a un asesor usando el tool transfer_to_advisor_presencial y despues envia el mensaje de transferencia. Despues de eso la IA debe desactivarse.';
   }
 
   private getSystemInstructions(): string {

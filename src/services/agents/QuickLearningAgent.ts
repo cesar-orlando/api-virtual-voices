@@ -281,7 +281,7 @@ export class QuickLearningAgent extends BaseAgent {
               console.log('🔧 DEBUG: userName:', userName);
               // This tool will be called by the agent when presencial is detected
               // The agent should use this tool and then provide the transfer message
-              const result = `TRANSFER_TRIGGERED: User ${userName} chose presencial modality. Transfer to advisor required.`;
+              const result = `TRANSFER_TO_ADVISOR: User ${userName} chose presencial modality. Transfer to advisor required.`;
               console.log('🔧 DEBUG: transfer_to_advisor_presencial result:', result);
               return result;
             } catch (error) {

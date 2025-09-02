@@ -9,7 +9,7 @@ interface IMessage {
   responseTime?: number; // Tiempo en segundos que tardó en responder un humano
   twilioSid?: string; // ID del mensaje en Twilio
   mediaUrl?: string[]; // URLs de media si las hay
-  messageType?: "text" | "image" | "audio" | "video" | "location" | "document";
+  messageType?: "text" | "image" | "audio" | "video" | "location" | "document" | "sticker";
   metadata?: {
     lat?: number;
     lng?: number;
@@ -76,7 +76,7 @@ const QuickLearningChatSchema: Schema = new mongoose.Schema({
       mediaUrl: [{ type: String }],
       messageType: { 
         type: String, 
-        enum: ["text", "image", "audio", "video", "location", "document"], 
+        enum: ["text", "image", "audio", "video", "location", "document", "sticker"], 
         default: "text" 
       },
       metadata: {

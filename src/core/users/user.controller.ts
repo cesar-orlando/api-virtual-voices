@@ -674,18 +674,30 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       jwtSecret,
       { expiresIn: "7d" }
     );
-    res.json({
+    // Preparar la respuesta base
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      companySlug: user.companySlug,
+      status: user.status,
+      branchId: user.branch.branchId, // Incluir branchId en la respuesta
+    };
+
+    // Si es SuperAdmin, guardar userId en variable separada
+    let response: any = {
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        companySlug: user.companySlug,
-        status: user.status,
-        branchId: user.branch.branchId, // Incluir branchId en la respuesta
-      },
-    });
+      user: userResponse,
+    };
+
+    if (user.role === 'SuperAdmin') {
+      response.superAdminId = user._id; // Variable separada para SuperAdmin
+      response.originalUserId = user._id; // También mantener referencia original
+      console.log('🔑 SuperAdmin login detected, userId saved:', user._id);
+    }
+
+    res.json(response);
     return;
   } catch (err: any) {
     res.status(500).json({ message: "Login error", error: err.message });

@@ -95,6 +95,7 @@ fetch('http://localhost:3001/api/google/calendar/ensure-valid-token', {
 // CORE USER SYSTEM ROUTES (Multi-Empresa)
 // ========================================
 app.use('/api/core/users', coreUserRoutes);
+app.use('/api/users', coreUserRoutes); // Alias para compatibilidad
 
 // Rutas para tablas
 app.use("/api/tables", tableRoutes);

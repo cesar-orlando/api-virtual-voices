@@ -563,6 +563,17 @@ function detectCampaign(message: string): { campaign: string; medio: string } {
     return match;
   }
   
+  // Detectar nuevos planes presenciales (SMART/PLUS/MAX) con palabras de contexto
+  const planNames = ['smart', 'plus', 'max'];
+  const contextWords = ['curso', 'cursos', 'plan', 'planes', 'paquete', 'paquetes', 'programa', 'programas', 'modalidad', 'modalidades', 'esquema', 'esquemas'];
+  const mentionsPlanWithContext = planNames.some(n => normalizedMessage.includes(n)) && contextWords.some(w => normalizedMessage.includes(w));
+  
+  if (mentionsPlanWithContext) {
+    const foundPlans = planNames.filter(n => normalizedMessage.includes(n));
+    console.log(`🎯 Campaña detectada (SMART/PLUS/MAX): PRESENCIAL - Medio: Meta para planes: ${foundPlans.join(', ')} en mensaje: "${message}"`);
+    return { campaign: 'PRESENCIAL', medio: 'Meta' };
+  }
+  
   // Si no hay coincidencia exacta, es ORGANICO
   console.log(`🎯 Campaña detectada (fallback): ORGANICO - Medio: Interno para mensaje: "${message}"`);
   return { campaign: 'ORGANICO', medio: 'Interno' };

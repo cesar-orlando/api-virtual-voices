@@ -8,14 +8,16 @@ import {
   addBranchToCompany,
   updateBranch,
   getBranches,
-  deleteBranch
+  deleteBranch,
+  getFirstAdmin
 } from "../controllers/company.controller";
 
 const router = Router();
 
 router.post("/", createCompanyAndDatabase);
-router.get("/", getAllCompanies); // Nuevo: listar todas las empresas
+router.get("/all", getAllCompanies); // Nuevo: listar todas las empresas
 router.get("/global/stats", getGlobalStats); // Nuevo: estadísticas globales
+router.get("/first-admin/:companySlug", getFirstAdmin); // Obtener primer admin de una compañía
 router.get("/:name", getCompany);
 router.patch("/:name", updateCompany);
 

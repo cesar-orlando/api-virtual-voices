@@ -11,7 +11,7 @@ export class QuickLearningAgent extends BaseAgent {
       model: 'gpt-4o-mini',
       modelSettings: {
         temperature: 0.3,
-        maxTokens: 300
+        // maxTokens: 300
       },
       tools: [
         tool({
@@ -28,7 +28,7 @@ export class QuickLearningAgent extends BaseAgent {
 
               // Base presencial/payment triggers
               const transferKeywords = [
-                'presencial', 'sucursal', 'en persona', 'fisico', 'físico', 'direccion', 'dirección', 'ubicacion', 'ubicación',
+                'presencial', 'sucursal', 'satelite', 'satélite', 'en persona', 'fisico', 'físico', 'direccion', 'dirección', 'ubicacion', 'ubicación',
                 '68 sucursales', 'ir a la escuela', 'clases presenciales',
                 'tarjeta', 'tarjeta de credito', 'tarjeta de crédito', 'tarjeta de debito', 'tarjeta de débito', 'tarjeta bancaria',
                 'pago', 'informacion de pago', 'información de pago', 'datos de pago'

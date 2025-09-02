@@ -494,6 +494,10 @@ const EXACT_MESSAGE_MAPPING: { [key: string]: { campaign: string; medio: string 
     campaign: 'PRESENCIAL',
     medio: 'Meta'
   },
+  'hola. quiero más info de la sucursal satelite': {
+    campaign: 'PRESENCIAL',
+    medio: 'Meta'
+  },
   
   // VIRTUAL
   'hola, quiero más info sobre los cursos virtuales': {

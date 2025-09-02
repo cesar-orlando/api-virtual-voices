@@ -707,5 +707,106 @@ router.get("/usuarios/stats", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/quicklearning/twilio/media/{mediaSid}:
+ *   get:
+ *     summary: Obtener archivo multimedia desde Twilio
+ *     tags: [Twilio Quick Learning]
+ *     parameters:
+ *       - in: path
+ *         name: mediaSid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: SID del archivo multimedia en Twilio
+ *     responses:
+ *       200:
+ *         description: Archivo multimedia obtenido exitosamente
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get("/media/:mediaSid", async (req: Request, res: Response) => {
+  try {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+    if (!accountSid || !authToken) {
+      res.status(500).json({ error: "Faltan credenciales de Twilio (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN)" });
+      return;
+    }
+
+    const { mediaSid } = req.params;
+    const { url } = req.query as { url?: string };
+
+    // Permite dos formas de uso:
+    // 1) `GET /media/:mediaSid` (modo legado)
+    // 2) `GET /media/:mediaSid?url=<fullEncodedTwilioMediaUrl>` (recomendado)
+    let twilioUrl: string;
+
+    if (url && typeof url === 'string') {
+      // Usar directamente la URL completa recibida desde Twilio (más robusto)
+      // Si termina en .json, quitarlo y pedir el binario con /Content
+      const cleaned = url.endsWith('.json') ? url.slice(0, -5) : url;
+      twilioUrl = cleaned.endsWith('/Content') ? cleaned : `${cleaned}/Content`;
+    } else {
+      // Modo legado: construir URL sin MessageSid (Twilio lo soporta para Media recientes)
+      // Si diera 404/401, cambiar a enviar la URL completa por query `url`
+      twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages/Media/${mediaSid}/Content`;
+    }
+
+    const credentials = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+
+    const response = await fetch(twilioUrl, {
+      headers: { 'Authorization': `Basic ${credentials}` },
+      // node-fetch / global fetch siguen redirects por defecto
+    });
+
+    console.log("response", response);
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const status = response.status;
+      const ct = response.headers.get('content-type') || 'text/plain';
+      // Propagar códigos comunes para debug más claro
+      if (status === 401) {
+        res.status(401).json({ error: 'No autorizado al consultar media de Twilio. Verifica Account SID/Auth Token y permisos.', twilioUrl });
+        return;
+      }
+      if (status === 404) {
+        res.status(404).json({ error: 'Media no encontrado en Twilio. Revisa que el media/url siga vigente.', twilioUrl });
+        return;
+      }
+      res.status(status).set('Content-Type', ct).send(text || 'Error al obtener media de Twilio');
+      return;
+    }
+
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    // Cachea localmente para evitar múltiples hits a Twilio del mismo media
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+    // Stream del body si está disponible, si no, buffer
+    // @ts-ignore - tipos de fetch en Node
+    if (response.body && typeof (response as any).arrayBuffer !== 'function') {
+      // Node 18: response.body es ReadableStream. Convertir a Node stream si es necesario.
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      res.send(buffer);
+    } else {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      res.send(buffer);
+    }
+  } catch (error) {
+    console.error("❌ Error obteniendo media de Twilio:", error);
+    res.status(500).json({ error: 'Error interno al obtener imagen de Twilio' });
+  }
+});
 
 export default router;

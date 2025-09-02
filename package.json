@@ -27,7 +27,12 @@
     "test:login-controller": "cross-env NODE_ENV=production ts-node src/scripts/testLoginController.ts",
     "test:twilio-quicklearning": "cross-env NODE_ENV=development ts-node src/scripts/testTwilioQuickLearning.ts",
     "test:upload": "cross-env NODE_ENV=development ts-node src/scripts/testUploadEndpoint.ts",
-    "migrate:backfill-field-ids": "cross-env NODE_ENV=development ts-node src/scripts/backfillTableFieldIds.ts"
+    "migrate:backfill-field-ids": "cross-env NODE_ENV=development ts-node src/scripts/backfillTableFieldIds.ts",
+    "quicklearning": "node scripts/quicklearning-final.js",
+    "campaign:update": "node scripts/emergency-campaign-update.js",
+    "campaign:update:quick": "node scripts/quick-campaign-update.js",
+    "campaign:test": "node scripts/test-campaign-detection.js",
+    "campaign:check": "node scripts/check-quicklearning-setup.js"
   },
   "keywords": [],
   "author": "",

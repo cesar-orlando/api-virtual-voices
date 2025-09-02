@@ -464,7 +464,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       console.error("❌ Error procesando mensaje con nuevo agente:", error);
       messageBuffers.delete(phoneUser);
     }
-  }, 3000); // Esperar 3 segundos antes de procesar
+  }, 15000); // Esperar 3 segundos antes de procesar
 }
 
 // MENSAJES EXACTOS - Coincidencia exacta con los templates de marketing (SIN puntuación final)

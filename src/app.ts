@@ -31,6 +31,7 @@ import { getEnvironmentConfig } from "./config/environments";
 import { getDatabaseInfo } from "./config/database";
 import { initializeProjects } from "./shared/projectManager";
 import { detectCompanyFromToken } from "./core/auth/companyMiddleware";
+import elevenLabsRoutes from "./routes/elevenLabs.routes";
 
 const app = express();
 
@@ -158,6 +159,20 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/tasks', taskRoutes);
 
 app.use('/api/email', emailRoutes);
+
+// Rutas de ElevenLabs Agents (usando query parameters en lugar de parámetros de ruta)
+app.use('/api/elevenlabs', elevenLabsRoutes);
+
+// Ruta de prueba para ElevenLabs sin parámetros dinámicos
+app.get('/api/elevenlabs-test', (req, res) => {
+  res.json({
+    success: true,
+    message: "ElevenLabs test route working",
+    params: req.params,
+    url: req.url,
+    path: req.path
+  });
+});
 
 app.get("/", (req, res) => {
     const config = getEnvironmentConfig();

@@ -52,7 +52,7 @@ export async function scrapeProduct(url: string): Promise<Record<string, { title
 	// Adjust selectors as needed for the target site
 	const data = await page.evaluate(() => {
 		// Try to select all product containers (li or product card)
-		const productNodes = Array.from(document.querySelectorAll('div[class*="mf-shop-content"] li, ul[class*="ProductGrid"] li')).slice(0,3);
+		const productNodes = Array.from(document.querySelectorAll('div[class*="mf-shop-content"] li, ul[class*="ProductGrid"] li'));
 		const results: Record<string, { title: string; price: string; link: string }> = {};
 		let count = 1;
 		productNodes.forEach(node => {

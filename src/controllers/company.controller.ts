@@ -4,6 +4,7 @@ import getBranchModel from "../models/branch.model";
 import { getConnectionByCompanySlug, getDbConnection } from "../config/connectionManager";
 import { createIAConfig } from "./iaConfig.controller";
 import getIaConfigModel from "../models/iaConfig.model";
+import getUserModel from "../core/users/user.model";
 import mongoose from "mongoose";
 
 export const createCompanyAndDatabase = async (req: Request, res: Response) => {
@@ -129,18 +130,36 @@ export const updateCompany = async (req: Request, res: Response) => {
  * Obtener todas las empresas disponibles (para admin supremo y usuarios VirtualVoices)
  */
 export const getAllCompanies = async (req: Request, res: Response) => {
+  console.log('Entrando a getAllCompanies');
   try {
-    // Verificar permisos: solo admin supremo o usuarios de VirtualVoices
-    const userCompany = req.headers['x-user-company'] as string;
-    const userRole = req.headers['x-user-role'] as string;
-    
-    const hasAccess = userRole === 'SuperAdmin' || 
-                     userCompany?.toLowerCase() === 'virtualvoices';
-    
-    if (!hasAccess) {
-      res.status(403).json({ 
-        message: "Acceso denegado. Solo admin supremo o usuarios VirtualVoices pueden ver todas las empresas" 
-      });
+    // Recibe userId y userRole
+  // Permite recibir userId y userRole desde query, body o headers
+  const userId = (req.query.userId as string) || (req.body.userId as string) || (req.headers['x-user-id'] as string);
+  const userRole = (req.query.userRole as string) || (req.body.userRole as string) || (req.headers['x-user-role'] as string);
+
+    if (!userId || !userRole) {
+      res.status(400).json({ message: "Faltan parámetros requeridos: userId y userRole" });
+      return;
+    }
+
+    // Verifica que el usuario exista en la base de datos 'VirtualVoices'
+    const virtualVoicesConn = await getDbConnection('VirtualVoices');
+    let User;
+    if (virtualVoicesConn.models.User) {
+      User = virtualVoicesConn.models.User;
+    } else {
+      User = virtualVoicesConn.model('User', new mongoose.Schema({}, { strict: false }));
+    }
+    const userExists = await User.findOne({ _id: userId }).exec();
+
+    if (!userExists) {
+      res.status(403).json({ message: "Acceso denegado. Usuario no encontrado en VirtualVoices." });
+      return;
+    }
+
+    // Solo permite acceso si el userRole es 'SuperAdmin'
+    if (userRole !== 'SuperAdmin') {
+      res.status(403).json({ message: "Acceso denegado. Solo admin supremo puede ver las bases de datos disponibles." });
       return;
     }
 
@@ -151,51 +170,14 @@ export const getAllCompanies = async (req: Request, res: Response) => {
 
     const admin = mongoose.connection.db.admin();
     const dbs = await admin.listDatabases();
+    console.log('Resultado de admin.listDatabases():', JSON.stringify(dbs, null, 2));
 
-    const companies = [];
+    // Devuelve solo el array de nombres de bases de datos (excluyendo admin/local)
+    const availableDatabases = dbs.databases
+      ? dbs.databases.filter(dbInfo => dbInfo.name !== "admin" && dbInfo.name !== "local").map(dbInfo => dbInfo.name)
+      : [];
 
-    // Obtener empresas de cada base de datos
-    for (const dbInfo of dbs.databases) {
-      const dbName = dbInfo.name;
-      if (dbName === "admin" || dbName === "local") continue;
-
-      try {
-        const conn = await getDbConnection(dbName);
-        const Company = getCompanyModel(conn);
-        const companyRecords = await Company.find({});
-        
-        companies.push(...companyRecords.map(company => ({
-          _id: company._id,
-          name: company.name,
-          address: company.address,
-          phone: company.phone,
-          slug: dbName,
-          createdAt: company.createdAt,
-          updatedAt: company.updatedAt
-        })));
-      } catch (err) {
-        console.error(`Error fetching company from ${dbName}:`, err);
-        // Agregar empresa básica si hay error
-        companies.push({
-          name: dbName,
-          slug: dbName,
-          address: null,
-          phone: null,
-          error: 'Error loading company details'
-        });
-      }
-    }
-
-    // Agregar opción especial para vista consolidada
-    companies.push({
-      _id: 'all-companies',
-      name: 'Todas las Empresas',
-      slug: 'all-companies',
-      description: 'Vista consolidada de todas las empresas',
-      isSpecial: true
-    });
-
-    res.json(companies);
+    res.json(availableDatabases);
   } catch (error) {
     console.error('Error getting all companies:', error);
     res.status(500).json({ message: "Error interno del servidor", error });
@@ -468,5 +450,63 @@ export const deleteBranch = async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Error deleting branch", error });
+  }
+};
+
+export const getFirstAdmin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { companySlug } = req.params;
+
+    if (!companySlug) {
+      res.status(400).json({ message: "Company slug is required" });
+      return;
+    }
+
+    // Verificar que la base de datos de la compañía existe
+    if (!mongoose.connection.db) {
+      res.status(500).json({ message: "Database connection not established" });
+      return;
+    }
+    
+    const admin = mongoose.connection.db.admin();
+    const dbs = await admin.listDatabases();
+    const dbExists = dbs.databases.some(db => db.name === companySlug);
+    
+    if (!dbExists) {
+      res.status(404).json({ message: "Company not found" });
+      return;
+    }
+
+    // Conectar a la base de datos de la compañía
+    const connection = await getConnectionByCompanySlug(companySlug);
+    if (!connection) {
+      res.status(404).json({ message: "Company not found" });
+      return;
+    }
+
+    const User = getUserModel(connection);
+    
+    // Buscar el primer usuario con rol de Administrador que no esté eliminado
+    const firstAdmin = await User.findOne({ 
+      role: "Administrador",
+      status: { $ne: "eliminado" }
+    }).sort({ createdAt: 1 }); // Ordenar por fecha de creación, el más antiguo primero
+
+    if (!firstAdmin) {
+      res.status(404).json({ message: "No admin user found in this company" });
+      return;
+    }
+
+    // Responder solo con la información requerida
+    res.json({
+      id: firstAdmin._id,
+      name: firstAdmin.name,
+      email: firstAdmin.email
+    });
+    return;
+
+  } catch (err: any) {
+    res.status(500).json({ message: "Error getting first admin", error: err.message });
+    return;
   }
 };

@@ -494,6 +494,10 @@ const EXACT_MESSAGE_MAPPING: { [key: string]: { campaign: string; medio: string 
     campaign: 'PRESENCIAL',
     medio: 'Meta'
   },
+  'hola. quiero más info de la sucursal satelite': {
+    campaign: 'PRESENCIAL',
+    medio: 'Meta'
+  },
   
   // VIRTUAL
   'hola, quiero más info sobre los cursos virtuales': {
@@ -561,6 +565,17 @@ function detectCampaign(message: string): { campaign: string; medio: string } {
     const match = EXACT_MESSAGE_MAPPING[normalizedMessage];
     console.log(`🎯 Campaña detectada (exacta): ${match.campaign} - Medio: ${match.medio} para mensaje: "${message}"`);
     return match;
+  }
+  
+  // Detectar nuevos planes presenciales (SMART/PLUS/MAX) con palabras de contexto
+  const planNames = ['smart', 'plus', 'max'];
+  const contextWords = ['curso', 'cursos', 'plan', 'planes', 'paquete', 'paquetes', 'programa', 'programas', 'modalidad', 'modalidades', 'esquema', 'esquemas'];
+  const mentionsPlanWithContext = planNames.some(n => normalizedMessage.includes(n)) && contextWords.some(w => normalizedMessage.includes(w));
+  
+  if (mentionsPlanWithContext) {
+    const foundPlans = planNames.filter(n => normalizedMessage.includes(n));
+    console.log(`🎯 Campaña detectada (SMART/PLUS/MAX): PRESENCIAL - Medio: Meta para planes: ${foundPlans.join(', ')} en mensaje: "${message}"`);
+    return { campaign: 'PRESENCIAL', medio: 'Meta' };
   }
   
   // Si no hay coincidencia exacta, es ORGANICO

@@ -12,6 +12,9 @@ import { getEnvironmentConfig } from "../../config/environments";
 import getUserModel from "../../core/users/user.model";
 import { Server as SocketIOServer } from "socket.io";
 import getIaConfigModel from "../../models/iaConfig.model";
+import { s3 } from "../../config/aws";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import path from "path";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
@@ -114,6 +117,186 @@ function emitMessageRead(phone: string, userId: string) {
 }
 
 /**
+ * Detectar si el media es un sticker de WhatsApp (comentado - ahora tratamos stickers como imágenes)
+ */
+// function detectStickerFromTwilio(
+//   mediaContentType: string,
+//   stickerPackId?: string,
+//   stickerId?: string,
+//   messageType?: string
+// ): boolean {
+//   // Verificar si es un sticker basándose en múltiples factores
+//   const isWebp = mediaContentType === 'image/webp';
+//   const hasStickerInfo = !!(stickerPackId || stickerId);
+//   const isStickerMessageType = messageType === 'sticker';
+//   
+//   // Es sticker si:
+//   // 1. Es WebP (formato típico de stickers)
+//   // 2. Tiene información de sticker pack/id
+//   // 3. El MessageType indica que es sticker
+//   const isSticker = isWebp || hasStickerInfo || isStickerMessageType;
+//   
+//   if (isSticker) {
+//     console.log(`🎯 Sticker detectado - ContentType: ${mediaContentType}, PackId: ${stickerPackId}, StickerId: ${stickerId}, MessageType: ${messageType}`);
+//   }
+//   
+//   return isSticker;
+// }
+
+/**
+ * Procesar archivos multimedia de Twilio y subirlos a S3
+ */
+async function processMediaFromTwilio(
+  mediaUrl: string,
+  mediaContentType: string,
+  messageId: string
+): Promise<string> {
+  try {
+    
+    // Descargar archivo desde Twilio usando autenticación
+    const mediaResponse = await axios.get(mediaUrl, {
+      responseType: "arraybuffer",
+      auth: {
+        username: envConfig.twilio.accountSid,
+        password: envConfig.twilio.authToken,
+      },
+    });
+
+    const mediaBuffer = Buffer.from(mediaResponse.data);
+    
+    // Determinar extensión del archivo basado en el content type
+    let extension = 'bin'; // fallback
+    const mimeTypeParts = mediaContentType.split('/');
+    if (mimeTypeParts.length === 2) {
+      const subtype = mimeTypeParts[1];
+      extension = subtype === 'jpeg' ? 'jpg' : subtype;
+    }
+
+    // Crear nombre único para el archivo
+    const fileName = `${messageId}-${Date.now()}.${extension}`;
+    let s3Folder = 'whatsapp-media';
+    
+    // Determinar carpeta según tipo de archivo
+    if (mediaContentType.startsWith('image/')) {
+      s3Folder = 'whatsapp-images';
+    } else if (mediaContentType.startsWith('audio/')) {
+      s3Folder = 'whatsapp-audios';
+    } else if (mediaContentType.startsWith('video/')) {
+      s3Folder = 'whatsapp-videos';
+    } else if (mediaContentType.startsWith('application/')) {
+      s3Folder = 'whatsapp-documents';
+    }
+
+    // Subir a S3
+    const bucketName = process.env.AWS_BUCKET_NAME;
+    const s3Key = `${s3Folder}/${fileName}`;
+    const uploadParams = {
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: mediaBuffer,
+      ContentType: mediaContentType,
+      ContentDisposition: 'inline' // Permite visualización directa como tu upload.middleware.ts
+    };
+
+    await s3.send(new PutObjectCommand(uploadParams));
+    
+    // Generar URL pública
+    const publicUrl = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+    
+    return publicUrl;
+
+  } catch (error) {
+    console.error("❌ Error procesando media de Twilio:", error);
+    // En caso de error, devolver la URL original (aunque requiera auth)
+    return mediaUrl;
+  }
+}
+
+/**
+ * Analizar imagen usando OpenAI Vision (similar al mediaUtils.ts)
+ */
+async function analyzeImageFromTwilio(
+  mediaUrl: string,
+  mediaContentType: string
+): Promise<{ description: string; extractedText: string }> {
+  try {
+    // Descargar imagen desde Twilio
+    const mediaResponse = await axios.get(mediaUrl, {
+      responseType: "arraybuffer",
+      auth: {
+        username: envConfig.twilio.accountSid,
+        password: envConfig.twilio.authToken,
+      },
+    });
+
+    const mediaBuffer = Buffer.from(mediaResponse.data);
+    const base64Data = mediaBuffer.toString('base64');
+
+    // Importar openai aquí para evitar dependencias circulares
+    const { openai } = await import("../../config/openai");
+
+    // Analizar con OpenAI Vision
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Analiza esta imagen y proporciona: 1) Una descripción detallada de lo que ves, 2) Todo el texto que puedas leer en la imagen. Responde en español."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mediaContentType};base64,${base64Data}`,
+                detail: "auto"
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.3
+    });
+
+    const analysis = response.choices[0]?.message?.content || "";
+    
+    // Parsear respuesta
+    const lines = analysis.split('\n');
+    let description = "";
+    let extractedText = "";
+    
+    let currentSection = "";
+    for (const line of lines) {
+      if (line.toLowerCase().includes('descripción') || line.includes('1)')) {
+        currentSection = "description";
+        description += line.replace(/^\d+\)\s*/, '').replace(/descripción:?/i, '').trim() + " ";
+      } else if (line.toLowerCase().includes('texto') || line.includes('2)')) {
+        currentSection = "text";
+        extractedText += line.replace(/^\d+\)\s*/, '').replace(/texto:?/i, '').trim() + " ";
+      } else if (currentSection === "description" && line.trim()) {
+        description += line.trim() + " ";
+      } else if (currentSection === "text" && line.trim()) {
+        extractedText += line.trim() + " ";
+      }
+    }
+
+    return {
+      description: description.trim() || "Imagen analizada por IA",
+      extractedText: extractedText.trim() || "Sin texto detectado"
+    };
+
+  } catch (error) {
+    console.error('❌ Error analizando imagen de Twilio:', error);
+    return {
+      description: "Error al analizar la imagen",
+      extractedText: "No se pudo extraer texto"
+    };
+  }
+}
+
+/**
  * Webhook de Twilio para recibir mensajes
  */
 export const twilioWebhook = async (req: Request, res: Response): Promise<void> => {
@@ -129,6 +312,11 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       MediaContentType0,
       Latitude,
       Longitude,
+      // Campos adicionales para stickers de WhatsApp
+      StickerPackId,
+      StickerPackName,
+      StickerId,
+      MessageType,
     } = req.body;
 
     // Validar que es para Quick Learning (verificar número de teléfono)
@@ -189,23 +377,51 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         messageText = Body;
         messageType = "text";
       } else if (MediaUrl0) {
+        // Tratar todos los archivos de imagen (incluyendo stickers webp) como imágenes normales
         if (MediaContentType0?.startsWith('image/')) {
           messageType = "image";
-          messageText = `🖼️ El usuario compartió una imagen`;
-          mediaUrls = [MediaUrl0];
+          
+          // Procesar imagen y subirla a S3
+          const publicImageUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+          mediaUrls = [publicImageUrl];
+          
+          // Analizar imagen con IA
+          try {
+            const imageAnalysis = await analyzeImageFromTwilio(MediaUrl0, MediaContentType0);
+            messageText = `🖼️ El usuario compartió una imagen\n\nDescripción: ${imageAnalysis.description}\n\nTexto extraído: ${imageAnalysis.extractedText}\n\nImagen: ${publicImageUrl}`;
+          } catch (error) {
+            console.error("❌ Error analizando imagen:", error);
+            messageText = `🖼️ El usuario compartió una imagen\n\nImagen: ${publicImageUrl}`;
+          }
         } else if (MediaContentType0?.startsWith('audio/')) {
           messageType = "audio";
-          const transcription = await transcribeAudio(MediaUrl0);
-          messageText = `🎙️ Audio transcrito: ${transcription}`;
-          mediaUrls = [MediaUrl0];
+          
+          // Procesar audio y subirlo a S3
+          const publicAudioUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+          mediaUrls = [publicAudioUrl];
+          
+          // Transcribir audio
+          try {
+            const transcription = await transcribeAudio(MediaUrl0);
+            messageText = `🎙️ Audio transcrito: ${transcription}\n\nAudio: ${publicAudioUrl}`;
+          } catch (error) {
+            console.error("❌ Error transcribiendo audio:", error);
+            messageText = `🎙️ El usuario envió un audio\n\nAudio: ${publicAudioUrl}`;
+          }
         } else if (MediaContentType0?.startsWith('video/')) {
           messageType = "video";
-          messageText = `🎥 El usuario compartió un video`;
-          mediaUrls = [MediaUrl0];
+          
+          // Procesar video y subirlo a S3
+          const publicVideoUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+          mediaUrls = [publicVideoUrl];
+          messageText = `🎥 El usuario compartió un video\n\nVideo: ${publicVideoUrl}`;
         } else {
           messageType = "document";
-          messageText = `📄 El usuario compartió un documento`;
-          mediaUrls = [MediaUrl0];
+          
+          // Procesar documento y subirlo a S3
+          const publicDocUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+          mediaUrls = [publicDocUrl];
+          messageText = `📄 El usuario compartió un documento\n\nDocumento: ${publicDocUrl}`;
         }
       } else if (Latitude && Longitude) {
         messageType = "location";
@@ -221,7 +437,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         respondedBy: "human" as const,
         twilioSid: MessageSid,
         mediaUrl: mediaUrls,
-        messageType: messageType as "text" | "image" | "audio" | "video" | "location" | "document",
+        messageType: messageType as "text" | "image" | "audio" | "video" | "location" | "document" | "sticker",
         metadata: {
           lat: Latitude ? parseFloat(Latitude) : undefined,
           lng: Longitude ? parseFloat(Longitude) : undefined,
@@ -259,8 +475,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       if (!updated) {
         console.warn(`No se encontró el usuario en ninguna tabla para actualizar ultimo_mensaje: ${phoneUser}`);
       }
-
-      console.log("aiEnabled", aiEnabled)
 
       // Si la AI está desactivada, no procesar con IA
       if (!aiEnabled) {
@@ -302,8 +516,6 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       // Combinar todos los mensajes del buffer
       const combinedMessage = buffer.messages.join("\n");
       
-      console.log(`🤖 Procesando mensaje(s) combinado(s) para ${phoneUser} con NUEVO SISTEMA DE AGENTES`);
-
       const config = await getIaConfigModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
@@ -357,7 +569,6 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           const isTransferMessage = aiResponse.toLowerCase().includes('transferir con un asesor') || aiResponse.toLowerCase().includes('te voy a transferir');
           
           if (isTransferMessage) {
-            console.log(`🔄 Transferencia a asesor detectada para ${phoneUser}. Desactivando IA...`);
             
             // Desactivar IA en el chat
             chat.aiEnabled = false;
@@ -464,7 +675,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       console.error("❌ Error procesando mensaje con nuevo agente:", error);
       messageBuffers.delete(phoneUser);
     }
-  }, 15000); // Esperar 3 segundos antes de procesar
+  }, 3000); // Esperar 3 segundos antes de procesar
 }
 
 // MENSAJES EXACTOS - Coincidencia exacta con los templates de marketing (SIN puntuación final)

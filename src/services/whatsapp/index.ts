@@ -18,6 +18,48 @@ export const clients: Record<string, Client> = {};
 // Objeto global para limitar la generacion de QR
 const qrSent: Record<string, boolean> = {};
 
+// Global flag to control message processing
+const blockedSessionsNumbers: Set<string> = new Set();
+
+// Function to check if message processing should be blocked
+function shouldBlockMessageProcessing(company: string, sessionName: string, phone: string): boolean {
+  const sessionKey = `${company}:${sessionName}:${phone}`;
+  
+  // Method 1: Check if session is in blocked list
+  if (blockedSessionsNumbers.has(sessionKey)) {
+    return true;
+  }
+  
+  // Method 5: Block based on time conditions
+  const now = new Date();
+  const hour = now.getHours();
+  if (hour < 8 || hour > 22) { // Block outside business hours
+    // return true; // Uncomment to enable time-based blocking
+  }
+  
+  return false; // Allow processing by default
+}
+
+// Function to manually block a session
+export function blockSession(company: string, sessionName: string, phone: string): void {
+  const sessionKey = `${company}:${sessionName}:${phone}`;
+  blockedSessionsNumbers.add(sessionKey);
+  console.log(`🚫 Session blocked: ${sessionKey}`);
+}
+
+// Function to unblock a session
+export function unblockSession(company: string, sessionName: string, phone: string): void {
+  const sessionKey = `${company}:${sessionName}:${phone}`;
+  blockedSessionsNumbers.delete(sessionKey);
+  console.log(`✅ Session unblocked: ${sessionKey}`);
+}
+
+// Function to check if session is blocked
+export function isSessionBlocked(company: string, sessionName: string, phone: string): boolean {
+  const sessionKey = `${company}:${sessionName}:${phone}`;
+  return blockedSessionsNumbers.has(sessionKey);
+}
+
 // Determinar el directorio de autenticación basado en el entorno
 const getAuthDir = () => {
   // En local, siempre usar la ruta local
@@ -549,8 +591,19 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
       }
     });
 
+    // ✅ OPTION: Completely disable message_create event
+    // Comment out the entire block below to prevent all message processing
+    
     whatsappClient.on('message_create', async (message) => {
       try {
+        const chat = await message.getChat();
+        // ✅ ADD BLOCKING CONDITIONS HERE
+        // Block based on session status, company settings, or other conditions
+        if (shouldBlockMessageProcessing(company, sessionName, chat.id._serialized) && message.fromMe) {
+          console.log(`🚫 Message processing blocked for ${company}:${sessionName}:${chat.id._serialized}`);
+          return; // Exit early, preventing all message processing
+        }
+
         // Log de todos los mensajes recibidos
         console.log(`MENSAJE ${message.fromMe ? 'ENVIADO' : 'RECIBIDO'}:`, message.from, message.body);
 
@@ -560,7 +613,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           return;
         }
         try {
-          const chat = await message.getChat();
           await upsertProspect({
             company,
             number: chat.id._serialized,

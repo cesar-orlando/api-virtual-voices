@@ -34,7 +34,14 @@ export const googleSearch = async (req: Request, res: Response): Promise<void> =
             params: {
                 key: apiKey,
                 cx: cx,
-                q: parsedFilters.search
+                q: parsedFilters.search,
+                num: 10, // Get more results
+                start: 1,
+                safe: 'off', // Include all content
+                lr: 'lang_es', // Spanish language
+                gl: 'mx', // Mexico region
+                filter: '1', // Remove duplicate results
+                fields: 'items(title,link,snippet)' // Only return needed fields
             }
         });
         const results = await Promise.all(response.data.items.map(async item => ({

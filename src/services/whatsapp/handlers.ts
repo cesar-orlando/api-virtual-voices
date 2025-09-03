@@ -218,6 +218,12 @@ async function handleDelayedResponse(
 ) {
   const DELAY_MS = 15000; // 15 segundos para mejor responsividad
 
+  // Get the chat to send typing indicator
+  const chat = await message.getChat();
+  
+  // Send typing indicator before sending the message
+  await chat.sendStateTyping();
+
   // Check if there's already a pending response for this user
   const existingPending = pendingResponses.get(userPhone);
   
@@ -289,6 +295,12 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
     const session = await sessionModel.findOne({ name: sessionName });
     const IaConfig = getIaConfigModel(conn);
     const config = await IaConfig.findOne({ _id: session?.IA?.id });
+
+    // Get the chat to send typing indicator
+    const chat = await lastMessage.getChat();
+
+    // Send typing indicator before sending the message
+    await chat.sendStateTyping();
   
     try {
 
@@ -310,6 +322,9 @@ async function processAccumulatedMessages(userPhone: string, pendingData: {
       // Fallback response
       await sendCustomResponse(client, lastMessage, "En un momento un asesor se pondrá en contacto con usted.", company, sessionName, latestRecord, conn);
     }
+
+    // Stop typing indicator
+    await chat.clearState();
 
   } catch (error) {
     console.error(`❌ Error in processAccumulatedMessages:`, error);

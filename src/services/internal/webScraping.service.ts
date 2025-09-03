@@ -1,7 +1,7 @@
 import { chromium, Browser } from 'playwright';
 import { Request, Response } from 'express';
 import { openai } from '../../config/openai';
-import * as cheerio from 'cheerio'
+import * as cheerio from 'cheerio';
 import axios from 'axios';
 
 let browser: Browser | null = null;
@@ -47,7 +47,15 @@ export async function scrapeProduct(url: string): Promise<Record<string, { title
 	const browser = await getBrowser();
 	const context = await browser.newContext();
 	const page = await context.newPage();
+
+	// Navigate and wait for DOM content to load (automatically follows redirects)
 	await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+	// Optional: Check final URL after redirects (useful for debugging)
+	const finalUrl = page.url();
+	if (finalUrl !== url) {
+		console.log(`🔄 Redirected: ${url} → ${finalUrl}`);
+	}
 
 	// Adjust selectors as needed for the target site
 	const data = await page.evaluate(() => {
@@ -65,9 +73,8 @@ export async function scrapeProduct(url: string): Promise<Record<string, { title
 			const priceEl = node.querySelector('span[class*="woocommerce-Price-amount"] bdi, .Price__whole__mQGs5');
 			if (priceEl) price = priceEl.textContent?.trim() || '';
 			// Link
-			let link = '';
 			const linkEl = node.querySelector('a[class*="ProductGridItem__overlay"], .woo-loop-product__title a, a');
-			if (linkEl) link = linkEl.getAttribute('href') || '';
+			const link = linkEl ? linkEl.getAttribute('href') || '' : finalUrl;
 			// Only add if at least one field is present
 			if (title || price || link) {
 				results[count.toString()] = { title, price, link };

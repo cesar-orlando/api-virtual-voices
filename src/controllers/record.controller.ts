@@ -2071,14 +2071,32 @@ export async function getRecordByPhone(req: Request, res: Response) {
           }
         } else if (parsedFilters.lastMessageDateLte) {
           lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
+        } else if (parsedFilters.advisor) {
+          // Handle both ObjectId and string formats for advisor matching
+          const advisorValue = parsedFilters.advisor;
+          const orConditions = [
+            { [`data.asesor.id`]: advisorValue } // Match as string
+          ];
+
+          // If it's a valid ObjectId, also try matching as ObjectId
+          if (Types.ObjectId.isValid(advisorValue)) {
+            orConditions.push({
+              [`data.asesor.id`]: new Types.ObjectId(advisorValue)
+            });
+          }
+
+          // If we have multiple conditions, use $or; otherwise use the single condition
+          if (orConditions.length > 1) {
+            dynamicMatchFilters.$or = orConditions;
+          } else {
+            dynamicMatchFilters[`data.asesor.id`] = advisorValue;
+          }
         }
       } catch (error) {
         res.status(400).json({ message: "Invalid filters format" });
         return;
       }
     }
-        
-
 
     // --- Application-level batching for early stop when enough records with chats are found ---
     const startTime = Date.now();

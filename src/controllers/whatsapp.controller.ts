@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
-import { startWhatsappBot, clients } from "../services/whatsapp/index";
+import { startWhatsappBot, clients, blockSession, unblockSession, isSessionBlocked } from "../services/whatsapp/index";
 import { getSessionModel } from "../models/session.model";
 import { getConnectionByCompanySlug } from "../config/connectionManager";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 import getUserModel from "../core/users/user.model";
 import getRecordModel from "../models/record.model";
-import { MessageMedia } from "whatsapp-web.js";
+import { Message, MessageMedia } from "whatsapp-web.js";
 import fs from "node:fs";
 import path from "node:path";
 import axios from "axios";
@@ -237,7 +237,7 @@ async function downloadUrlToDisk(url: string): Promise<string> {
 export const sendWhatsappMessage = async (req: Request, res: Response) => {
   try {
     const { c_name, sessionId } = req.params;
-    const { phone, message, attachment } = req.body;
+    const { phone, message, attachment, type } = req.body;
     const uploaded: Express.Multer.File | undefined = (req as any).file;
 
     const conn = await getConnectionByCompanySlug(c_name);
@@ -246,26 +246,54 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
 
     const session = await WhatsappSession.findById(sessionId);
 
+    if (type === "massive") {
+      blockSession(c_name, session.name, phone);
+    }
+
     if (!session) {
       res.status(404).json({ message: "Session not found" });
       return;
     }
 
+    let sentMessage: Message;
+
     if (uploaded) {
       // Received as multipart file from frontend
       const filePath = saveUploadedToDisk(uploaded);
       const media = await MessageMedia.fromFilePath(filePath);
-      await clients[`${c_name}:${session.name}`].sendMessage(phone, media, { caption: message });
+      sentMessage = await clients[`${c_name}:${session.name}`].sendMessage(phone, media, { caption: message });
       fs.unlinkSync(filePath); // Eliminar archivo temporal
     } else if (typeof attachment === "string" && attachment.trim().length > 0) {
       // If it's a URL, download it locally first, then send via file path
       const isHttp = /^https?:\/\//i.test(attachment);
       const filePath = isHttp ? await downloadUrlToDisk(attachment) : attachment;
       const media = await MessageMedia.fromFilePath(filePath);
-      await clients[`${c_name}:${session.name}`].sendMessage(phone, media, { caption: message });
+      sentMessage = await clients[`${c_name}:${session.name}`].sendMessage(phone, media, { caption: message });
       fs.unlinkSync(filePath); // Eliminar archivo temporal
     } else {
-      await clients[`${c_name}:${session.name}`].sendMessage(phone, message);
+      sentMessage = await clients[`${c_name}:${session.name}`].sendMessage(phone, message);
+    }
+
+    if (type === "massive") {
+      const newMessage = {
+        msgId: sentMessage.id?.id,
+        direction: "outbound-massive-api",
+        body: sentMessage.body,
+        respondedBy: "human",
+        status: 'enviado'
+      } as any;
+      const WhatsappChat = getWhatsappChatModel(conn);
+      await WhatsappChat.findOneAndUpdate(
+        {
+          'session.name': session.name,
+          $or: [
+            { phone: Number(phone.replace('@c.us', '')) },
+            { phone: phone }
+          ]
+        },
+        { $push: { messages: newMessage } },
+      );
+      unblockSession(c_name, session.name, phone);
     }
 
     res.status(200).json({ message: "Message sent" });

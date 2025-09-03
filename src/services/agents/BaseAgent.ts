@@ -101,7 +101,7 @@ export abstract class BaseAgent {
         .replace(/¿/g, '').replace(/¡/g, ''); // Remove Spanish punctuation
 
       const nowInTimezone = DateTime.now().setZone(this.agentContext.timezone);
-      const currentTime = nowInTimezone.toFormat('cccc, dd/MM/yyyy HH:mm');
+      const currentTime = nowInTimezone.toFormat('cccc, dd \'de\' MMMM \'de\' yyyy \'a las\' HH:mm \'horas\' (z)');
 
       const currentTimeText = `Hora local actual: ${currentTime}`;
       

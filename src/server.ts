@@ -10,6 +10,8 @@ import fs from 'fs';
 import path from 'path';
 import { loadRecentFacebookMessages } from './services/meta/messenger';
 
+process.setMaxListeners(20);
+
 dotenv.config();
 
 // Obtener configuración del entorno

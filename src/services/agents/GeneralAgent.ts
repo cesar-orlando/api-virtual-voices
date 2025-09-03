@@ -227,8 +227,8 @@ export class GeneralAgent extends BaseAgent {
           }) as any,
         execute: async ({ summary, description, startDateTime, endDateTime, location, attendees }) => {
 
-          console.log(`📅 Creating calendar event: ${summary}`);
-          
+          console.log(`📅 Creating calendar event: ${summary} with start ${startDateTime} and end ${endDateTime}`);
+
           const conn = await getConnectionByCompanySlug(this.agentContext.company);
 
           const Record = getRecordModel(conn);

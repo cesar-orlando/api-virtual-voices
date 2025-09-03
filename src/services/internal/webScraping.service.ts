@@ -73,9 +73,8 @@ export async function scrapeProduct(url: string): Promise<Record<string, { title
 			const priceEl = node.querySelector('span[class*="woocommerce-Price-amount"] bdi, .Price__whole__mQGs5');
 			if (priceEl) price = priceEl.textContent?.trim() || '';
 			// Link
-			let link = '';
 			const linkEl = node.querySelector('a[class*="ProductGridItem__overlay"], .woo-loop-product__title a, a');
-			if (linkEl) link = linkEl.getAttribute('href') || finalUrl || '';
+			const link = linkEl ? linkEl.getAttribute('href') || '' : finalUrl;
 			// Only add if at least one field is present
 			if (title || price || link) {
 				results[count.toString()] = { title, price, link };

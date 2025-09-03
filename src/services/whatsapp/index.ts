@@ -598,7 +598,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
         // ✅ ADD BLOCKING CONDITIONS HERE
         // Block based on session status, company settings, or other conditions
         if (shouldBlockMessageProcessing(company, sessionName, chat.id._serialized) && message.fromMe) {
-          console.log(`🚫 Message processing blocked for ${company}:${sessionName}:${chat.id._serialized}`);
           return; // Exit early, preventing all message processing
         }
 

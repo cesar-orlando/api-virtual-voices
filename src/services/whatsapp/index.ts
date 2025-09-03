@@ -44,14 +44,12 @@ function shouldBlockMessageProcessing(company: string, sessionName: string, phon
 export function blockSession(company: string, sessionName: string, phone: string): void {
   const sessionKey = `${company}:${sessionName}:${phone}`;
   blockedSessionsNumbers.add(sessionKey);
-  console.log(`🚫 Session blocked: ${sessionKey}`);
 }
 
 // Function to unblock a session
 export function unblockSession(company: string, sessionName: string, phone: string): void {
   const sessionKey = `${company}:${sessionName}:${phone}`;
   blockedSessionsNumbers.delete(sessionKey);
-  console.log(`✅ Session unblocked: ${sessionKey}`);
 }
 
 // Function to check if session is blocked

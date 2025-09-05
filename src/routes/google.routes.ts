@@ -8,7 +8,7 @@ import {
   ensureValidToken
 } from "../controllers/googleCalendar.controller";
 import { googleSearch } from "../services/google/googleSearch";
-import { scrapeProductHandler } from "../services/internal/webScraping.service";
+import { scrapeHandler } from "../services/internal/webScraping.service";
 
 const router = Router();
 
@@ -23,7 +23,7 @@ router.put("/calendar/events/:eventId", editCalendarEvent);
 router.delete("/calendar/events/:eventId", deleteCalendarEvent);
 
 // Google Search
-router.get("/search", scrapeProductHandler);
+router.get("/search", scrapeHandler);
 router.get("/recommend", googleSearch);
 
 export default router;

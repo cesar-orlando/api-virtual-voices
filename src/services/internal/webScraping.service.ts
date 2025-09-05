@@ -113,15 +113,31 @@ export async function scrapeUrlWithPlaywrightOpenAI(url: string, search: string)
 			// Only use targetFrame if it exists, otherwise use main page
 			if (targetFrame) {
 				propertyData = await targetFrame.evaluate(() => {
-					// Look for property details in container
+					// Look for property details in container - try multiple selectors based on actual HTML structure
 					const selectors = [
-						'.asset.viewer'
+						'#asset-area',
+						'.asset.viewer',
+						'.asset-body',
+						'.asset-title',
+						'.asset-body-text',
+						'.asset-price',
+						'#asset-focus',
+						'div[class="asset viewer"]',
+						'.asset',
+						'.viewer',
+						'[class*="asset-body"]',
+						'[class*="asset"]',
+						'.property-details',
+						'.listing-details',
+						'#content',
+						'main'
 					];
 					let content = '';
 					for (const selector of selectors) {
 						const element = document.querySelector(selector) as HTMLElement;
-						if (element) {
+						if (element && element.innerText && element.innerText.trim().length > 50) {
 							content += element.innerText + '\n';
+							break; // Take the first meaningful match
 						}
 					}
 					// If no specific containers found, get all visible text but filter out navigation

@@ -95,36 +95,45 @@ export async function scrapeUrlWithPlaywrightOpenAI(url: string, search: string)
 			waitUntil: 'domcontentloaded',
 			timeout: 15000 
 		});
-		await page.waitForTimeout(3000); // Wait for dynamic content to load
+		await page.waitForTimeout(5000); // Increased wait time for production environment
 
-		// Look for iframe with real estate content
+		// Look for iframe with real estate content - wait a bit longer in production
 		let targetFrame = page.frames().find(f => f.url().includes('/realEstate/ppp')) || null;
+		
+		// If iframe not found immediately, wait and try again
+		if (!targetFrame) {
+			await page.waitForTimeout(3000);
+			targetFrame = page.frames().find(f => f.url().includes('/realEstate/ppp')) || null;
+		}
 		
 		// Extract property details - try multiple approaches
 		let propertyData = '';
 
 		try {
-			propertyData = await targetFrame.evaluate(() => {
-				// Look for property details in container
-				const selectors = [
-					'.asset.viewer'
-				];
-				let content = '';
-				for (const selector of selectors) {
-					const element = document.querySelector(selector) as HTMLElement;
-					if (element) {
-						content += element.innerText + '\n';
+			// Only use targetFrame if it exists, otherwise use main page
+			if (targetFrame) {
+				propertyData = await targetFrame.evaluate(() => {
+					// Look for property details in container
+					const selectors = [
+						'.asset.viewer'
+					];
+					let content = '';
+					for (const selector of selectors) {
+						const element = document.querySelector(selector) as HTMLElement;
+						if (element) {
+							content += element.innerText + '\n';
+						}
 					}
-				}
-				// If no specific containers found, get all visible text but filter out navigation
-				if (!content.trim()) {
-					const allText = document.body.innerText;
-					// Filter out common navigation/header content
-					const lines = allText.split('\n');
-					content = lines.join('\n');
-				}
-				return content.replace(/\s+/g, ' ').trim();
-			});
+					// If no specific containers found, get all visible text but filter out navigation
+					if (!content.trim()) {
+						const allText = document.body.innerText;
+						// Filter out common navigation/header content
+						const lines = allText.split('\n');
+						content = lines.join('\n');
+					}
+					return content.replace(/\s+/g, ' ').trim();
+				});
+			}
 		} catch (extractError) {
 			console.warn('Error during content extraction:', extractError);
 		}
@@ -739,8 +748,6 @@ export async function scrapeHandler(req: Request, res: Response) {
 		res.status(400).json({ error: "Invalid or missing filters parameter" });
 		return;
 	}
-
-	console.log("Scraping with config:", config);
 
 	if (!config.url || typeof config.url !== 'string') {
 		res.status(400).json({ error: 'Missing or invalid url parameter' });

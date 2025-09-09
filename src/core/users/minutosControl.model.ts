@@ -80,5 +80,9 @@ MinutosControlSchema.statics.getCompanyControls = async function(companySlug: st
 
 // Create and export the MinutosControl model
 export default function getMinutosControlModel(connection: Connection): Model<IMinutosControl> {
+  // Verificar si el modelo ya existe en esta conexión
+  if (connection.models.MinutosControl) {
+    return connection.models.MinutosControl as Model<IMinutosControl>;
+  }
   return connection.model<IMinutosControl>("MinutosControl", MinutosControlSchema);
 } 

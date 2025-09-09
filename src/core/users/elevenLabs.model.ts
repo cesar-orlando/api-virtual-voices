@@ -121,5 +121,9 @@ ElevenLabsCallSchema.statics.getUserCalls = async function(userId: string, compa
 
 // Create and export the ElevenLabsCall model
 export default function getElevenLabsCallModel(connection: Connection): Model<IElevenLabsCall> {
+  // Verificar si el modelo ya existe en esta conexión
+  if (connection.models.ElevenLabsCall) {
+    return connection.models.ElevenLabsCall as Model<IElevenLabsCall>;
+  }
   return connection.model<IElevenLabsCall>("ElevenLabsCall", ElevenLabsCallSchema);
 } 

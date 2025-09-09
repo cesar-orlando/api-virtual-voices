@@ -292,6 +292,7 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
           ]
         },
         { $push: { messages: newMessage } },
+        { upsert: true }
       );
       unblockSession(c_name, session.name, phone);
     }

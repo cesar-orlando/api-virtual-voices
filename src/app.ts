@@ -32,6 +32,7 @@ import { getDatabaseInfo } from "./config/database";
 import { initializeProjects } from "./shared/projectManager";
 import { detectCompanyFromToken } from "./core/auth/companyMiddleware";
 import elevenLabsRoutes from "./routes/elevenLabs.routes";
+import logisticsRoutes from "./routes/logistics.routes";
 
 const app = express();
 
@@ -163,6 +164,9 @@ app.use('/api/email', emailRoutes);
 // Rutas de ElevenLabs Agents (usando query parameters en lugar de parámetros de ruta)
 app.use('/api/elevenlabs', elevenLabsRoutes);
 
+// Rutas de Logística (FedEx, UPS, DHL, etc.)
+app.use('/api/logistics', logisticsRoutes);
+
 // Ruta de prueba para ElevenLabs sin parámetros dinámicos
 app.get('/api/elevenlabs-test', (req, res) => {
   res.json({
@@ -195,7 +199,9 @@ app.get("/", (req, res) => {
         controlMinutos: true,
         elevenLabs: true,
         autoAssignment: true,
-        swaggerDocs: true
+        swaggerDocs: true,
+        logistics: true,
+        fedexShipping: true
       },
       links: {
         swagger: "/api/docs",

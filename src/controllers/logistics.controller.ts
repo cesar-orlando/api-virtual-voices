@@ -19,26 +19,29 @@ export const setupLogisticsProvider = async (req: Request, res: Response) => {
     const { provider, credentials } = req.body;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     if (!provider || !credentials) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'provider and credentials are required'
       });
+      return;
     }
 
     // Validar que el proveedor sea soportado
     const supportedProviders = ['fedex', 'ups', 'dhl', 'usps'];
     if (!supportedProviders.includes(provider)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
-        message: `Unsupported provider. Supported providers: ${supportedProviders.join(', ')}`
+        message: 'Unsupported provider. Supported providers: ' + supportedProviders.join(', ')
       });
+      return;
     }
 
     // Validar credenciales según el proveedor
@@ -49,10 +52,11 @@ export const setupLogisticsProvider = async (req: Request, res: Response) => {
       
       // Validar campos requeridos
       if (!fedexCredentials.clientId || !fedexCredentials.clientSecret || !fedexCredentials.accountNumber) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'FedEx requires clientId, clientSecret, and accountNumber'
         });
+        return;
       }
 
       // Validar credenciales con la API de FedEx
@@ -61,10 +65,11 @@ export const setupLogisticsProvider = async (req: Request, res: Response) => {
     }
 
     if (!validationResult.valid) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: `Invalid credentials: ${validationResult.error}`
       });
+      return;
     }
 
     // Buscar configuración existente
@@ -115,10 +120,11 @@ export const getLogisticsProviders = async (req: Request, res: Response) => {
     const companySlug = req.query.companySlug as string;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     const providers = await LogisticsProvider.find({ companySlug }, {
@@ -155,18 +161,20 @@ export const getShippingQuote = async (req: Request, res: Response) => {
     const rateRequest: ShipmentRateRequest = req.body;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     // Validar campos requeridos
     if (!rateRequest.shipper || !rateRequest.recipient || !rateRequest.packages || rateRequest.packages.length === 0) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'shipper, recipient, and packages are required'
       });
+      return;
     }
 
     // Validar direcciones
@@ -174,7 +182,7 @@ export const getShippingQuote = async (req: Request, res: Response) => {
     const recipientErrors = validateAddress(rateRequest.recipient);
 
     if (shipperErrors.length > 0 || recipientErrors.length > 0) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'Invalid address data',
         errors: {
@@ -182,23 +190,26 @@ export const getShippingQuote = async (req: Request, res: Response) => {
           recipient: recipientErrors
         }
       });
+      return;
     }
 
     // Validar paquetes
     for (let i = 0; i < rateRequest.packages.length; i++) {
       const pkg = rateRequest.packages[i];
       if (!pkg.weight || !pkg.dimensions) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: `Package ${i + 1} must have weight and dimensions`
         });
+        return;
       }
 
       if (pkg.weight.value <= 0 || pkg.dimensions.length <= 0 || pkg.dimensions.width <= 0 || pkg.dimensions.height <= 0) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: `Package ${i + 1} must have positive weight and dimensions`
         });
+        return;
       }
     }
 
@@ -210,10 +221,11 @@ export const getShippingQuote = async (req: Request, res: Response) => {
     });
 
     if (!logisticsProvider) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: `${provider.toUpperCase()} provider not configured for this company`
       });
+      return;
     }
 
     let quoteResponse;
@@ -223,10 +235,11 @@ export const getShippingQuote = async (req: Request, res: Response) => {
       const fedexService = new FedExService(logisticsProvider.credentials as FedExCredentials);
       quoteResponse = await fedexService.getRates(rateRequest);
     } else {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: `Provider ${provider} not yet implemented`
       });
+      return;
     }
 
     // Generar ID único para la cotización
@@ -277,18 +290,20 @@ export const createShipment = async (req: Request, res: Response) => {
     const shipmentRequest: CreateShipmentRequest = req.body;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     // Validaciones similares a la cotización
     if (!shipmentRequest.shipper || !shipmentRequest.recipient || !shipmentRequest.packages || shipmentRequest.packages.length === 0) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'shipper, recipient, and packages are required'
       });
+      return;
     }
 
     // Validar direcciones
@@ -296,7 +311,7 @@ export const createShipment = async (req: Request, res: Response) => {
     const recipientErrors = validateAddress(shipmentRequest.recipient);
 
     if (shipperErrors.length > 0 || recipientErrors.length > 0) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'Invalid address data',
         errors: {
@@ -304,6 +319,7 @@ export const createShipment = async (req: Request, res: Response) => {
           recipient: recipientErrors
         }
       });
+      return;
     }
 
     // Obtener credenciales del proveedor
@@ -314,10 +330,11 @@ export const createShipment = async (req: Request, res: Response) => {
     });
 
     if (!logisticsProvider) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: `${provider.toUpperCase()} provider not configured for this company`
       });
+      return;
     }
 
     let shipmentResponse;
@@ -327,10 +344,11 @@ export const createShipment = async (req: Request, res: Response) => {
       const fedexService = new FedExService(logisticsProvider.credentials as FedExCredentials);
       shipmentResponse = await fedexService.createShipment(shipmentRequest);
     } else {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: `Provider ${provider} not yet implemented`
       });
+      return;
     }
 
     // Si el envío fue exitoso, guardarlo en el historial
@@ -385,17 +403,19 @@ export const trackShipment = async (req: Request, res: Response) => {
     const { provider, trackingNumber } = req.params;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     if (!trackingNumber) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'trackingNumber is required'
       });
+      return;
     }
 
     // Obtener credenciales del proveedor
@@ -406,10 +426,11 @@ export const trackShipment = async (req: Request, res: Response) => {
     });
 
     if (!logisticsProvider) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: `${provider.toUpperCase()} provider not configured for this company`
       });
+      return;
     }
 
     let trackingInfo;
@@ -419,17 +440,19 @@ export const trackShipment = async (req: Request, res: Response) => {
       const fedexService = new FedExService(logisticsProvider.credentials as FedExCredentials);
       trackingInfo = await fedexService.trackShipment(trackingNumber);
     } else {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: `Provider ${provider} not yet implemented`
       });
+      return;
     }
 
     if (!trackingInfo) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: 'Tracking information not found'
       });
+      return;
     }
 
     // Actualizar estado en el historial si existe
@@ -467,10 +490,11 @@ export const getShipmentHistory = async (req: Request, res: Response) => {
     const { page = 1, limit = 20, provider, status } = req.query;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     const query: any = { companySlug };
@@ -523,10 +547,11 @@ export const getSavedQuotes = async (req: Request, res: Response) => {
     const { page = 1, limit = 20, provider, status } = req.query;
 
     if (!companySlug) {
-      return res.status(400).json({ 
+      res.status(400).json({ 
         success: false, 
         message: 'companySlug is required' 
       });
+      return;
     }
 
     const query: any = { companySlug };

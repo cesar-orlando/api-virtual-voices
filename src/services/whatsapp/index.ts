@@ -595,11 +595,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
     whatsappClient.on('message_create', async (message) => {
       try {
         const chat = await message.getChat();
-        // ✅ ADD BLOCKING CONDITIONS HERE
-        // Block based on session status, company settings, or other conditions
-        if (shouldBlockMessageProcessing(company, sessionName, chat.id._serialized) && message.fromMe) {
-          return; // Exit early, preventing all message processing
-        }
 
         // Log de todos los mensajes recibidos
         console.log(`MENSAJE ${message.fromMe ? 'ENVIADO' : 'RECIBIDO'}:`, message.from, message.body);
@@ -623,6 +618,12 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
           });
         } catch (prospectError) {
           console.warn('Error guardando prospecto:', prospectError);
+        }
+
+        // ✅ ADD BLOCKING CONDITIONS HERE
+        // Block based on session status, company settings, or other conditions
+        if (shouldBlockMessageProcessing(company, sessionName, chat.id._serialized) && message.fromMe) {
+          return; // Exit early, preventing all message processing
         }
 
         // Lógica de producción: solo responde la IA (handleIncomingMessage) y guarda la respuesta en WhatsappChat

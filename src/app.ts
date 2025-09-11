@@ -14,6 +14,7 @@ import sessionRoutes from "./routes/session.routes";
 import calendarEventRoutes from './routes/calendarEvent.routes';
 import taskRoutes from './routes/task.routes';
 import notificationRoutes from './routes/notification.routes';
+import schedulerRoutes from './routes/scheduler.routes';
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -61,7 +62,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     console.error('❌ Request method:', req.method);
     console.error('❌ Content-Type:', req.headers['content-type']);
     
-    return res.status(400).json({
+    res.status(400).json({
       success: false,
       error: 'Invalid JSON format',
       message: 'Please check your JSON syntax. Common issues: trailing commas, unquoted strings, or missing quotes.',
@@ -72,6 +73,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
         method: req.method
       }
     });
+    return;
   }
   next(err);
 });
@@ -169,6 +171,9 @@ app.use("/api/calendar-events", calendarEventRoutes);
 
 // Notification routes
 app.use("/api/notifications", notificationRoutes);
+
+// Scheduler routes
+app.use("/api/scheduler", schedulerRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);

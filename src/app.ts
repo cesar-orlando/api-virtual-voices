@@ -14,7 +14,7 @@ import sessionRoutes from "./routes/session.routes";
 import calendarEventRoutes from './routes/calendarEvent.routes';
 import taskRoutes from './routes/task.routes';
 import notificationRoutes from './routes/notification.routes';
-import schedulerRoutes from './routes/scheduler.routes';
+//import schedulerRoutes from './routes/scheduler.routes';
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -173,7 +173,7 @@ app.use("/api/calendar-events", calendarEventRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 // Scheduler routes
-app.use("/api/scheduler", schedulerRoutes);
+//app.use("/api/scheduler", schedulerRoutes);
 
 // Rutas específicas de Quick Learning
 app.use('/api/projects/quicklearning', quickLearningRoutes);

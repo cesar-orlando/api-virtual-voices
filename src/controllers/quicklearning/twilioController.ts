@@ -373,6 +373,42 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           aiEnabled: aiEnabled,
           messages: [],
         });
+        
+        // Si es un chat nuevo Y la IA está activada, enviar mensaje de bienvenida
+        if (aiEnabled) {
+          const welcomeMessage = "Inglés en Quick Learning, ¡Hablas o Hablas! Soy NatalIA, ¿Cómo te puedo ayudar hoy?";
+          
+          // Enviar mensaje de bienvenida
+          const welcomeResult = await twilioService.sendMessage({
+            to: phoneUser,
+            body: welcomeMessage,
+          });
+          
+          if (welcomeResult.success) {
+            // Agregar mensaje de bienvenida al chat
+            chat.messages.push({
+              direction: "outbound-api" as const,
+              body: welcomeMessage,
+              respondedBy: "bot" as const,
+              twilioSid: welcomeResult.messageId,
+              messageType: "text" as const,
+            });
+            
+            // Actualizar último mensaje
+            chat.lastMessage = {
+              body: welcomeMessage,
+              date: new Date(),
+              respondedBy: "bot",
+            };
+            
+            await chat.save();
+            console.log(`✅ Mensaje de bienvenida enviado a ${phoneUser}`);
+            
+            // IMPORTANTE: No procesar el mensaje del usuario con IA en el primer mensaje
+            // Solo enviar el mensaje de bienvenida y terminar
+            return;
+          }
+        }
       }
 
       let messageText = "";

@@ -6,6 +6,7 @@ import { connectDB, getAllFacebookConfigsFromAllDatabases, getAllSessionsFromAll
 import { startWhatsappBot } from "./services/whatsapp";
 import { getEnvironmentConfig } from "./config/environments";
 import { cleanupInactiveConnections } from "./config/connectionManager";
+import { startAttachmentCleanupScheduler } from "./controllers/email.controller";
 import fs from 'fs';
 import path from 'path';
 import { loadRecentFacebookMessages } from './services/meta/messenger';
@@ -79,6 +80,9 @@ async function main() {
   try {
     // Conectar a la base de datos usando la configuración del entorno
     await connectDB();
+    
+    // Iniciar scheduler de limpieza de attachments
+    startAttachmentCleanupScheduler();
     
     // Iniciar servidor
     server.listen(config.port, () => {

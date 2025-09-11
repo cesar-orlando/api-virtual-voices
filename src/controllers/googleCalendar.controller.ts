@@ -2,6 +2,153 @@ import { Request, Response } from "express";
 import { getValidGoogleToken, forceRefreshGoogleToken, tokenManager } from "../services/google/tokenManager";
 
 /**
+ * Get Google OAuth authorization URL
+ */
+export const getAuthUrl = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/auth/google/callback';
+    
+    if (!clientId) {
+      res.status(500).json({
+        success: false,
+        message: "Google Calendar client ID not configured",
+        error: "Missing GOOGLE_CALENDAR_CLIENT_ID environment variable"
+      });
+      return;
+    }
+
+    const scopes = [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/calendar.events'
+    ].join(' ');
+
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('scope', scopes);
+    authUrl.searchParams.set('prompt', 'consent');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+
+    res.status(200).json({
+      success: true,
+      message: "Google OAuth URL generated successfully",
+      authUrl: authUrl.toString(),
+      instructions: [
+        "1. Open the authUrl in your browser",
+        "2. Sign in with your Google account",
+        "3. Grant calendar permissions",
+        "4. Copy the 'code' parameter from the callback URL",
+        "5. Use the code with POST /api/google/calendar/exchange-token"
+      ]
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error generating auth URL:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while generating auth URL",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Exchange authorization code for access and refresh tokens
+ */
+export const exchangeCodeForTokens = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { code } = req.body;
+    
+    if (!code) {
+      res.status(400).json({
+        success: false,
+        message: "Authorization code is required",
+        required: ["code"]
+      });
+      return;
+    }
+
+    const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/auth/google/callback';
+
+    if (!clientId || !clientSecret) {
+      res.status(500).json({
+        success: false,
+        message: "Google Calendar credentials not configured",
+        error: "Missing GOOGLE_CALENDAR_CLIENT_ID or GOOGLE_CALENDAR_CLIENT_SECRET environment variables"
+      });
+      return;
+    }
+
+    const tokenRequestBody = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
+    });
+
+    console.log('📤 Exchanging authorization code for tokens...');
+
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: tokenRequestBody.toString()
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Google OAuth API Error:', responseData);
+      res.status(response.status).json({
+        success: false,
+        message: "Failed to exchange authorization code for tokens",
+        error: responseData.error_description || responseData.error || 'Unknown error',
+        details: responseData
+      });
+      return;
+    }
+
+    // Calculate expiry time
+    const expiresAt = Date.now() + (responseData.expires_in * 1000);
+    const expiresAtDate = new Date(expiresAt);
+
+    res.status(200).json({
+      success: true,
+      message: "Access token obtained successfully",
+      tokens: {
+        access_token: responseData.access_token,
+        refresh_token: responseData.refresh_token,
+        scope: responseData.scope,
+        token_type: responseData.token_type,
+        expires_in: responseData.expires_in,
+        expiry_date: expiresAt,
+        expires_at: expiresAtDate.toISOString()
+      },
+      instructions: {
+        access_token_usage: "Use the access_token in the 'accessToken' header for API requests",
+        refresh_token_usage: "Save the refresh_token to environment variable GOOGLE_CALENDAR_REFRESH_TOKEN for automatic token refresh",
+        expiry: `Access token expires at ${expiresAtDate.toISOString()}`
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🚨 Error exchanging code for tokens:', error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while exchanging code for tokens",
+      error: error.message
+    });
+  }
+};
+
+/**
  * Get fresh access token using client credentials from environment
  * This endpoint uses the token manager to get a fresh access token
  */

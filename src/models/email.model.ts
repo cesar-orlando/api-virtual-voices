@@ -6,6 +6,7 @@ export interface IEmail extends Document {
   subject: string;
   text: string;
   html: string;
+  userId?: string; // ID del usuario que envió el email
   smtpConfig?: {
     host: string;
     port: number;
@@ -23,6 +24,7 @@ const EmailSchema: Schema = new Schema(
     subject: { type: String, required: true },
     text: { type: String, required: true },
     html: { type: String, required: false },
+    userId: { type: String, required: false }, // ID del usuario que envió el email
     smtpConfig: {
       host: { type: String },
       port: { type: Number },
@@ -33,5 +35,9 @@ const EmailSchema: Schema = new Schema(
 );
 
 export default function getEmailModel(conn: Connection): Model<IEmail>{
+  // Verificar si el modelo ya existe en esta conexión
+  if (conn.models.Email) {
+    return conn.models.Email as Model<IEmail>;
+  }
   return conn.model<IEmail>("Email", EmailSchema);
 }

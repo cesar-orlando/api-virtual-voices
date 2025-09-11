@@ -23,16 +23,62 @@ export function detectCompanyFromToken(req: Request, res: Response, next: NextFu
     }
 
     const token = authHeader.substring(7);
-    const config = getEnvironmentConfig();
     
     try {
-      const decoded = jwt.verify(token, config.jwtSecret) as any;
-      const slug = decoded.companySlug || decoded.c_name;
+      // Intentar decodificar sin verificar primero para obtener el companySlug
+      const unverifiedDecoded = jwt.decode(token) as any;
+      if (!unverifiedDecoded) {
+        return next();
+      }
+      
+      const slug = unverifiedDecoded.companySlug || unverifiedDecoded.c_name;
+      
+      // Determinar el JWT secret específico por empresa
+      let jwtSecret;
+      if (slug === "quicklearning") {
+        jwtSecret = process.env.JWT_SECRET_QUICKLEARNING || process.env.JWT_SECRET || "changeme";
+      } else {
+        jwtSecret = process.env.JWT_SECRET || "changeme";
+      }
+      
+      // Ahora verificar con el secret correcto
+      const decoded = jwt.verify(token, jwtSecret) as any;
+      
+      // ✅ Configurar req.user para que las funciones de email-config funcionen
+      const user = {
+        id: decoded.id || decoded.sub,
+        email: decoded.email,
+        role: decoded.role,
+        companySlug: decoded.companySlug || decoded.c_name,
+        name: decoded.name
+      };
+      
+      (req as any).user = user;
       
       if (slug) {
         const companyContext = getCompanyContext(slug);
         if (companyContext) {
           req.companyContext = companyContext;
+        } else {
+          // ✅ Crear contexto básico si no se encuentra la empresa registrada
+          req.companyContext = {
+            slug: slug,
+            name: slug,
+            database: slug,
+            config: {
+              slug: slug,
+              name: slug,
+              databaseUri: '',
+              twilio: { testNumber: '', productionNumber: '' },
+              roles: ['Usuario', 'Admin', 'SuperAdmin'],
+              features: {
+                controlMinutos: false,
+                elevenLabs: false,
+                autoAssignment: false,
+                customFlows: false
+              }
+            }
+          };
         }
       }
     } catch (jwtError: any) {

@@ -22,5 +22,9 @@ const CompanySchema: Schema = new Schema(
 );
 
 export default function getCompanyModel(conn: Connection): Model<ICompany>{
+  // Verificar si el modelo ya existe en esta conexión
+  if (conn.models.Company) {
+    return conn.models.Company as Model<ICompany>;
+  }
   return conn.model<ICompany>("Company", CompanySchema);
 }

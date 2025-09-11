@@ -15,10 +15,16 @@ export class NotificationService {
     try {
       const { userId, company, phoneNumber, senderName, messagePreview, chatId } = params;
       
+      console.log(`🔔 [NotificationService] Creating notification for company: ${company}, userId: ${userId}`);
+      
       const conn = await getConnectionByCompanySlug(company);
+      console.log(`🔔 [NotificationService] Connection obtained for ${company}`);
+      
       const Notification = getNotificationModel(conn);
+      console.log(`🔔 [NotificationService] Notification model obtained`);
       
       // Check if user already has an unread notification for this chat
+      console.log(`🔔 [NotificationService] Checking for existing notification...`);
       const existingNotification = await Notification.findOne({
         userId,
         company,
@@ -26,6 +32,7 @@ export class NotificationService {
         'data.phoneNumber': phoneNumber,
         isRead: false
       });
+      console.log(`🔔 [NotificationService] Existing notification found:`, !!existingNotification);
 
       if (existingNotification) {
         // Update existing notification with latest message and increment count
@@ -45,9 +52,11 @@ export class NotificationService {
         
         // Keep original createdAt, don't overwrite it
         await existingNotification.save();
+        console.log(`🔔 [NotificationService] Updated existing notification:`, existingNotification._id?.toString());
         
         // Emit updated notification
         if (io) {
+          console.log(`🔔 [NotificationService] Emitting updated notification to: notifications-${company}-${userId}`);
           io.emit(`notifications-${company}-${userId}`, {
             type: 'updated',
             notification: existingNotification
@@ -75,9 +84,11 @@ export class NotificationService {
         });
         
         await notification.save();
+        console.log(`🔔 [NotificationService] Created new notification:`, notification._id?.toString());
         
         // Emit new notification via Socket.IO
         if (io) {
+          console.log(`🔔 [NotificationService] Emitting new notification to: notifications-${company}-${userId}`);
           io.emit(`notifications-${company}-${userId}`, {
             type: 'new',
             notification
@@ -85,6 +96,7 @@ export class NotificationService {
           
           // Emit unread count update
           const unreadCount = await this.getUnreadCount(userId, company);
+          console.log(`🔔 [NotificationService] Emitting unread count: ${unreadCount} to: unread-count-${company}-${userId}`);
           io.emit(`unread-count-${company}-${userId}`, { count: unreadCount });
         }
         

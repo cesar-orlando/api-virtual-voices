@@ -11,6 +11,7 @@ import nodemailer from 'nodemailer';
 import { Request, Response } from 'express';
 import getEmailModel from '../models/email.model';
 import { getConnectionByCompanySlug } from '../config/connectionManager';
+import { getEmailConfigInternal } from '../core/users/user.controller';
 
 // Interfaz para configuración SMTP dinámica
 interface SmtpConfig {
@@ -74,11 +75,38 @@ export async function sendEmail(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Verificar si hay usuario autenticado para usar su configuración
+    const authenticatedUser = (req as any).user;
+    
     // Determinar qué transporter usar
     let transporter;
     let fromAddress;
+    let userSignature = '';
+    let finalHtml = html;
     
-    if (smtpConfig) {
+    // 1. Prioridad: configuración del usuario autenticado
+    if (authenticatedUser) {
+      console.log(`📧 Obteniendo configuración de email del usuario: ${authenticatedUser.id}`);
+      const userEmailConfig = await getEmailConfigInternal(c_name, authenticatedUser.id);
+      
+      if (userEmailConfig && userEmailConfig.smtpConfig) {
+        transporter = createDynamicTransporter(userEmailConfig.smtpConfig);
+        fromAddress = userEmailConfig.smtpConfig.user;
+        userSignature = userEmailConfig.signature || '';
+        
+        // Agregar firma al HTML si existe
+        if (userSignature && finalHtml) {
+          finalHtml = html + '<br><br>' + userSignature;
+        } else if (userSignature) {
+          finalHtml = text.replace(/\n/g, '<br>') + '<br><br>' + userSignature;
+        }
+        
+        console.log(`✅ Usando configuración SMTP del usuario: ${userEmailConfig.smtpConfig.host}:${userEmailConfig.smtpConfig.port}`);
+      }
+    }
+    
+    // 2. Segunda prioridad: configuración SMTP personalizada en el request
+    if (!transporter && smtpConfig) {
       // Validar configuración SMTP personalizada
       const requiredFields = ['host', 'port', 'user', 'pass'];
       for (const field of requiredFields) {
@@ -94,8 +122,10 @@ export async function sendEmail(req: Request, res: Response): Promise<void> {
       transporter = createDynamicTransporter(smtpConfig);
       fromAddress = smtpConfig.user;
       console.log(`📧 Usando configuración SMTP personalizada: ${smtpConfig.host}:${smtpConfig.port}`);
-    } else {
-      // Usar transporter por defecto
+    }
+    
+    // 3. Última opción: transporter por defecto
+    if (!transporter) {
       transporter = defaultTransporter;
       fromAddress = process.env.EMAIL_ADDRESS;
       console.log('📧 Usando configuración SMTP por defecto');
@@ -107,7 +137,7 @@ export async function sendEmail(req: Request, res: Response): Promise<void> {
       to: to,
       subject: subject,
       text: text,
-      html: html,
+      html: finalHtml,
     };
 
     // Enviar el email
@@ -130,7 +160,8 @@ export async function sendEmail(req: Request, res: Response): Promise<void> {
           port: smtpConfig.port,
           user: smtpConfig.user
           // No guardamos la contraseña por seguridad
-        } : undefined
+        } : undefined,
+        userId: authenticatedUser?.id // Guardar el ID del usuario que envió el email
       });
 
       await newEmail.save();
@@ -141,7 +172,9 @@ export async function sendEmail(req: Request, res: Response): Promise<void> {
         messageId: info.messageId,
         savedToDb: true,
         emailId: newEmail._id,
-        usedCustomSmtp: !!smtpConfig
+        usedCustomSmtp: !!smtpConfig,
+        usedUserConfig: !!authenticatedUser && !smtpConfig,
+        fromAddress: fromAddress
       });
 
     } catch (dbError) {
@@ -151,7 +184,9 @@ export async function sendEmail(req: Request, res: Response): Promise<void> {
         messageId: info.messageId,
         savedToDb: false,
         dbError: dbError.message,
-        usedCustomSmtp: !!smtpConfig
+        usedCustomSmtp: !!smtpConfig,
+        usedUserConfig: !!authenticatedUser && !smtpConfig,
+        fromAddress: fromAddress
       });
     }
 
@@ -171,18 +206,46 @@ export async function sendAndSaveEmail(
   text: string,
   html?: string,
   companySlug: string = 'default',
-  smtpConfig?: SmtpConfig
+  smtpConfig?: SmtpConfig,
+  userId?: string // Nuevo parámetro para obtener configuración del usuario
 ) {
   try {
     // Determinar qué transporter usar
     let transporter;
     let fromAddress;
+    let userSignature = '';
+    let finalHtml = html;
     
-    if (smtpConfig) {
+    // 1. Prioridad: configuración del usuario si se proporciona userId
+    if (userId) {
+      console.log(`📧 sendAndSaveEmail obteniendo configuración del usuario: ${userId}`);
+      const userEmailConfig = await getEmailConfigInternal(companySlug, userId);
+      
+      if (userEmailConfig && userEmailConfig.smtpConfig) {
+        transporter = createDynamicTransporter(userEmailConfig.smtpConfig);
+        fromAddress = userEmailConfig.smtpConfig.user;
+        userSignature = userEmailConfig.signature || '';
+        
+        // Agregar firma al HTML si existe
+        if (userSignature && finalHtml) {
+          finalHtml = html + '<br><br>' + userSignature;
+        } else if (userSignature) {
+          finalHtml = text.replace(/\n/g, '<br>') + '<br><br>' + userSignature;
+        }
+        
+        console.log(`✅ sendAndSaveEmail usando configuración del usuario: ${userEmailConfig.smtpConfig.host}:${userEmailConfig.smtpConfig.port}`);
+      }
+    }
+    
+    // 2. Segunda prioridad: configuración SMTP personalizada
+    if (!transporter && smtpConfig) {
       transporter = createDynamicTransporter(smtpConfig);
       fromAddress = smtpConfig.user;
       console.log(`📧 sendAndSaveEmail usando SMTP personalizada: ${smtpConfig.host}:${smtpConfig.port}`);
-    } else {
+    }
+    
+    // 3. Última opción: transporter por defecto
+    if (!transporter) {
       transporter = defaultTransporter;
       fromAddress = process.env.EMAIL_ADDRESS;
       console.log('📧 sendAndSaveEmail usando SMTP por defecto');
@@ -194,7 +257,7 @@ export async function sendAndSaveEmail(
       to: to,
       subject: subject,
       text: text,
-      html: html
+      html: finalHtml
     };
 
     // Enviar el email
@@ -216,7 +279,8 @@ export async function sendAndSaveEmail(
           host: smtpConfig.host,
           port: smtpConfig.port,
           user: smtpConfig.user
-        } : undefined
+        } : undefined,
+        userId: userId // Guardar el ID del usuario
       });
 
       await newEmail.save();
@@ -227,7 +291,9 @@ export async function sendAndSaveEmail(
         messageId: info.messageId,
         savedToDb: true,
         emailId: newEmail._id,
-        usedCustomSmtp: !!smtpConfig
+        usedCustomSmtp: !!smtpConfig,
+        usedUserConfig: !!userId && !smtpConfig,
+        fromAddress: fromAddress
       };
 
     } catch (dbError) {
@@ -237,7 +303,9 @@ export async function sendAndSaveEmail(
         messageId: info.messageId,
         savedToDb: false,
         dbError: dbError.message,
-        usedCustomSmtp: !!smtpConfig
+        usedCustomSmtp: !!smtpConfig,
+        usedUserConfig: !!userId && !smtpConfig,
+        fromAddress: fromAddress
       };
     }
 
@@ -352,6 +420,18 @@ export async function testSmtpConfig(req: Request, res: Response): Promise<void>
   }
 }
 
+// Función auxiliar para enviar email usando automáticamente la configuración del usuario autenticado
+export async function sendEmailWithUserConfig(
+  to: string,
+  subject: string,
+  text: string,
+  html: string = '',
+  companySlug: string,
+  userId: string
+) {
+  return await sendAndSaveEmail(to, subject, text, html, companySlug, undefined, userId);
+}
+
 // Función para obtener texto estructurado de OpenAI
 async function getStructuredEmail(text: string, html?: string): Promise<string> {
   const prompt = `Redacta el siguiente mensaje como un correo formal y estructurado para un cliente, solamente el cuerpo del correo:\n---\n${text}, vas a utilizar ${html} solamente como contexto del remitente, no se vuelve a escribir en el correo. Recuerda separar parrafos con estructura html "<p></p>"`;
@@ -377,11 +457,11 @@ export async function sendStructuredEmail(req: Request, res: Response): Promise<
 
     // 2. Usar el texto generado como cuerpo del correo
     req.body.text = AiText;
-    req.body.html = AiText + html;
+    req.body.html = AiText + (html || '');
     console.log('texto AI:', AiText);
-    // Opcional: también puedes generar html si lo necesitas
-
+    
     // 3. Llamar a la función original para enviar el correo
+    // La función sendEmail ya maneja automáticamente la configuración del usuario
     await sendEmail(req, res);
 
   } catch (error) {

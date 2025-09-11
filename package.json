@@ -56,6 +56,7 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/twilio": "^3.19.2",
+    "@types/uuid": "^10.0.0",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
@@ -85,6 +86,7 @@
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "twilio": "^5.8.0",
+    "uuid": "^11.1.0",
     "whatsapp-web.js": "^1.33.2",
     "zod": "^3.25.67"
   },

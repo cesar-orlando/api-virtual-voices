@@ -987,7 +987,21 @@ export const getUsersByBranch = async (req: Request, res: Response): Promise<voi
 export const updateEmailConfig = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
-  const { smtpEmail, smtpPassword, signature, footerImage, provider = 'gmail', isEnabled } = req.body;
+    const { smtpEmail, smtpPassword, signature, footerImage, provider = 'gmail', isEnabled, smtpHost, smtpPort, smtpSecure } = req.body;
+
+    // Verificar autenticación del usuario
+    const authenticatedUser = (req as any).user;
+    if (!authenticatedUser) {
+      res.status(401).json({ message: "Token de autenticación requerido" });
+      return;
+    }
+
+    // PERMISIVO: Permitir que cualquier usuario autenticado actualice cualquier configuración
+    // O puedes limitarlo solo a su propia configuración descomentando la línea siguiente:
+    // if (authenticatedUser.id !== userId && authenticatedUser.role !== 'SuperAdmin') {
+    //   res.status(403).json({ message: "No autorizado para actualizar esta configuración" });
+    //   return;
+    // }
 
     const companyContext = getCurrentCompanyContext(req);
     if (!companyContext) {
@@ -1012,9 +1026,9 @@ export const updateEmailConfig = async (req: Request, res: Response): Promise<vo
       footerImage: footerImage !== undefined ? footerImage : user.emailConfig?.footerImage,
       isEnabled: (isEnabled !== undefined ? isEnabled : !!(smtpEmail && smtpPassword)),
       provider,
-      smtpHost: user.emailConfig?.smtpHost,
-      smtpPort: user.emailConfig?.smtpPort,
-      smtpSecure: user.emailConfig?.smtpSecure
+      smtpHost: smtpHost || user.emailConfig?.smtpHost,
+      smtpPort: smtpPort || user.emailConfig?.smtpPort,
+      smtpSecure: smtpSecure !== undefined ? smtpSecure : user.emailConfig?.smtpSecure
     };
 
     await user.save();
@@ -1027,11 +1041,14 @@ export const updateEmailConfig = async (req: Request, res: Response): Promise<vo
         signature: user.emailConfig.signature,
         footerImage: user.emailConfig.footerImage,
         provider: user.emailConfig.provider,
-        isEnabled: user.emailConfig.isEnabled
+        isEnabled: user.emailConfig.isEnabled,
+        smtpHost: user.emailConfig.smtpHost,
+        smtpPort: user.emailConfig.smtpPort,
+        smtpSecure: user.emailConfig.smtpSecure
       }
     });
   } catch (error) {
-    console.error('Error updating email config:', error);
+    console.error('❌ Error updating email config:', error);
     res.status(500).json({ message: "Error interno del servidor" });
   }
 };
@@ -1043,6 +1060,20 @@ export const updateEmailConfig = async (req: Request, res: Response): Promise<vo
 export const getEmailConfig = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+
+    // Verificar autenticación del usuario
+    const authenticatedUser = (req as any).user;
+    if (!authenticatedUser) {
+      res.status(401).json({ message: "Token de autenticación requerido" });
+      return;
+    }
+
+    // PERMISIVO: Permitir que cualquier usuario autenticado vea cualquier configuración
+    // O puedes limitarlo solo a su propia configuración descomentando la línea siguiente:
+    // if (authenticatedUser.id !== userId && authenticatedUser.role !== 'SuperAdmin') {
+    //   res.status(403).json({ message: "No autorizado para ver esta configuración" });
+    //   return;
+    // }
 
     const companyContext = getCurrentCompanyContext(req);
     if (!companyContext) {
@@ -1065,7 +1096,10 @@ export const getEmailConfig = async (req: Request, res: Response): Promise<void>
         signature: user.emailConfig.signature,
         footerImage: user.emailConfig.footerImage,
         provider: user.emailConfig.provider,
-        isEnabled: user.emailConfig.isEnabled
+        isEnabled: user.emailConfig.isEnabled,
+        smtpHost: user.emailConfig.smtpHost,
+        smtpPort: user.emailConfig.smtpPort,
+        smtpSecure: user.emailConfig.smtpSecure
       } : null
     });
   } catch (error) {
@@ -1096,6 +1130,11 @@ export const getEmailConfigInternal = async (companySlug: string, userId: string
       outlook: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
       yahoo: { host: 'smtp.mail.yahoo.com', port: 587, secure: false },
       custom: { 
+        host: emailConfig.smtpHost || 'smtp.gmail.com', 
+        port: emailConfig.smtpPort || 587, 
+        secure: emailConfig.smtpSecure || false 
+      },
+      other: { 
         host: emailConfig.smtpHost || 'smtp.gmail.com', 
         port: emailConfig.smtpPort || 587, 
         secure: emailConfig.smtpSecure || false 

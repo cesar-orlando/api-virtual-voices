@@ -62,7 +62,7 @@ const UserSchema: Schema = new Schema(
       isEnabled: { type: Boolean, default: false },
       provider: { 
         type: String, 
-        enum: ['gmail', 'outlook', 'yahoo', 'custom'],
+        enum: ['gmail', 'outlook', 'yahoo', 'custom', 'other'],
         default: 'gmail'
       },
       smtpHost: { type: String },
@@ -160,5 +160,9 @@ UserSchema.methods.getEmailSignature = function(): string {
 
 // Create and export the User model
 export default function getUserModel(connection: Connection): Model<IUser> {
+  // Verificar si el modelo ya existe en esta conexión
+  if (connection.models.User) {
+    return connection.models.User as Model<IUser>;
+  }
   return connection.model<IUser>("User", UserSchema);
 } 

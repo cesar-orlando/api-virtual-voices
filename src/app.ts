@@ -38,9 +38,43 @@ const app = express();
 
 app.use(cors());
 
-// Configurar límites de body-parser para importaciones masivas
-app.use(express.json({ limit: '50mb' }));
+// JSON error handling middleware
+app.use(express.json({ 
+  limit: '50mb',
+  verify: (req, res, buf, encoding) => {
+    try {
+      JSON.parse(buf.toString());
+    } catch (err) {
+      console.error('❌ JSON Parse Error:', err.message);
+      console.error('📄 Raw body:', buf.toString().substring(0, 200) + '...');
+      throw new SyntaxError('Invalid JSON format in request body');
+    }
+  }
+}));
+
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Global JSON error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof SyntaxError && err.message.includes('JSON')) {
+    console.error('❌ JSON parsing error on route:', req.path);
+    console.error('❌ Request method:', req.method);
+    console.error('❌ Content-Type:', req.headers['content-type']);
+    
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid JSON format',
+      message: 'Please check your JSON syntax. Common issues: trailing commas, unquoted strings, or missing quotes.',
+      details: {
+        originalError: err.message,
+        receivedContentType: req.headers['content-type'],
+        path: req.path,
+        method: req.method
+      }
+    });
+  }
+  next(err);
+});
 
 // ========================================
 // SWAGGER DOCUMENTATION

@@ -38,6 +38,16 @@ const RecordSchema: Schema = new Schema(
 // Índices para optimizar consultas
 RecordSchema.index({ tableSlug: 1, c_name: 1 }); // Índice compuesto para búsquedas por tabla y empresa
 RecordSchema.index({ c_name: 1, createdAt: -1 }); // Índice para listar registros por empresa ordenados por fecha
+// Optimiza listados recientes por tabla/empresa en rutas que ordenan por updatedAt
+RecordSchema.index({ tableSlug: 1, c_name: 1, updatedAt: -1 });
+// Índices en campos de teléfono comunes para búsquedas rápidas por $in
+RecordSchema.index({ 'data.telefono': 1 });
+RecordSchema.index({ 'data.phone': 1 });
+RecordSchema.index({ 'data.whatsapp': 1 });
+RecordSchema.index({ 'data.celular': 1 });
+RecordSchema.index({ 'data.tel': 1 });
+RecordSchema.index({ 'data.movil': 1 });
+RecordSchema.index({ 'data.number': 1 });
 RecordSchema.index({ createdBy: 1, c_name: 1 }); // Índice para búsquedas por usuario creador
 
 // Plugin de auditoría: genera diffs por campo (data.*) y guarda en AuditLog (sin historial embebido)

@@ -9,6 +9,16 @@ import getAuditLogModel from "../models/auditLog.model";
 import { attachHistoryToData } from "../plugins/auditTrail";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
 
+// Helper function to get phone fields based on company
+function getPhoneFieldsForCompany(c_name: string): string[] {
+  // QuickLearning uses 'telefono' as primary field
+  if (c_name === 'quicklearning') {
+    return ['telefono', 'phone', 'whatsapp', 'celular', 'tel', 'movil', 'number'];
+  }
+  // Other companies use 'phone' as primary field
+  return ['phone', 'telefono', 'whatsapp', 'celular', 'tel', 'movil', 'number'];
+}
+
 // Accent-insensitive utilities
 // - buildAccentInsensitivePattern: builds a regex pattern string that matches both accented and unaccented variants
 // - normalizeForCompare: strips diacritics and lowercases for accent-insensitive comparisons in JS
@@ -400,6 +410,10 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             const textFields = table.fields
               .filter(field => ['text', 'email', 'number', 'currency'].includes(field.type))
               .map(field => field.name);
+            
+            // Add phone fields for QuickLearning
+            const phoneFields = getPhoneFieldsForCompany(c_name);
+            textFields.push(...phoneFields);
 
             if (isNumberOrConvertible(value)) {
               // If it's a number, we assume it's a numeric search and convert to string for regex
@@ -1960,19 +1974,29 @@ export async function getRecordByPhone(req: Request, res: Response) {
       sortBy = 'updatedAt',
       sortOrder = 'desc',
       filters,
-      sessionId // ✅ NEW: Session filter parameter
+      sessionId, // ✅ NEW: Session filter parameter
+      tableSlug: tableSlugQuery // optional override; defaults to 'prospectos'
     } = req.query; // ADDED FILTER PARAMETERS
+    const tableSlug = (typeof tableSlugQuery === 'string' && tableSlugQuery) ? tableSlugQuery : 'prospectos';
+    const _startedAt = Date.now();
+    const _reqId = (req.headers['x-request-id'] as string) || Math.random().toString(36).slice(2, 8);
+    const _log = (...args: any[]) => console.log(`📞 [getRecordByPhone][${c_name}/${tableSlug}][${_reqId}][+${Date.now()-_startedAt}ms]`, ...args);
+    _log('Incoming request', { page: Number(page), limit: Number(limit), sortBy, sortOrder, sessionId: sessionId || null, filters: typeof filters });
     
+    const _tConn = Date.now();
     const conn = await getConnectionByCompanySlug(c_name);
+    _log('Connection acquired', { ms: Date.now() - _tConn });
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
     const Chats = getWhatsappChatModel(conn);
 
     // Get table definition for filter processing
-    const table = await Table.findOne({ slug: "prospectos", c_name, isActive: true });
+    const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
+    // If table is not found, continue without schema-based validation (data shape assumed similar)
     if (!table) {
-      res.status(404).json({ message: "Prospectos table not found" });
-      return;
+      console.warn(`[getRecordByPhone] Table '${tableSlug}' not found for '${c_name}'. Proceeding without schema-based filters.`);
+    } else {
+      _log('Loaded table schema', { fields: table.fields?.length });
     }
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
@@ -1993,7 +2017,19 @@ export async function getRecordByPhone(req: Request, res: Response) {
         for (const [fieldName, value] of Object.entries(parsedFilters)) {
           if (value === undefined || value === null || value === '') continue;
           
-          const fieldDef = table.fields.find((f: any) => f.name === fieldName);
+          // If table schema exists, use it to type filters; otherwise, apply generic handling
+          const fieldDef = table ? table.fields.find((f: any) => f.name === fieldName) : null;
+          if (!fieldDef && !table) {
+            // Generic fallback: try to infer simple equality or text contains
+            if (typeof value === 'string') {
+              dynamicMatchFilters[`data.${fieldName}`] = { $regex: buildAccentInsensitivePattern(String(value)), $options: 'i' };
+            } else if (typeof value === 'boolean') {
+              dynamicMatchFilters[`data.${fieldName}`] = value;
+            } else if (isNumberOrConvertible(value)) {
+              dynamicMatchFilters[`data.${fieldName}`] = Number(value as any);
+            }
+            continue;
+          }
           if (!fieldDef) continue;
           
           // Handle different field types
@@ -2039,58 +2075,63 @@ export async function getRecordByPhone(req: Request, res: Response) {
         
         // Handle textQuery (global search)
         if (parsedFilters.textQuery) {
-          const textFields = table.fields
-            .filter(field => ['text', 'email'].includes(field.type))
-            .map(field => field.name);
-
-          const numberFields = table.fields
-            .filter(field => ['number', 'currency'].includes(field.type))
-            .map(field => field.name);
-            
-          if (textFields.length > 0) {
-            
-            if (isNumberOrConvertible(parsedFilters.textQuery)) {
-              // If it's a number, we assume it's a numeric search and convert to string for regex
-              const numberSearch = numberFields.map(field => ({
-                $expr: {
-                  $regexMatch: {
-                    input: { $toString: { $ifNull: [ `$data.${field}`, '' ] } },
-                    regex: `.*${escapeRegExp(String(parsedFilters.textQuery))}.*`,
-                    options: 'i'
-                  }
-                }
-              }));
-              dynamicMatchFilters.$or = numberSearch;
-            } else if (typeof parsedFilters.textQuery === 'string') {
-              // If it's a string, we assume it's a text search
-              const textSearch = textFields.map(field => ({
-                [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(parsedFilters.textQuery)), $options: 'i' }
-              }));
-              dynamicMatchFilters.$or = textSearch;
-            }
+          // Get phone fields based on company
+          const phoneFields = getPhoneFieldsForCompany(c_name);
+          
+          // Get text fields
+          const textFields = table
+            ? table.fields.filter(field => ['text', 'email'].includes(field.type)).map(field => field.name)
+            : ['nombre', 'name', 'email'];
+          
+          // Create search conditions for both phone and text fields
+          const searchConditions: any[] = [];
+          
+          // Add phone field searches
+          phoneFields.forEach(field => {
+            searchConditions.push({
+              [`data.${field}`]: { $regex: `.*${escapeRegExp(String(parsedFilters.textQuery))}.*`, $options: 'i' }
+            });
+          });
+          
+          // Add text field searches
+          textFields.forEach(field => {
+            searchConditions.push({
+              [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(parsedFilters.textQuery)), $options: 'i' }
+            });
+          });
+          
+          if (searchConditions.length > 0) {
+            dynamicMatchFilters.$or = searchConditions;
           }
         } else if (parsedFilters.lastMessageDateLte) {
           lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
         } else if (parsedFilters.advisor) {
-          // Handle both ObjectId and string formats for advisor matching
-          const advisorValue = parsedFilters.advisor;
-          const orConditions = [
-            { [`data.asesor.id`]: advisorValue } // Match as string
+          // Ampliar soporte: objeto, string JSON y variantes de campos
+          const advisorValue = String(parsedFilters.advisor);
+          const orConditions: any[] = [
+            // data.asesor.id como string
+            { ['data.asesor.id']: advisorValue },
+            // data.asesor._id como string
+            { ['data.asesor._id']: advisorValue },
+            // data.advisor.id (por compatibilidad con otros clientes)
+            { ['data.advisor.id']: advisorValue },
+            // Igualdad directa por si guardaron solo el id en data.asesor
+            { ['data.asesor']: advisorValue },
+            // String JSON con "_id" (QuickLearning)
+            { ['data.asesor']: { $regex: new RegExp(`"_id"\\s*:\\s*"${escapeRegExp(advisorValue)}"`) } },
           ];
 
-          // If it's a valid ObjectId, also try matching as ObjectId
+          // Si es ObjectId válido, agregar variantes como ObjectId
           if (Types.ObjectId.isValid(advisorValue)) {
-            orConditions.push({
-              [`data.asesor.id`]: new Types.ObjectId(advisorValue)
-            });
+            const asObjId = new Types.ObjectId(advisorValue);
+            orConditions.push(
+              { ['data.asesor.id']: asObjId },
+              { ['data.asesor._id']: asObjId },
+              { ['data.advisor.id']: asObjId },
+            );
           }
 
-          // If we have multiple conditions, use $or; otherwise use the single condition
-          if (orConditions.length > 1) {
-            dynamicMatchFilters.$or = orConditions;
-          } else {
-            dynamicMatchFilters[`data.asesor.id`] = advisorValue;
-          }
+          dynamicMatchFilters.$or = orConditions;
         }
       } catch (error) {
         res.status(400).json({ message: "Invalid filters format" });
@@ -2098,22 +2139,178 @@ export async function getRecordByPhone(req: Request, res: Response) {
       }
     }
 
+    // If no dynamic filters provided, use a faster Chat-first join to Records
+    const useChatFirst = !filters || (typeof filters === 'string' && (filters as string).trim() === '' || (filters as string).trim() === 'undefined' || (filters as string).trim() === 'null');
+    if (useChatFirst) {
+      const startT = Date.now();
+      _log('Using Chat-first fast path');
+
+      // Build chat query
+      const chatQuery: any = {};
+      if (sessionId) {
+        let sessionIdObj = undefined;
+        try {
+          if (Types.ObjectId.isValid(sessionId as string)) {
+            sessionIdObj = new Types.ObjectId(sessionId as string);
+          }
+        } catch (_) {}
+        chatQuery["$or"] = sessionIdObj ? [
+          { "session.id": sessionId },
+          { "session.id": sessionIdObj }
+        ] : [
+          { "session.id": sessionId }
+        ];
+      }
+
+      // Pagination over chats directly
+      const chatSkip = (Number(page) - 1) * Number(limit);
+      const chatSort = { updatedAt: sortOrder === 'desc' ? -1 : 1 } as any;
+
+      const tCount = Date.now();
+      const totalChats = await Chats.countDocuments(chatQuery);
+      _log('Chats count', { totalChats, ms: Date.now() - tCount });
+
+      const tChats = Date.now();
+      // Previously we sliced to only the last message for performance.
+      // For full conversation context in the frontend, return all messages.
+      const chats = await Chats.find(chatQuery, { phone: 1, session: 1, updatedAt: 1, messages: 1 } as any)
+        .sort(chatSort)
+        .skip(chatSkip)
+        .limit(Number(limit))
+        .lean();
+      _log('Fetched chats page', { count: chats.length, ms: Date.now() - tChats });
+
+      // Build phone lists and maps
+      const chatByPhone = new Map<string, any>();
+      const phones: string[] = [];
+      const numericPhones: number[] = [];
+      const numericPhonesNoCC: number[] = [];
+      chats.forEach(ch => {
+        if (!ch?.phone) return;
+        const phone = String(ch.phone);
+        chatByPhone.set(phone, ch);
+        phones.push(phone);
+        const digits = phone.replace(/\D+/g, '');
+        if (digits) {
+          const num = Number(digits);
+          if (!Number.isNaN(num)) numericPhones.push(num);
+          // remove leading country code heuristic (keep last 10 digits)
+          const last10 = digits.length > 10 ? Number(digits.slice(-10)) : Number(digits);
+          if (!Number.isNaN(last10)) numericPhonesNoCC.push(last10);
+        }
+      });
+
+      // Bulk fetch matching dynamic records for these phones
+      const tRecs = Date.now();
+      const phoneOr: any[] = [];
+      if (phones.length) {
+        const phoneFields = getPhoneFieldsForCompany(c_name);
+        phoneFields.forEach(f => {
+          phoneOr.push({ [`data.${f}`]: { $in: phones } });
+        });
+        _log('Phone fields used for query', { fields: phoneFields, company: c_name });
+      }
+      if (numericPhones.length) {
+        phoneOr.push({ 'data.number': { $in: numericPhones } });
+      }
+      if (numericPhonesNoCC.length) {
+        phoneOr.push({ 'data.number': { $in: numericPhonesNoCC } });
+      }
+
+      const recordQuery: any = {
+        tableSlug,
+        c_name,
+        ...(phoneOr.length ? { $or: phoneOr } : {})
+      };
+
+      const records = await Record.find(recordQuery)
+        .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
+        .lean();
+      _log('Fetched matching records', { count: records.length, ms: Date.now() - tRecs });
+
+      // Build phone->record and number->record maps
+      const recordByPhone = new Map<string, any>();
+      const recordByNum = new Map<number, any>();
+      const phoneFields = getPhoneFieldsForCompany(c_name);
+      for (const rec of records) {
+        const phonesFromRec = phoneFields
+          .map(field => rec?.data?.[field])
+          .filter(Boolean)
+          .map((v: any) => String(v));
+        for (const p of phonesFromRec) {
+          if (!recordByPhone.has(p)) recordByPhone.set(p, rec);
+        }
+        if (rec?.data?.number != null) {
+          const recNum = Number(rec.data.number);
+          if (!Number.isNaN(recNum) && !recordByNum.has(recNum)) recordByNum.set(recNum, rec);
+        }
+      }
+
+      // Attach chats to records preserving chat order
+      const results: any[] = [];
+      for (const ch of chats) {
+        const phone = String(ch.phone);
+        let rec = recordByPhone.get(phone);
+        if (!rec) {
+          const digits = phone.replace(/\D+/g, '');
+          const digitsNum = Number(digits);
+          const last10 = digits.length > 10 ? Number(digits.slice(-10)) : digitsNum;
+          rec = recordByNum.get(digitsNum) || recordByNum.get(last10) || null as any;
+        }
+        if (rec) {
+          const lastMsg = ch.messages?.length ? ch.messages[ch.messages.length - 1] : null;
+          if (lastMsg) {
+            rec.data = rec.data || {};
+            rec.data.lastmessagedate = lastMsg.createdAt 
+            rec.data.lastmessage = lastMsg.body;
+          }
+          (rec as any).chats = [ch];
+          (rec as any).totalChats = 1;
+          (rec as any).hasActiveBot = ch.botActive ?? (ch.messages?.length > 0);
+          results.push(rec);
+        }
+      }
+
+      const totalMs = Date.now() - startT;
+      _log('Sending response (fast path)', { returned: results.length, totalMs });
+      res.status(200).json({
+        success: true,
+        data: results,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: totalChats,
+          pages: Math.ceil(totalChats / Number(limit))
+        },
+        performance: {
+          method: "Chat-first join to dynamicrecords",
+          totalMs,
+          fetchedChats: chats.length,
+          matchedRecords: results.length
+        }
+      });
+      return;
+    }
+
     // --- Application-level batching for early stop when enough records with chats are found ---
     const startTime = Date.now();
-    const batchSize = Number(limit) * 5;
+    // Smaller batches reduce $in list size and memory pressure
+    const batchSize = Math.min(1000, Math.max(Number(limit) * 2, 200));
     let foundRecordsWithChats: any[] = [];
     let totalCandidates = 0;
     let lastBatch = false;
 
     // Build base query for dynamicrecords
     const baseQuery: any = {
-      tableSlug: "prospectos",
+      tableSlug,
       c_name: c_name,
       ...dynamicMatchFilters
     };
 
     // For total count (all candidates, not just with chats)
+    const _tCount = Date.now();
     const totalCount = await Record.countDocuments(baseQuery);
+    _log('Candidate count', { totalCount, ms: Date.now() - _tCount, baseKeys: Object.keys(baseQuery) });
 
     // For performance info
     let batches = 0;
@@ -2123,11 +2320,13 @@ export async function getRecordByPhone(req: Request, res: Response) {
     while (!lastBatch && foundRecordsWithChats.length < Number(page) * Number(limit)) {
       batches++;
       // Fetch a batch of dynamicrecords
+      const _tFind = Date.now();
       const candidates = await Record.find(baseQuery)
         .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
         .skip(skipCandidates)
         .limit(batchSize)
         .lean();
+      _log('Fetched batch', { batch: batches, size: candidates.length, skip: skipCandidates, limit: batchSize, ms: Date.now() - _tFind });
 
       if (candidates.length === 0) break;
       totalCandidates += candidates.length;
@@ -2136,11 +2335,26 @@ export async function getRecordByPhone(req: Request, res: Response) {
       // --- Bulk chat lookup optimization ---
       // 1. Collect all phone variants for all candidates
       const recordPhoneMap = new Map(); // key: phone variant, value: array of record indexes
+      const phoneFields = getPhoneFieldsForCompany(c_name);
       candidates.forEach((record, idx) => {
-        const phoneVariants = [
-          String(record.data?.number) + "@c.us",
-          String(record.data?.number)
-        ];
+        // Try phone fields in priority order based on company
+        let candidatePhoneRaw = null;
+        for (const field of phoneFields) {
+          if (record?.data?.[field]) {
+            candidatePhoneRaw = record.data[field];
+            break; // Use first non-empty field found
+          }
+        }
+        const val = candidatePhoneRaw ? String(candidatePhoneRaw).trim() : '';
+        const normalized = val.replace(/\s+/g, '').replace(/^\+?52/, '52'); // normalize basic MX prefix use-case
+        const withPlus = normalized.startsWith('+') ? normalized : (normalized ? `+${normalized}` : normalized);
+        const phoneVariants = Array.from(new Set([
+          val,
+          normalized,
+          withPlus,
+          `${normalized}@c.us`,
+          `${withPlus}@c.us`
+        ].filter(Boolean)));
         phoneVariants.forEach(variant => {
           if (variant) {
             if (!recordPhoneMap.has(variant)) recordPhoneMap.set(variant, []);
@@ -2149,6 +2363,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
         });
       });
       const allPhoneVariants = Array.from(recordPhoneMap.keys());
+      _log('Phone variants built', { variants: allPhoneVariants.length, phoneFields, company: c_name });
 
       // 2. Build chat query for all variants in batch
       const chatQuery: any = { phone: { $in: allPhoneVariants } };
@@ -2169,6 +2384,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
       let chatsInBatch;
       if (lastMessageDate) {
         // Use aggregation to get only chats whose last message's createdAt matches the filter
+        const _tAgg = Date.now();
         chatsInBatch = await Chats.aggregate([
           { $match: chatQuery },
           { $addFields: {
@@ -2176,23 +2392,32 @@ export async function getRecordByPhone(req: Request, res: Response) {
             }
           },
           { $match: { lastMessageDate: { $lte: lastMessageDate } } },
+          { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1 } }
         ]);
+        _log('Chats aggregation', { matched: chatsInBatch?.length || 0, ms: Date.now() - _tAgg });
       } else {
-        chatsInBatch = await Chats.find(chatQuery);
+        const _tChats = Date.now();
+        // Return full messages instead of only the last message
+        chatsInBatch = await Chats.find(chatQuery, { phone: 1, session: 1, messages: 1 } as any)
+          .lean();
+        _log('Chats lookup', { matched: chatsInBatch?.length || 0, ms: Date.now() - _tChats });
       }
 
       // 3. Map chats to candidate records
       //    For each chat, assign it to all records whose phoneVariants match
       const recordChatsMap = new Map(); // key: candidate idx, value: array of chats
+      let matchedRecordsInBatch = 0;
       chatsInBatch.forEach(chat => {
         const idxs = recordPhoneMap.get(chat.phone);
         if (idxs) {
           idxs.forEach(idx => {
             if (!recordChatsMap.has(idx)) recordChatsMap.set(idx, []);
             recordChatsMap.get(idx).push(chat);
+            matchedRecordsInBatch++;
           });
         }
       });
+      _log('Mapped chats to candidates', { matchedRecordsInBatch });
 
       // 4. For each candidate, check if it has chats
       for (let idx = 0; idx < candidates.length; idx++) {
@@ -2228,6 +2453,13 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const endTime = Date.now();
     const executionTime = endTime - startTime;
 
+    _log('Sending response', {
+      returned: pagedRecords.length,
+      accumWithChats: foundRecordsWithChats.length,
+      totalCandidates,
+      batches,
+      totalMs: executionTime
+    });
     res.status(200).json({
       success: true,
       data: pagedRecords,
@@ -2260,7 +2492,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
     });
 
   } catch (error) {
-    console.error('Error in ultra-fast aggregation:', error);
+    console.error('❌ Error in getRecordByPhone:', error);
     res.status(500).json({
       success: false,
       message: "Error in ultra-fast aggregation",

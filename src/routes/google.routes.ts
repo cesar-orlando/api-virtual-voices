@@ -5,12 +5,18 @@ import {
   editCalendarEvent,
   deleteCalendarEvent,
   getTokenStatus,
-  ensureValidToken
+  ensureValidToken,
+  getAuthUrl,
+  exchangeCodeForTokens
 } from "../controllers/googleCalendar.controller";
 import { googleSearch } from "../services/google/googleSearch";
 import { scrapeHandler } from "../services/internal/webScraping.service";
 
 const router = Router();
+
+// OAuth flow endpoints
+router.get("/calendar/auth-url", getAuthUrl);
+router.post("/calendar/exchange-token", exchangeCodeForTokens);
 
 // Token management
 router.post("/calendar/get-access-token", getAccessTokenWithCredentials);

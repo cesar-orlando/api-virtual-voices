@@ -15,6 +15,8 @@ import getIaConfigModel from "../../models/iaConfig.model";
 import { s3 } from "../../config/aws";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
+import { io } from "../../server";
+import { NotificationService } from "../../services/internal/notification.service";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
@@ -301,7 +303,7 @@ async function analyzeImageFromTwilio(
  */
 export const twilioWebhook = async (req: Request, res: Response): Promise<void> => {
   try {
-
+    console.log("📥 [TwilioWebhook] Incoming payload keys:", Object.keys(req.body || {}));
     const {
       From,
       To,
@@ -319,9 +321,13 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       MessageType,
     } = req.body;
 
+    console.log("📥 [TwilioWebhook] From:", From, "To:", To, "BodyLen:", (Body || '').length, "MessageSid:", MessageSid);
+
     // Validar que es para Quick Learning (verificar número de teléfono)
-    if (!To.includes(envConfig.twilio.phoneNumber.replace('+', ''))) {
-      console.warn("⚠️ Mensaje no dirigido al número de Quick Learning");
+    const configuredPhone = envConfig.twilio.phoneNumber;
+    console.log("☎️ [TwilioWebhook] Configured Twilio phone:", configuredPhone);
+    if (!To.includes(configuredPhone.replace('+', ''))) {
+      console.warn("⚠️ [TwilioWebhook] Mensaje no dirigido al número de Quick Learning");
       res.status(200).send("OK");
       return;
     }
@@ -343,6 +349,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
     const customer = await executeQuickLearningWithReconnection(async (conn) => {
       return await findOrCreateCustomer(phoneUser, ProfileName || "Usuario", Body, conn);
     });
+    console.log("👤 [TwilioWebhook] Customer found/created:", customer?._id?.toString(), "table:", customer?.tableSlug);
 
     // Verificar si tiene AI activada
     const aiEnabled = customer.data.aiEnabled !== false;
@@ -445,7 +452,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       };
 
       chat.messages.push(newMessage);
-
+      console.log("💾 [TwilioWebhook] Pushing inbound message. Total messages before save:", (chat.messages || []).length);
       // Actualizar último mensaje
       const currentDate = new Date();
       chat.lastMessage = {
@@ -453,11 +460,86 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         date: currentDate,
         respondedBy: "human",
       };
-
+      console.log("📝 [TwilioWebhook] lastMessage set. Saving chat...");
       await chat.save();
+      console.log("✅ [TwilioWebhook] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje nuevo
       emitNewMessageNotification(phoneUser, newMessage, chat);
+      
+      // Crear notificación para el asesor asignado
+      let advisorId = null;
+      try {
+        if (customer?.data?.asesor) {
+          if (typeof customer.data.asesor === 'string') {
+            // Verificar si es un ObjectId válido (24 caracteres hex)
+            if (/^[0-9a-fA-F]{24}$/.test(customer.data.asesor)) {
+              advisorId = customer.data.asesor;
+              console.log("🔍 [TwilioWebhook] Advisor is ObjectId string:", advisorId);
+            } else {
+              // Intentar parsear como JSON
+              try {
+                const advisorData = JSON.parse(customer.data.asesor);
+                advisorId = advisorData._id || advisorData.id;
+                console.log("🔍 [TwilioWebhook] Advisor parsed from JSON:", advisorId);
+              } catch (jsonError) {
+                console.error("❌ [TwilioWebhook] Error parsing advisor JSON:", jsonError);
+                // Si no es JSON válido, usar el string directamente
+                advisorId = customer.data.asesor;
+                console.log("🔍 [TwilioWebhook] Using advisor as direct string:", advisorId);
+              }
+            }
+          } else if (customer.data.asesor._id || customer.data.asesor.id) {
+            advisorId = customer.data.asesor._id || customer.data.asesor.id;
+            console.log("🔍 [TwilioWebhook] Advisor from object:", advisorId);
+          }
+        }
+      } catch (parseError) {
+        console.error("❌ [TwilioWebhook] Error parsing advisor data:", parseError);
+      }
+
+      if (advisorId) {
+        try {
+          console.log("🔔 [TwilioWebhook] Creating chat notification for advisor:", advisorId);
+          console.log("🔔 [TwilioWebhook] Notification params:", {
+            company: "quicklearning",
+            userId: advisorId,
+            phoneNumber: phoneUser,
+            senderName: customer.data.nombre || ProfileName || "Usuario",
+            messagePreview: newMessage.body,
+            chatId: chat._id.toString()
+          });
+          
+          const notification = await NotificationService.createChatNotification({
+            company: "quicklearning",
+            userId: advisorId,
+            phoneNumber: phoneUser,
+            senderName: customer.data.nombre || ProfileName || "Usuario",
+            messagePreview: newMessage.body,
+            chatId: chat._id.toString()
+          });
+          
+          console.log("✅ [TwilioWebhook] Chat notification created successfully:", notification?._id?.toString());
+        } catch (notificationError) {
+          console.error("❌ [TwilioWebhook] Error creating chat notification:", notificationError);
+          console.error("❌ [TwilioWebhook] Error details:", {
+            message: notificationError instanceof Error ? notificationError.message : 'Unknown error',
+            stack: notificationError instanceof Error ? notificationError.stack : undefined
+          });
+        }
+      } else {
+        console.warn("⚠️ [TwilioWebhook] No advisor ID found in customer data, skipping notification");
+        console.log("🔍 [TwilioWebhook] Customer asesor data:", customer?.data?.asesor);
+        console.log("🔍 [TwilioWebhook] Customer data keys:", Object.keys(customer?.data || {}));
+      }
+      
+      // Emitir evento genérico de actualización de chat (compatibilidad con listeners existentes)
+      try {
+        console.log("📣 [TwilioWebhook] Emitting socket event:", `whatsapp-message-quicklearning`);
+        io.emit(`whatsapp-message-quicklearning`, chat);
+      } catch (e) {
+        console.error("❌ [TwilioWebhook] Error emitting socket event:", e);
+      }
 
       // Actualizar ultimo_mensaje y lastMessageDate en la tabla correcta si el usuario ya existe
       const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar", "nuevo_ingreso"];
@@ -560,10 +642,19 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             respondedBy: "bot",
           };
 
+          console.log("📝 [BotReply] Saving chat with bot response...");
           await chat.save();
+          console.log("✅ [BotReply] Chat saved:", chat._id?.toString());
 
           // Emitir notificación por socket para respuesta del bot
           emitNewMessageNotification(phoneUser, botMessage, chat);
+          // Emitir evento genérico de actualización de chat
+          try {
+            console.log("📣 [BotReply] Emitting socket event:", `whatsapp-message-quicklearning`);
+            io.emit(`whatsapp-message-quicklearning`, chat);
+          } catch (e) {
+            console.error("❌ [BotReply] Error emitting socket event:", e);
+          }
 
           // Verificar si es mensaje de transferencia a asesor
           const isTransferMessage = aiResponse.toLowerCase().includes('transferir con un asesor') || aiResponse.toLowerCase().includes('te voy a transferir');
@@ -989,10 +1080,19 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         date: currentDate,
         respondedBy: "asesor",
       };
+      console.log("📝 [Send] Saving chat with advisor message...");
       await chat.save();
+      console.log("✅ [Send] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje del asesor
       emitNewMessageNotification(phone, asesorMessage);
+      // Emitir evento genérico de actualización de chat
+      try {
+        console.log("📣 [Send] Emitting socket event:", `whatsapp-message-quicklearning`);
+        io.emit(`whatsapp-message-quicklearning`, chat);
+      } catch (e) {
+        console.error("❌ [Send] Error emitting socket event:", e);
+      }
 
       res.status(200).json({
         success: true,
@@ -1073,10 +1173,19 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         date: currentDate,
         respondedBy: "asesor",
       };
+      console.log("📝 [SendTemplate] Saving chat with template message...");
       await chat.save();
+      console.log("✅ [SendTemplate] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje de template del asesor
       emitNewMessageNotification(phone, templateAsesorMessage);
+      // Emitir evento genérico de actualización de chat
+      try {
+        console.log("📣 [SendTemplate] Emitting socket event:", `whatsapp-message-quicklearning`);
+        io.emit(`whatsapp-message-quicklearning`, chat);
+      } catch (e) {
+        console.error("❌ [SendTemplate] Error emitting socket event:", e);
+      }
 
       res.status(200).json({
         success: true,

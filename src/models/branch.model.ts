@@ -82,5 +82,9 @@ BranchSchema.index({ companyId: 1, name: 1 });                   // Nombre dentr
 BranchSchema.index({ companyId: 1, isActive: 1 });               // Sucursales activas por empresa
 
 export default function getBranchModel(conn: Connection): Model<IBranch> {
+  // Verificar si el modelo ya existe en esta conexión
+  if (conn.models.Branch) {
+    return conn.models.Branch as Model<IBranch>;
+  }
   return conn.model<IBranch>("Branch", BranchSchema);
 }

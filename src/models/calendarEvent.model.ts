@@ -146,6 +146,10 @@ CalendarEventSchema.pre(['find', 'findOne', 'findOneAndUpdate'], async function(
 });
 
 export default function getCalendarEventModel(connection: Connection): Model<ICalendarEvent> {
+  // Verificar si el modelo ya existe en esta conexión
+  if (connection.models.CalendarEvent) {
+    return connection.models.CalendarEvent as Model<ICalendarEvent>;
+  }
   return connection.model<ICalendarEvent>('CalendarEvent', CalendarEventSchema);
 }
 

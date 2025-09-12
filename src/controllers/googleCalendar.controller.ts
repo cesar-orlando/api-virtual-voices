@@ -247,7 +247,7 @@ export const createCalendarEvent = async (req: Request, res: Response): Promise<
       description, 
       startDateTime, 
       endDateTime, 
-      //timeZone = 'America/Mexico_City',
+      timeZone = 'America/Mexico_City',
       attendees = [],
       location,
       calendarId = 'primary'
@@ -301,11 +301,11 @@ export const createCalendarEvent = async (req: Request, res: Response): Promise<
       summary,
       start: {
         dateTime: startDateTime,
-        timeZone: 'America/Mexico_City'
+        timeZone: timeZone
       },
       end: {
         dateTime: endDateTime,
-        timeZone: 'America/Mexico_City'
+        timeZone: timeZone
       }
     };
 

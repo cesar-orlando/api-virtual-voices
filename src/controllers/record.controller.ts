@@ -1978,26 +1978,14 @@ export async function getRecordByPhone(req: Request, res: Response) {
       tableSlug: tableSlugQuery // optional override; defaults to 'prospectos'
     } = req.query; // ADDED FILTER PARAMETERS
     const tableSlug = (typeof tableSlugQuery === 'string' && tableSlugQuery) ? tableSlugQuery : 'prospectos';
-    const _startedAt = Date.now();
-    const _reqId = (req.headers['x-request-id'] as string) || Math.random().toString(36).slice(2, 8);
-    const _log = (...args: any[]) => console.log(`📞 [getRecordByPhone][${c_name}/${tableSlug}][${_reqId}][+${Date.now()-_startedAt}ms]`, ...args);
-    _log('Incoming request', { page: Number(page), limit: Number(limit), sortBy, sortOrder, sessionId: sessionId || null, filters: typeof filters });
-    
-    const _tConn = Date.now();
+
     const conn = await getConnectionByCompanySlug(c_name);
-    _log('Connection acquired', { ms: Date.now() - _tConn });
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
     const Chats = getWhatsappChatModel(conn);
 
     // Get table definition for filter processing
     const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
-    // If table is not found, continue without schema-based validation (data shape assumed similar)
-    if (!table) {
-      console.warn(`[getRecordByPhone] Table '${tableSlug}' not found for '${c_name}'. Proceeding without schema-based filters.`);
-    } else {
-      _log('Loaded table schema', { fields: table.fields?.length });
-    }
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
@@ -2103,9 +2091,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
           if (searchConditions.length > 0) {
             dynamicMatchFilters.$or = searchConditions;
           }
-        } else if (parsedFilters.lastMessageDateLte) {
+        } 
+        if (parsedFilters.lastMessageDateLte) {
           lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
-        } else if (parsedFilters.advisor) {
+        } 
+        if (parsedFilters.advisor) {
           // Ampliar soporte: objeto, string JSON y variantes de campos
           const advisorValue = String(parsedFilters.advisor);
           const orConditions: any[] = [
@@ -2143,7 +2133,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const useChatFirst = !filters || (typeof filters === 'string' && (filters as string).trim() === '' || (filters as string).trim() === 'undefined' || (filters as string).trim() === 'null');
     if (useChatFirst) {
       const startT = Date.now();
-      _log('Using Chat-first fast path');
 
       // Build chat query
       const chatQuery: any = {};
@@ -2166,11 +2155,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
       const chatSkip = (Number(page) - 1) * Number(limit);
       const chatSort = { updatedAt: sortOrder === 'desc' ? -1 : 1 } as any;
 
-      const tCount = Date.now();
       const totalChats = await Chats.countDocuments(chatQuery);
-      _log('Chats count', { totalChats, ms: Date.now() - tCount });
 
-      const tChats = Date.now();
       // Previously we sliced to only the last message for performance.
       // For full conversation context in the frontend, return all messages.
       const chats = await Chats.find(chatQuery, { phone: 1, session: 1, updatedAt: 1, messages: 1 } as any)
@@ -2178,7 +2164,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
         .skip(chatSkip)
         .limit(Number(limit))
         .lean();
-      _log('Fetched chats page', { count: chats.length, ms: Date.now() - tChats });
 
       // Build phone lists and maps
       const chatByPhone = new Map<string, any>();
@@ -2201,14 +2186,12 @@ export async function getRecordByPhone(req: Request, res: Response) {
       });
 
       // Bulk fetch matching dynamic records for these phones
-      const tRecs = Date.now();
       const phoneOr: any[] = [];
       if (phones.length) {
         const phoneFields = getPhoneFieldsForCompany(c_name);
         phoneFields.forEach(f => {
           phoneOr.push({ [`data.${f}`]: { $in: phones } });
         });
-        _log('Phone fields used for query', { fields: phoneFields, company: c_name });
       }
       if (numericPhones.length) {
         phoneOr.push({ 'data.number': { $in: numericPhones } });
@@ -2226,7 +2209,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       const records = await Record.find(recordQuery)
         .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
         .lean();
-      _log('Fetched matching records', { count: records.length, ms: Date.now() - tRecs });
 
       // Build phone->record and number->record maps
       const recordByPhone = new Map<string, any>();
@@ -2272,7 +2254,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       }
 
       const totalMs = Date.now() - startT;
-      _log('Sending response (fast path)', { returned: results.length, totalMs });
       res.status(200).json({
         success: true,
         data: results,
@@ -2308,9 +2289,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
     };
 
     // For total count (all candidates, not just with chats)
-    const _tCount = Date.now();
     const totalCount = await Record.countDocuments(baseQuery);
-    _log('Candidate count', { totalCount, ms: Date.now() - _tCount, baseKeys: Object.keys(baseQuery) });
 
     // For performance info
     let batches = 0;
@@ -2320,13 +2299,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
     while (!lastBatch && foundRecordsWithChats.length < Number(page) * Number(limit)) {
       batches++;
       // Fetch a batch of dynamicrecords
-      const _tFind = Date.now();
       const candidates = await Record.find(baseQuery)
         .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
         .skip(skipCandidates)
         .limit(batchSize)
         .lean();
-      _log('Fetched batch', { batch: batches, size: candidates.length, skip: skipCandidates, limit: batchSize, ms: Date.now() - _tFind });
 
       if (candidates.length === 0) break;
       totalCandidates += candidates.length;
@@ -2363,7 +2340,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
         });
       });
       const allPhoneVariants = Array.from(recordPhoneMap.keys());
-      _log('Phone variants built', { variants: allPhoneVariants.length, phoneFields, company: c_name });
 
       // 2. Build chat query for all variants in batch
       const chatQuery: any = { phone: { $in: allPhoneVariants } };
@@ -2384,7 +2360,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       let chatsInBatch;
       if (lastMessageDate) {
         // Use aggregation to get only chats whose last message's createdAt matches the filter
-        const _tAgg = Date.now();
         chatsInBatch = await Chats.aggregate([
           { $match: chatQuery },
           { $addFields: {
@@ -2394,13 +2369,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
           { $match: { lastMessageDate: { $lte: lastMessageDate } } },
           { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1 } }
         ]);
-        _log('Chats aggregation', { matched: chatsInBatch?.length || 0, ms: Date.now() - _tAgg });
       } else {
         const _tChats = Date.now();
         // Return full messages instead of only the last message
         chatsInBatch = await Chats.find(chatQuery, { phone: 1, session: 1, messages: 1 } as any)
           .lean();
-        _log('Chats lookup', { matched: chatsInBatch?.length || 0, ms: Date.now() - _tChats });
       }
 
       // 3. Map chats to candidate records
@@ -2417,7 +2390,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
           });
         }
       });
-      _log('Mapped chats to candidates', { matchedRecordsInBatch });
 
       // 4. For each candidate, check if it has chats
       for (let idx = 0; idx < candidates.length; idx++) {
@@ -2453,13 +2425,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const endTime = Date.now();
     const executionTime = endTime - startTime;
 
-    _log('Sending response', {
-      returned: pagedRecords.length,
-      accumWithChats: foundRecordsWithChats.length,
-      totalCandidates,
-      batches,
-      totalMs: executionTime
-    });
     res.status(200).json({
       success: true,
       data: pagedRecords,

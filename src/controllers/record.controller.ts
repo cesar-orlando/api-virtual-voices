@@ -453,6 +453,17 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
             orDateFilters.push({[fieldName]: parsedRange })
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
+          } else if (fieldName === 'number' || fieldName === 'sessionId' || fieldName === 'tabla') {
+            // Filtro para valores mayormente inutiles :)
+            orTextFilters.push({
+              $expr: {
+                $regexMatch: {
+                  input: { $toString: { $ifNull: [ `$data.${fieldName}`, '' ] } },
+                  regex: `.*${escapeRegExp(String(value))}.*`,
+                  options: 'i'
+                }
+              }
+            });
           } else {
             // Numeric range support: { fieldName: { $gte: N, $lte: M } }
             const isRangeObject = Array.isArray(value) && value !== null && value.length === 2;
@@ -762,6 +773,20 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
     return;
   }
 
+  if (data.campos_a_actualizar) {
+    // Process campos_a_actualizar array and merge into data
+    if (Array.isArray(data.campos_a_actualizar)) {
+      data.campos_a_actualizar.forEach((campo: string) => {
+        const [key, value] = campo.split(':');
+        if (key && value !== undefined) {
+          data[key.trim()] = value.trim();
+        }
+      });
+      // Remove the campos_a_actualizar field after processing
+      delete data.campos_a_actualizar;
+    }
+  }
+
   try {
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
@@ -813,10 +838,6 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
       } catch (e: any) {
         partialErrors.push(`${e?.message} for field '${key}' with value '${rawVal}'` || `Invalid value for field '${key}'`);
       }
-    }
-    if (partialErrors.length > 0) {
-      res.status(400).json({ message: "Data validation failed", errors: partialErrors });
-      return;
     }
 
     const User = getUserModel(conn);
@@ -942,6 +963,7 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
         fields: table.fields
       },
       tableChanged: isTableSlugChanged,
+      errors_found: partialErrors,
       previousTableSlug: isTableSlugChanged ? currentTableSlug : undefined
     });
   } catch (error) {

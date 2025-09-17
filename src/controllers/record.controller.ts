@@ -453,6 +453,17 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
             orDateFilters.push({[fieldName]: parsedRange })
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
+          } else if (fieldName === 'number' || fieldName === 'sessionId' || fieldName === 'tabla') {
+            // Filtro para valores mayormente inutiles :)
+            orTextFilters.push({
+              $expr: {
+                $regexMatch: {
+                  input: { $toString: { $ifNull: [ `$data.${fieldName}`, '' ] } },
+                  regex: `.*${escapeRegExp(String(value))}.*`,
+                  options: 'i'
+                }
+              }
+            });
           } else {
             // Numeric range support: { fieldName: { $gte: N, $lte: M } }
             const isRangeObject = Array.isArray(value) && value !== null && value.length === 2;
@@ -762,6 +773,20 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
     return;
   }
 
+  if (data.campos_a_actualizar) {
+    // Process campos_a_actualizar array and merge into data
+    if (Array.isArray(data.campos_a_actualizar)) {
+      data.campos_a_actualizar.forEach((campo: string) => {
+        const [key, value] = campo.split(':');
+        if (key && value !== undefined) {
+          data[key.trim()] = value.trim();
+        }
+      });
+      // Remove the campos_a_actualizar field after processing
+      delete data.campos_a_actualizar;
+    }
+  }
+
   try {
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);
@@ -813,10 +838,6 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
       } catch (e: any) {
         partialErrors.push(`${e?.message} for field '${key}' with value '${rawVal}'` || `Invalid value for field '${key}'`);
       }
-    }
-    if (partialErrors.length > 0) {
-      res.status(400).json({ message: "Data validation failed", errors: partialErrors });
-      return;
     }
 
     const User = getUserModel(conn);
@@ -942,6 +963,7 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
         fields: table.fields
       },
       tableChanged: isTableSlugChanged,
+      errors_found: partialErrors,
       previousTableSlug: isTableSlugChanged ? currentTableSlug : undefined
     });
   } catch (error) {
@@ -1842,129 +1864,6 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
   }
 };
 
-export async function searchPropiedadesGrupokg(req: Request, res: Response): Promise<any> {
-  try {
-    // Solo permitir para grupokg
-    const c_name = 'grupokg';
-    const tableSlug = 'propiedades';
-    const conn = await getConnectionByCompanySlug(c_name);
-    const Record = getRecordModel(conn);
-
-    // Extraer todos los filtros posibles del query
-    const { 
-      zona, 
-      precioMin, 
-      precioMax, 
-      renta_venta_inversion, 
-      titulo,
-      colonia,
-      recamaras,
-      banos,
-      estacionamiento,
-      mts_de_terreno,
-      metros_de_construccion,
-      disponibilidad,
-      aceptan_creditos,
-      mascotas,
-      limit = 50
-    } = req.query;
-
-    // Construir filtro base
-    const filter: any = {
-      tableSlug,
-      c_name
-    };
-
-    // Búsqueda flexible: si solo hay un parámetro de búsqueda principal, busca en los tres campos
-    const searchTerm = colonia || zona || titulo;
-    const searchParams = [colonia, zona, titulo].filter(Boolean);
-    if (searchParams.length === 1 && searchTerm) {
-      filter.$or = [
-  { 'data.colonia': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } },
-  { 'data.zona': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } },
-  { 'data.titulo': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } }
-      ];
-    } else {
-      if (zona) {
-  filter['data.zona'] = { $regex: buildAccentInsensitivePattern(String(zona)), $options: 'i' };
-      }
-      if (titulo) {
-  filter['data.titulo'] = { $regex: buildAccentInsensitivePattern(String(titulo)), $options: 'i' };
-      }
-      if (colonia) {
-  filter['data.colonia'] = { $regex: buildAccentInsensitivePattern(String(colonia)), $options: 'i' };
-      }
-    }
-
-    if (precioMin) {
-      filter['data.precio'] = { 
-        $gte: Number(precioMin),
-        ...(filter['data.precio'] || {})
-      };
-    }
-    if (precioMax) {
-      filter['data.precio'] = { 
-        $lte: Number(precioMax),
-        ...(filter['data.precio'] || {})
-      };
-    }
-    if (renta_venta_inversion) {
-  filter['data.renta_venta_inversión '] = { $regex: buildAccentInsensitivePattern(String(renta_venta_inversion)), $options: 'i' };
-    }
-    if (recamaras) {
-      filter['data.recamaras'] = recamaras as string;
-    }
-    if (banos) {
-      filter['data.banos'] = Number(banos);
-    }
-    if (estacionamiento) {
-      filter['data.estacionamiento'] = estacionamiento as string;
-    }
-    if (mts_de_terreno) {
-      filter['data.mts_de_terreno'] = { $gte: Number(mts_de_terreno) };
-    }
-    if (metros_de_construccion) {
-      filter['data.metros_de_construccion '] = { $gte: Number(metros_de_construccion) };
-    }
-    if (disponibilidad) {
-  filter['data.disponibilidad'] = { $regex: buildAccentInsensitivePattern(String(disponibilidad)), $options: 'i' };
-    }
-    if (aceptan_creditos) {
-  filter['data.aceptan_creditos '] = { $regex: buildAccentInsensitivePattern(String(aceptan_creditos)), $options: 'i' };
-    }
-    if (mascotas) {
-  filter['data.mascotas'] = { $regex: buildAccentInsensitivePattern(String(mascotas)), $options: 'i' };
-    }
-
-    // Ejecutar búsqueda
-    const records = await Record.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .lean();
-
-    // Formato exacto como el JSON que enviaste
-    const response = {
-      records,
-      pagination: {
-        page: 1,
-        limit: records.length,
-        total: records.length,
-        pages: 1
-      }
-    };
-
-    console.log(`Búsqueda grupokg propiedades: ${records.length} resultados encontrados`);
-    return res.json(response);
-    
-  } catch (error) {
-    console.error('Error en searchPropiedadesGrupokg:', error);
-    return res.status(500).json({ 
-      error: 'Error interno en búsqueda de propiedades',
-      details: error instanceof Error ? error.message : 'Error desconocido'
-    });
-  }
-}
-
 export async function getRecordByPhone(req: Request, res: Response) {
   try {
     const { c_name } = req.params;
@@ -1978,26 +1877,14 @@ export async function getRecordByPhone(req: Request, res: Response) {
       tableSlug: tableSlugQuery // optional override; defaults to 'prospectos'
     } = req.query; // ADDED FILTER PARAMETERS
     const tableSlug = (typeof tableSlugQuery === 'string' && tableSlugQuery) ? tableSlugQuery : 'prospectos';
-    const _startedAt = Date.now();
-    const _reqId = (req.headers['x-request-id'] as string) || Math.random().toString(36).slice(2, 8);
-    const _log = (...args: any[]) => console.log(`📞 [getRecordByPhone][${c_name}/${tableSlug}][${_reqId}][+${Date.now()-_startedAt}ms]`, ...args);
-    _log('Incoming request', { page: Number(page), limit: Number(limit), sortBy, sortOrder, sessionId: sessionId || null, filters: typeof filters });
-    
-    const _tConn = Date.now();
+
     const conn = await getConnectionByCompanySlug(c_name);
-    _log('Connection acquired', { ms: Date.now() - _tConn });
     const Record = getRecordModel(conn);
     const Table = getTableModel(conn);
     const Chats = getWhatsappChatModel(conn);
 
     // Get table definition for filter processing
     const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
-    // If table is not found, continue without schema-based validation (data shape assumed similar)
-    if (!table) {
-      console.warn(`[getRecordByPhone] Table '${tableSlug}' not found for '${c_name}'. Proceeding without schema-based filters.`);
-    } else {
-      _log('Loaded table schema', { fields: table.fields?.length });
-    }
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
@@ -2103,9 +1990,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
           if (searchConditions.length > 0) {
             dynamicMatchFilters.$or = searchConditions;
           }
-        } else if (parsedFilters.lastMessageDateLte) {
+        } 
+        if (parsedFilters.lastMessageDateLte) {
           lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
-        } else if (parsedFilters.advisor) {
+        } 
+        if (parsedFilters.advisor) {
           // Ampliar soporte: objeto, string JSON y variantes de campos
           const advisorValue = String(parsedFilters.advisor);
           const orConditions: any[] = [
@@ -2143,7 +2032,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const useChatFirst = !filters || (typeof filters === 'string' && (filters as string).trim() === '' || (filters as string).trim() === 'undefined' || (filters as string).trim() === 'null');
     if (useChatFirst) {
       const startT = Date.now();
-      _log('Using Chat-first fast path');
 
       // Build chat query
       const chatQuery: any = {};
@@ -2166,11 +2054,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
       const chatSkip = (Number(page) - 1) * Number(limit);
       const chatSort = { updatedAt: sortOrder === 'desc' ? -1 : 1 } as any;
 
-      const tCount = Date.now();
       const totalChats = await Chats.countDocuments(chatQuery);
-      _log('Chats count', { totalChats, ms: Date.now() - tCount });
 
-      const tChats = Date.now();
       // Previously we sliced to only the last message for performance.
       // For full conversation context in the frontend, return all messages.
       const chats = await Chats.find(chatQuery, { phone: 1, session: 1, updatedAt: 1, messages: 1 } as any)
@@ -2178,7 +2063,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
         .skip(chatSkip)
         .limit(Number(limit))
         .lean();
-      _log('Fetched chats page', { count: chats.length, ms: Date.now() - tChats });
 
       // Build phone lists and maps
       const chatByPhone = new Map<string, any>();
@@ -2201,14 +2085,12 @@ export async function getRecordByPhone(req: Request, res: Response) {
       });
 
       // Bulk fetch matching dynamic records for these phones
-      const tRecs = Date.now();
       const phoneOr: any[] = [];
       if (phones.length) {
         const phoneFields = getPhoneFieldsForCompany(c_name);
         phoneFields.forEach(f => {
           phoneOr.push({ [`data.${f}`]: { $in: phones } });
         });
-        _log('Phone fields used for query', { fields: phoneFields, company: c_name });
       }
       if (numericPhones.length) {
         phoneOr.push({ 'data.number': { $in: numericPhones } });
@@ -2226,7 +2108,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       const records = await Record.find(recordQuery)
         .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
         .lean();
-      _log('Fetched matching records', { count: records.length, ms: Date.now() - tRecs });
 
       // Build phone->record and number->record maps
       const recordByPhone = new Map<string, any>();
@@ -2272,7 +2153,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       }
 
       const totalMs = Date.now() - startT;
-      _log('Sending response (fast path)', { returned: results.length, totalMs });
       res.status(200).json({
         success: true,
         data: results,
@@ -2308,9 +2188,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
     };
 
     // For total count (all candidates, not just with chats)
-    const _tCount = Date.now();
     const totalCount = await Record.countDocuments(baseQuery);
-    _log('Candidate count', { totalCount, ms: Date.now() - _tCount, baseKeys: Object.keys(baseQuery) });
 
     // For performance info
     let batches = 0;
@@ -2320,13 +2198,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
     while (!lastBatch && foundRecordsWithChats.length < Number(page) * Number(limit)) {
       batches++;
       // Fetch a batch of dynamicrecords
-      const _tFind = Date.now();
       const candidates = await Record.find(baseQuery)
         .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
         .skip(skipCandidates)
         .limit(batchSize)
         .lean();
-      _log('Fetched batch', { batch: batches, size: candidates.length, skip: skipCandidates, limit: batchSize, ms: Date.now() - _tFind });
 
       if (candidates.length === 0) break;
       totalCandidates += candidates.length;
@@ -2363,7 +2239,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
         });
       });
       const allPhoneVariants = Array.from(recordPhoneMap.keys());
-      _log('Phone variants built', { variants: allPhoneVariants.length, phoneFields, company: c_name });
 
       // 2. Build chat query for all variants in batch
       const chatQuery: any = { phone: { $in: allPhoneVariants } };
@@ -2384,7 +2259,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
       let chatsInBatch;
       if (lastMessageDate) {
         // Use aggregation to get only chats whose last message's createdAt matches the filter
-        const _tAgg = Date.now();
         chatsInBatch = await Chats.aggregate([
           { $match: chatQuery },
           { $addFields: {
@@ -2394,13 +2268,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
           { $match: { lastMessageDate: { $lte: lastMessageDate } } },
           { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1 } }
         ]);
-        _log('Chats aggregation', { matched: chatsInBatch?.length || 0, ms: Date.now() - _tAgg });
       } else {
         const _tChats = Date.now();
         // Return full messages instead of only the last message
         chatsInBatch = await Chats.find(chatQuery, { phone: 1, session: 1, messages: 1 } as any)
           .lean();
-        _log('Chats lookup', { matched: chatsInBatch?.length || 0, ms: Date.now() - _tChats });
       }
 
       // 3. Map chats to candidate records
@@ -2417,7 +2289,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
           });
         }
       });
-      _log('Mapped chats to candidates', { matchedRecordsInBatch });
 
       // 4. For each candidate, check if it has chats
       for (let idx = 0; idx < candidates.length; idx++) {
@@ -2453,13 +2324,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const endTime = Date.now();
     const executionTime = endTime - startTime;
 
-    _log('Sending response', {
-      returned: pagedRecords.length,
-      accumWithChats: foundRecordsWithChats.length,
-      totalCandidates,
-      batches,
-      totalMs: executionTime
-    });
     res.status(200).json({
       success: true,
       data: pagedRecords,
@@ -2498,5 +2362,72 @@ export async function getRecordByPhone(req: Request, res: Response) {
       message: "Error in ultra-fast aggregation",
       error: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
+}
+
+export async function updateProspectsAI(req: Request, res: Response) {
+  const { c_name } = req.params;
+  const { user, tableSlug = 'prospectos', recordIds, AI } = req.body;
+
+  if (!user || !recordIds) {
+    res.status(400).json({ message: "user and recordIds are required" });
+    return;
+  }
+  
+  try {
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Record = getRecordModel(conn);
+    const Table = getTableModel(conn);
+    
+    const table = await Table.findOne({ slug: tableSlug, c_name });
+    if (!table) {
+      res.status(404).json({ message: "Table not found or inactive" });
+      return;
+    }
+
+    const auditContext = {
+      _updatedByUser: { id: user.id, name: user.name },
+      _updatedBy: user.id,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: (req as any).ip,
+      userAgent: req.headers['user-agent'],
+    };
+    
+    let updateResult;
+    if (recordIds === "all") {
+      updateResult = await Record.updateMany(
+        { tableSlug, c_name },
+        { 
+          $set: { 
+            'data.ia': AI,
+            updatedBy: user.id,
+            updatedAt: new Date()
+          } 
+        }
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
+    } else {
+      updateResult = await Record.updateMany(
+        { tableSlug, c_name, _id: { $in: recordIds } },
+        { 
+          $set: { 
+            'data.ia': AI,
+            updatedBy: user.id,
+            updatedAt: new Date()
+          } 
+        }
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
+    }
+    
+    res.status(200).json({ 
+      message: "Prospects updated successfully with AI data", 
+      updated: updateResult.modifiedCount,
+      matched: updateResult.matchedCount,
+      AI: AI
+    });
+    
+  } catch (error) {
+    console.error("Error updating prospects AI:", error);
+    res.status(500).json({ message: "Error updating prospects", error });
   }
 }

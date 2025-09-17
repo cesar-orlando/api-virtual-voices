@@ -294,71 +294,18 @@ export const createCalendarEvent = async (req: Request, res: Response): Promise<
     // Get access token using token manager
     const accessToken = await getValidGoogleToken();
 
-    // Robust date time formatting function
-    const formatDateTime = (dateTime: string, defaultTimeZone: string = 'America/Mexico_City') => {
-      try {
-        // Check if the input already has timezone information
-        const hasTimezone = dateTime.includes('Z') || dateTime.includes('+') || dateTime.includes('-', 10);
-        
-        if (hasTimezone) {
-          // Input already has timezone, use as-is
-          const date = new Date(dateTime);
-          if (isNaN(date.getTime())) {
-            throw new Error(`Invalid date: ${dateTime}`);
-          }
-          return date.toISOString();
-        }
-        
-        // Input is timezone-naive, treat as local time in the specified timezone
-        let dateTimeForParsing = dateTime;
-        
-        // Normalize the format for parsing
-        if (dateTime.includes(' ')) {
-          // Convert "2025-08-03 23:00:00" to "2025-08-03T23:00:00"
-          dateTimeForParsing = dateTime.replace(' ', 'T');
-        } else if (dateTime.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          // Date only format: 2025-08-03 (default to noon to avoid timezone issues)
-          dateTimeForParsing = dateTime + 'T12:00:00';
-        }
-        
-        // Parse the date components
-        const match = dateTimeForParsing.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
-        if (!match) {
-          throw new Error(`Invalid date format: ${dateTimeForParsing}`);
-        }
-        
-        const [, year, month, day, hour, minute, second] = match;
-        
-        // Create a date in the target timezone using local interpretation
-        // This approach treats the input as if it's already in the target timezone
-        const localDate = new Date(
-          parseInt(year), 
-          parseInt(month) - 1, // JavaScript months are 0-indexed
-          parseInt(day), 
-          parseInt(hour), 
-          parseInt(minute), 
-          parseInt(second)
-        );
-        
-        // Convert to ISO string (this will be in the local system timezone)
-        return localDate.toISOString();
-        
-      } catch (error) {
-        console.error(`❌ Error formatting date "${dateTime}":`, error);
-        throw new Error(`Invalid date format: ${dateTime}. Please use YYYY-MM-DD HH:mm:ss or ISO 8601 format.`);
-      }
-    };
+    console.log(`📅 Creating calendar event: ${summary} with start ${startDateTime} and end ${endDateTime}`);
 
     // Prepare event data
     const eventData: any = {
       summary,
       start: {
-        dateTime: formatDateTime(startDateTime, timeZone),
-        timeZone
+        dateTime: startDateTime,
+        timeZone: timeZone
       },
       end: {
-        dateTime: formatDateTime(endDateTime, timeZone),
-        timeZone
+        dateTime: endDateTime,
+        timeZone: timeZone
       }
     };
 

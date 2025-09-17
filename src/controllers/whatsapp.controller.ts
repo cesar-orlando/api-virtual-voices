@@ -237,8 +237,13 @@ async function downloadUrlToDisk(url: string): Promise<string> {
 export const sendWhatsappMessage = async (req: Request, res: Response) => {
   try {
     const { c_name, sessionId } = req.params;
-    const { phone, message, attachment, type } = req.body;
+    let { phone, message, attachment, type, data } = req.body;
     const uploaded: Express.Multer.File | undefined = (req as any).file;
+
+    if (data) {
+      phone = data.phone
+      message = data.message
+    }
 
     const conn = await getConnectionByCompanySlug(c_name);
 

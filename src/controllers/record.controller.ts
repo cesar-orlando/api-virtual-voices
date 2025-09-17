@@ -1864,129 +1864,6 @@ export const deleteFieldsFromRecord = async (req: Request, res: Response) => {
   }
 };
 
-export async function searchPropiedadesGrupokg(req: Request, res: Response): Promise<any> {
-  try {
-    // Solo permitir para grupokg
-    const c_name = 'grupokg';
-    const tableSlug = 'propiedades';
-    const conn = await getConnectionByCompanySlug(c_name);
-    const Record = getRecordModel(conn);
-
-    // Extraer todos los filtros posibles del query
-    const { 
-      zona, 
-      precioMin, 
-      precioMax, 
-      renta_venta_inversion, 
-      titulo,
-      colonia,
-      recamaras,
-      banos,
-      estacionamiento,
-      mts_de_terreno,
-      metros_de_construccion,
-      disponibilidad,
-      aceptan_creditos,
-      mascotas,
-      limit = 50
-    } = req.query;
-
-    // Construir filtro base
-    const filter: any = {
-      tableSlug,
-      c_name
-    };
-
-    // Búsqueda flexible: si solo hay un parámetro de búsqueda principal, busca en los tres campos
-    const searchTerm = colonia || zona || titulo;
-    const searchParams = [colonia, zona, titulo].filter(Boolean);
-    if (searchParams.length === 1 && searchTerm) {
-      filter.$or = [
-  { 'data.colonia': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } },
-  { 'data.zona': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } },
-  { 'data.titulo': { $regex: buildAccentInsensitivePattern(String(searchTerm)), $options: 'i' } }
-      ];
-    } else {
-      if (zona) {
-  filter['data.zona'] = { $regex: buildAccentInsensitivePattern(String(zona)), $options: 'i' };
-      }
-      if (titulo) {
-  filter['data.titulo'] = { $regex: buildAccentInsensitivePattern(String(titulo)), $options: 'i' };
-      }
-      if (colonia) {
-  filter['data.colonia'] = { $regex: buildAccentInsensitivePattern(String(colonia)), $options: 'i' };
-      }
-    }
-
-    if (precioMin) {
-      filter['data.precio'] = { 
-        $gte: Number(precioMin),
-        ...(filter['data.precio'] || {})
-      };
-    }
-    if (precioMax) {
-      filter['data.precio'] = { 
-        $lte: Number(precioMax),
-        ...(filter['data.precio'] || {})
-      };
-    }
-    if (renta_venta_inversion) {
-  filter['data.renta_venta_inversión '] = { $regex: buildAccentInsensitivePattern(String(renta_venta_inversion)), $options: 'i' };
-    }
-    if (recamaras) {
-      filter['data.recamaras'] = recamaras as string;
-    }
-    if (banos) {
-      filter['data.banos'] = Number(banos);
-    }
-    if (estacionamiento) {
-      filter['data.estacionamiento'] = estacionamiento as string;
-    }
-    if (mts_de_terreno) {
-      filter['data.mts_de_terreno'] = { $gte: Number(mts_de_terreno) };
-    }
-    if (metros_de_construccion) {
-      filter['data.metros_de_construccion '] = { $gte: Number(metros_de_construccion) };
-    }
-    if (disponibilidad) {
-  filter['data.disponibilidad'] = { $regex: buildAccentInsensitivePattern(String(disponibilidad)), $options: 'i' };
-    }
-    if (aceptan_creditos) {
-  filter['data.aceptan_creditos '] = { $regex: buildAccentInsensitivePattern(String(aceptan_creditos)), $options: 'i' };
-    }
-    if (mascotas) {
-  filter['data.mascotas'] = { $regex: buildAccentInsensitivePattern(String(mascotas)), $options: 'i' };
-    }
-
-    // Ejecutar búsqueda
-    const records = await Record.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .lean();
-
-    // Formato exacto como el JSON que enviaste
-    const response = {
-      records,
-      pagination: {
-        page: 1,
-        limit: records.length,
-        total: records.length,
-        pages: 1
-      }
-    };
-
-    console.log(`Búsqueda grupokg propiedades: ${records.length} resultados encontrados`);
-    return res.json(response);
-    
-  } catch (error) {
-    console.error('Error en searchPropiedadesGrupokg:', error);
-    return res.status(500).json({ 
-      error: 'Error interno en búsqueda de propiedades',
-      details: error instanceof Error ? error.message : 'Error desconocido'
-    });
-  }
-}
-
 export async function getRecordByPhone(req: Request, res: Response) {
   try {
     const { c_name } = req.params;
@@ -2485,5 +2362,72 @@ export async function getRecordByPhone(req: Request, res: Response) {
       message: "Error in ultra-fast aggregation",
       error: error instanceof Error ? error.message : 'Unknown error'
     });
+  }
+}
+
+export async function updateProspectsAI(req: Request, res: Response) {
+  const { c_name } = req.params;
+  const { user, tableSlug = 'prospectos', recordIds, AI } = req.body;
+
+  if (!user || !recordIds) {
+    res.status(400).json({ message: "user and recordIds are required" });
+    return;
+  }
+  
+  try {
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Record = getRecordModel(conn);
+    const Table = getTableModel(conn);
+    
+    const table = await Table.findOne({ slug: tableSlug, c_name });
+    if (!table) {
+      res.status(404).json({ message: "Table not found or inactive" });
+      return;
+    }
+
+    const auditContext = {
+      _updatedByUser: { id: user.id, name: user.name },
+      _updatedBy: user.id,
+      _auditSource: 'API',
+      _requestId: (req.headers['x-request-id'] as string) || undefined,
+      ip: (req as any).ip,
+      userAgent: req.headers['user-agent'],
+    };
+    
+    let updateResult;
+    if (recordIds === "all") {
+      updateResult = await Record.updateMany(
+        { tableSlug, c_name },
+        { 
+          $set: { 
+            'data.ia': AI,
+            updatedBy: user.id,
+            updatedAt: new Date()
+          } 
+        }
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
+    } else {
+      updateResult = await Record.updateMany(
+        { tableSlug, c_name, _id: { $in: recordIds } },
+        { 
+          $set: { 
+            'data.ia': AI,
+            updatedBy: user.id,
+            updatedAt: new Date()
+          } 
+        }
+      ).setOptions({ auditContext, $locals: { auditContext } } as any);
+    }
+    
+    res.status(200).json({ 
+      message: "Prospects updated successfully with AI data", 
+      updated: updateResult.modifiedCount,
+      matched: updateResult.matchedCount,
+      AI: AI
+    });
+    
+  } catch (error) {
+    console.error("Error updating prospects AI:", error);
+    res.status(500).json({ message: "Error updating prospects", error });
   }
 }

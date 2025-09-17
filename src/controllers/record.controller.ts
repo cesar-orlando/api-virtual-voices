@@ -217,7 +217,20 @@ const transformAndValidateData = (data: any, table: any): Record<string, any> =>
 
 // Crear un nuevo registro dinámico
 export const createDynamicRecord = async (req: Request, res: Response) => {
-  const { tableSlug, data, c_name, createdBy } = req.body;
+  let { tableSlug, data, c_name, createdBy } = req.body;
+
+  if (data.tableSlug) {
+    tableSlug = data.tableSlug;
+    delete data.tableSlug;
+  }
+  if (data.c_name) {
+    c_name = data.c_name;
+    delete data.c_name;
+  }
+  if (data.createdBy) {
+    createdBy = data.createdBy;
+    delete data.createdBy;
+  }
 
   if (!tableSlug || !data || !c_name || !createdBy) {
     res.status(400).json({ 
@@ -454,15 +467,14 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             orDateFilters.push({[fieldName]: parsedRange })
             orDateFilters.push({[`data.${fieldName}`]: parsedRange })
           } else if (fieldName === 'number' || fieldName === 'sessionId' || fieldName === 'tabla') {
-            // Filtro para valores mayormente inutiles :)
-            orTextFilters.push({
-              $expr: {
-                $regexMatch: {
-                  input: { $toString: { $ifNull: [ `$data.${fieldName}`, '' ] } },
-                  regex: `.*${escapeRegExp(String(value))}.*`,
-                  options: 'i'
-                }
-              }
+            // Add these fields as optional filters - won't affect query if no match
+            otherFilters.push({
+              $or: [
+                { [`data.${fieldName}`]: { $regex: `.*${escapeRegExp(String(value))}.*`, $options: 'i' } },
+                { [`data.${fieldName}`]: { $exists: false } }, // Optional: include records without this field
+                { [`data.${fieldName}`]: null }, // Optional: include records with null values
+                { [`data.${fieldName}`]: '' } // Optional: include records with empty strings
+              ]
             });
           } else {
             // Numeric range support: { fieldName: { $gte: N, $lte: M } }
@@ -2429,5 +2441,81 @@ export async function updateProspectsAI(req: Request, res: Response) {
   } catch (error) {
     console.error("Error updating prospects AI:", error);
     res.status(500).json({ message: "Error updating prospects", error });
+  }
+}
+
+export async function createPaymentRecord(req: Request, res: Response) {
+  const { c_name } = req.params;
+  const { data } = req.body;
+
+  if (!data.paymentData || !c_name) {
+    res.status(400).json({ message: "c_name and data are required" });
+    return;
+  }
+  
+  try {
+    const db_data: any = {};
+
+    // Process paymentData array and merge into db_data
+    if (Array.isArray(data.paymentData)) {
+      data.paymentData.forEach((campo: string) => {
+        const [key, value] = campo.split(':');
+        if (key && value !== undefined) {
+          db_data[key.trim()] = value.trim();
+        }
+      });
+    }
+
+    // Add additional fields if provided
+    if (data.number) db_data.numero_de_cliente = data.number;
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    const Record = getRecordModel(conn);
+    const Table = getTableModel(conn);
+    const tableSlug = 'pagos';
+
+    // Check if table exists, if not create it
+    let table = await Table.findOne({ slug: tableSlug, c_name });
+    if (!table) {
+      table = await Table.create({
+        name: "Pagos",
+        slug: tableSlug,
+        c_name,
+        isActive: true,
+        fields: [
+          { name: 'propietario', type: 'text', label: 'Propietario', required: false },
+          { name: 'tipo_de_inmueble', type: 'text', label: 'Tipo de Inmueble', required: false },
+          { name: 'domicilio', type: 'text', label: 'Domicilio', required: false },
+          { name: 'arrendatario', type: 'text', label: 'Arrendatario', required: false },
+          { name: 'precio_renta', type: 'currency', label: 'Precio Renta', required: false },
+          { name: 'pago_realizado', type: 'currency', label: 'Pago Realizado', required: false },
+          { name: 'numero_de_cliente', type: 'text', label: 'Número de Cliente', required: false },
+        ]
+      });
+    }
+
+    const newRecord = await Record.create({
+      tableSlug,
+      c_name,
+      data: db_data,
+      createdBy: data.createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    res.status(201).json({ 
+      message: "Payment record created successfully", 
+      record: newRecord,
+      table: {
+        name: table.name,
+        slug: table.slug
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error creating payment record:", error);
+    res.status(500).json({ 
+      message: "Error creating payment record", 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    });
   }
 }

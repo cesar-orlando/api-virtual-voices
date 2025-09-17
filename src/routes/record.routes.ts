@@ -17,8 +17,8 @@ import {
   addNewFieldToAllRecords,
   deleteFieldsFromAllRecords,
   deleteFieldsFromRecord,
-  searchPropiedadesGrupokg,
   getRecordByPhone,
+  updateProspectsAI
 } from "../controllers/record.controller";
 
 const router = Router();
@@ -31,10 +31,10 @@ router.post("/:c_name/:tableSlug/bulk", bulkUpdateRecords);
 router.delete("/:c_name/:tableSlug/bulk", bulkDeleteRecords);
 router.post("/:c_name/:tableSlug/import", importRecords);
 router.get("/:c_name/:tableSlug/export", exportRecords);
+router.put("/:c_name/ai/bulk", updateProspectsAI);
 
 // Búsqueda
 router.post("/:c_name/:tableSlug/search", searchRecords);
-router.get('/search/grupokg/propiedades', searchPropiedadesGrupokg);
 router.get('/records-with-chats/:c_name', getRecordByPhone);
 
 // Campos

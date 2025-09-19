@@ -5,6 +5,7 @@ import dynamicRecordRoutes from "./routes/record.routes";
 import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
+import chatInternalRoutes from "./routes/chatInternal.routes";
 import toolRoutes from "./routes/tool.routes";
 import uploadRoutes from "./routes/upload.routes";
 import googleRoutes from "./routes/google.routes";
@@ -149,6 +150,10 @@ app.use("/api/companies", companyRoutes);
 
 // Rutas para configuraciones de IA
 app.use("/api/ia-configs", iaConfigRoutes);
+
+// Rutas para chat interno con memoria, RAG y generador de prompts
+app.use("/api/chat-internal", chatInternalRoutes);
+
 
 // Rutas para herramientas dinámicas
 app.use("/api/tools", toolRoutes);

@@ -1,4 +1,4 @@
-import { getDbConnection } from "../../config/connectionManager";
+import { getConnectionByCompanySlug } from "../../config/connectionManager";
 import getToolModel, { getToolExecutionModel } from "../../models/tool.model";
 import { IToolDocument } from "../../models/tool.model";
 import { ToolExecutionRequest } from "../../types/tool.types";
@@ -30,7 +30,7 @@ export class ToolExecutor {
     const { toolName, parameters, c_name, executedBy } = request;
     
     try {
-      const conn = await getDbConnection(c_name);
+      const conn = await getConnectionByCompanySlug(c_name);
       const Tool = getToolModel(conn);
       const ToolExecution = getToolExecutionModel(conn);
 
@@ -181,6 +181,9 @@ export class ToolExecutor {
     const startTime = Date.now();
 
     try {
+      // Las herramientas internas se manejan directamente desde la base de datos
+      // No hay lógica hardcodeada aquí
+
       // Construir URL
       let url = config.endpoint;
       if (config.method === 'GET' && Object.keys(parameters).length > 0) {
@@ -402,6 +405,9 @@ export class ToolExecutor {
       default: return 60 * 60 * 1000; // default: 1 hora
     }
   }
+
+  // Todas las herramientas se manejan dinámicamente desde la base de datos
+  // No hay lógica hardcodeada aquí
 
   // Limpiar cache de rate limiting (llamar periódicamente)
   static cleanupRateLimit(): void {

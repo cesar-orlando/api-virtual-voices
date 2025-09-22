@@ -421,7 +421,7 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
 
           if (fieldName === 'textQuery') {
             const textFields = table.fields
-              .filter(field => ['text', 'email', 'number', 'currency'].includes(field.type))
+              .filter(field => ['text', 'email', 'number', 'currency','select'].includes(field.type))
               .map(field => field.name);
             
             // Add phone fields for QuickLearning

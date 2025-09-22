@@ -46,6 +46,12 @@ export interface IQuickLearningChat extends Document {
     interests?: string[];
     stage?: "prospecto" | "interesado" | "inscrito" | "no_prospecto";
   };
+  
+  // Métodos del esquema
+  addMessage(messageData: Partial<IMessage>): Promise<IQuickLearningChat>;
+  updateCustomerInfo(info: Partial<IQuickLearningChat['customerInfo']>): Promise<IQuickLearningChat>;
+  assignAdvisor(advisorId: string, advisorName: string): Promise<IQuickLearningChat>;
+  enableAI(): Promise<IQuickLearningChat>;
 }
 
 // Definimos el esquema de Mongoose

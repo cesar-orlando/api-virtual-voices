@@ -3,6 +3,7 @@ import getCompanyModel from "../models/company.model";
 import getBranchModel from "../models/branch.model";
 import { getConnectionByCompanySlug, getDbConnection } from "../config/connectionManager";
 import { createIAConfig } from "./iaConfig.controller";
+import { CompanySummaryService } from '../services/internal/companySummaryService';
 import getIaConfigModel from "../models/iaConfig.model";
 import getUserModel from "../core/users/user.model";
 import mongoose from "mongoose";
@@ -508,5 +509,70 @@ export const getFirstAdmin = async (req: Request, res: Response): Promise<void> 
   } catch (err: any) {
     res.status(500).json({ message: "Error getting first admin", error: err.message });
     return;
+  }
+};
+
+/**
+ * Force update company summary
+ */
+export const updateCompanySummary = async (req: Request, res: Response) => {
+  try {
+    const { companyName } = req.params;
+    
+    if (!companyName) {
+      res.status(400).json({
+        success: false,
+        message: 'Company name is required'
+      });
+      return;
+    }
+
+    const success = await CompanySummaryService.forceUpdate(companyName);
+    
+    if (success) {
+      res.json({
+        success: true,
+        message: `Company summary updated successfully for ${companyName}`
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: `Failed to update company summary for ${companyName}`
+      });
+    }
+  } catch (error) {
+    console.error('Error updating company summary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Update all company summaries
+ */
+export const updateAllCompanySummaries = async (req: Request, res: Response) => {
+  try {
+    const results = await CompanySummaryService.updateAllCompanySummaries();
+    
+    res.json({
+      success: true,
+      message: 'Batch company summary update completed',
+      data: {
+        successful: results.success,
+        failed: results.failed,
+        successCount: results.success.length,
+        failedCount: results.failed.length
+      }
+    });
+  } catch (error) {
+    console.error('Error updating all company summaries:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };

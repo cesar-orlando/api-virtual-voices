@@ -74,7 +74,7 @@ export class GeneralAgent extends BaseAgent {
         console.log(`⚠️ No custom prompt found for ${this.company}, using fallback`);
         this.customPrompt = null;
         this.agentContext.timezone = 'America/Mexico_City';
-        this.agentContext.type = config.type;
+        this.agentContext.type = null;
       }
     } catch (error) {
       console.error(`❌ Error loading custom prompt for ${this.company}:`, error);
@@ -107,6 +107,12 @@ export class GeneralAgent extends BaseAgent {
 
   private buildDynamicTools(): any[] {
     const dynamicTools = [];
+    
+    // Add scheduling tools if scheduler service is available
+    if (this.schedulerService) {
+      dynamicTools.push(this.createScheduleFollowUpTool());
+      dynamicTools.push(this.createCancelFollowUpTool());
+    }
     
     // Agregar las tools cargadas desde la base de datos
     for (const companyTool of this.companyTools) {
@@ -558,17 +564,172 @@ export class GeneralAgent extends BaseAgent {
     return dynamicTools;
   }
 
+  /**
+   * Create the follow-up scheduling tool
+   */
+  private createScheduleFollowUpTool() {
+    return tool({
+      name: 'schedule_follow_up',
+      description: 'Schedule a follow-up message to be sent automatically after a specified delay. Use this when you want to continue the conversation later, remind about something, or nurture the relationship.',
+      parameters: z.object({
+        delayHours: z.number().min(1).max(72).nullable().describe('Hours to wait before sending the follow-up (use for same-day follow-ups)'),
+        delayDays: z.number().min(1).max(30).nullable().describe('Days to wait before sending the follow-up (use for longer-term nurturing)'),
+        messageType: z.enum(['follow_up', 'reminder', 'nurture', 'appointment', 'motivation', 'offer']).describe('Type of follow-up message to schedule'),
+        reason: z.string().describe('Brief explanation of why this follow-up is being scheduled (for context)'),
+        messageContent: z.string().max(300).describe('Message content to include in the follow-up (keep it concise)'),
+        priority: z.enum(['low', 'medium', 'high']).default('medium').describe('Priority level of this follow-up')
+      }) as any,
+      execute: async ({ delayHours, delayDays, messageType, reason, messageContent, priority = 'medium' }) => {
+        try {
+          if (!this.schedulerService) {
+            return 'Scheduler service not available. Follow-up not scheduled.';
+          }
+
+          if (!this.agentContext.chatHistory) {
+            return 'Chat context not available. Follow-up not scheduled.';
+          }
+
+          const chat = this.agentContext.chatHistory;
+          
+          // Create trigger event from reason
+          const triggerEvent = `ai_scheduled_${messageType}_${reason.toLowerCase().replace(/\s+/g, '_')}`;
+
+          const scheduledMessage = await this.schedulerService.scheduleFollowUp({
+            chatId: chat._id.toString(),
+            phone: chat.phone,
+            company: this.company,
+            messageType,
+            delayHours,
+            delayDays,
+            triggerEvent,
+            messageContent,
+            customData: {
+              scheduledByAI: true,
+              reason,
+              priority,
+              conversationStage: chat.conversationSummary?.conversationStage,
+              scheduledAt: new Date().toISOString()
+            }
+          });
+
+          const timeUnit = delayHours ? `${delayHours} horas` : `${delayDays} días`;
+          const scheduledTime = new Date(scheduledMessage.scheduledFor).toLocaleString('es-MX');
+
+          console.log(`🤖 AI scheduled ${messageType} follow-up for ${chat.phone} in ${timeUnit} (${scheduledTime}) with reason: ${reason}`);
+          
+          return `✅ Follow-up programado exitosamente para ${timeUnit} (${scheduledTime}). Tipo: ${messageType}. Motivo: ${reason}`;
+          
+        } catch (error) {
+          console.error('❌ Error scheduling follow-up via AI tool:', error);
+          return `❌ Error al programar seguimiento: ${(error as Error).message}`;
+        }
+      }
+    });
+  }
+
+  /**
+   * Create the cancel follow-up tool
+   */
+  private createCancelFollowUpTool() {
+    return tool({
+      name: 'cancel_follow_ups',
+      description: 'Cancel pending follow-up messages for this conversation. Use when the conversation is resolved, the customer is no longer interested, or when follow-ups are no longer needed.',
+      parameters: z.object({
+        messageType: z.enum(['follow_up', 'reminder', 'nurture', 'appointment', 'motivation', 'offer']).nullable().describe('Specific type of follow-up to cancel (optional - if not provided, cancels all pending follow-ups)'),
+        reason: z.string().describe('Brief explanation of why follow-ups are being cancelled')
+      }) as any,
+      execute: async ({ messageType, reason }) => {
+        try {
+          if (!this.schedulerService) {
+            return 'Scheduler service not available.';
+          }
+
+          if (!this.agentContext.chatHistory) {
+            return 'Chat context not available.';
+          }
+
+          const chat = this.agentContext.chatHistory;
+          
+          const cancelledCount = await this.schedulerService.cancelScheduledMessages(
+            chat._id.toString(),
+            messageType
+          );
+
+          console.log(`🤖 AI cancelled ${cancelledCount} follow-ups for ${chat.phone}`);
+          console.log(`📝 Reason: ${reason}`);
+          
+          const typeText = messageType ? ` de tipo ${messageType}` : '';
+          return `✅ Se cancelaron ${cancelledCount} seguimientos${typeText} pendientes. Motivo: ${reason}`;
+          
+        } catch (error) {
+          console.error('❌ Error cancelling follow-ups via AI tool:', error);
+          return `❌ Error al cancelar seguimientos: ${(error as Error).message}`;
+        }
+      }
+    });
+  }
+
+  /**
+   * Get scheduling instructions to append to system prompts
+   */
+  private getSchedulingInstructions(): string {
+    if (!this.schedulerService) {
+      return '';
+    }
+
+    return `
+
+## SEGUIMIENTO INTELIGENTE DE CONVERSACIONES
+
+Tienes acceso a herramientas para programar seguimientos automáticos:
+
+### ⏰ Cuándo usar schedule_follow_up:
+- **Nutrición de leads**: Cuando el usuario muestra interés pero no está listo para comprar
+- **Recordatorios**: Para citas, eventos o información prometida  
+- **Re-engagement**: Cuando la conversación se enfría o el usuario no responde
+- **Follow-up de ventas**: Después de enviar propuestas o cotizaciones
+- **Motivación**: Para mantener el interés en procesos largos
+
+### 📝 Tipos de seguimiento disponibles:
+- \`follow_up\`: Seguimiento general para continuar conversación
+- \`reminder\`: Recordatorio específico (citas, deadlines, etc.)
+- \`nurture\`: Nutrir relación con contenido de valor
+- \`appointment\`: Confirmar o recordar citas programadas
+- \`motivation\`: Motivar en procesos de decisión largos
+- \`offer\`: Seguimiento de ofertas o promociones
+
+### ⏱️ Programación inteligente:
+- **Mismo día (1-24 horas)**: Para respuestas rápidas o confirmaciones urgentes
+- **Corto plazo (1-3 días)**: Para seguimiento de interés o propuestas
+- **Mediano plazo (4-7 días)**: Para nutrir leads o recordatorios importantes  
+- **Largo plazo (1-4 semanas)**: Para mantenimiento de relaciones
+
+### 🎯 Usa tu criterio para:
+- **Evaluar el contexto** de la conversación y nivel de interés
+- **Determinar el momento óptimo** para el seguimiento
+- **Elegir el tipo de mensaje** más apropiado
+- **Decidir la prioridad** basada en la oportunidad de negocio
+
+### ❌ Cancela seguimientos cuando:
+- El usuario compra o se convierte
+- Solicita explícitamente no ser contactado
+- La conversación se resuelve completamente
+- El usuario pierde interés definitivamente
+
+**Importante**: Úsa estas herramientas de forma natural e inteligente, como lo haría un vendedor experto que sabe cuándo dar seguimiento para maximizar oportunidades sin ser invasivo.`;
+  }
+
   private getSystemInstructions(): string {
     // Si hay un prompt personalizado, usarlo; si no, usar el fallback
     if (this.customPrompt) {
       console.log(`🔧 Using custom prompt for ${this.company}`);
       
-      return this.customPrompt;
+      return this.customPrompt + this.getSchedulingInstructions();
     }
     
     console.log(`🔧 Using fallback prompt for ${this.company}`);
     
     // Prompt genérico para otras empresas
-    return `Eres un asistente virtual que ayuda a los clientes con sus consultas. Proporciona respuestas claras y útiles. Si no sabes la respuesta, di que no lo sabes y que lo vas a redirigir a un asesor. Usa las herramientas disponibles para obtener información adicional si es necesario.`;
+    return `Eres un asistente virtual que ayuda a los clientes con sus consultas. Proporciona respuestas claras y útiles. Si no sabes la respuesta, di que no lo sabes y que lo vas a redirigir a un asesor. Usa las herramientas disponibles para obtener información adicional si es necesario.` + this.getSchedulingInstructions();
   }
 }

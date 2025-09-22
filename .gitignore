@@ -139,3 +139,25 @@ package-lock.json
 
 #commit guide
 COMMIT_GUIDE.md
+
+# Chat Internal - Archivos de documentación y guías
+FRONTEND_CHAT_INTERNO_GUIA.md
+FRONTEND_INTEGRATION_GUIDE.md
+HISTORIAL_CONVERSACIONES_GUIDE.md
+CHAT_INTERNO_COMPLETO.md
+
+# Archivos de configuración específicos del chat interno
+chat-internal.env.example
+
+# Archivos de prueba y testing
+test-*.sh
+test-*.js
+test-*.json
+
+# Archivos de logs específicos
+*.log
+qa.log
+server.log
+
+# Archivos temporales
+temp_attachments/

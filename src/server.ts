@@ -2,11 +2,13 @@ import dotenv from "dotenv";
 import app from "./app";
 import http from 'http';
 import { Server } from 'socket.io';
-import { connectDB, getAllFacebookConfigsFromAllDatabases, getAllSessionsFromAllDatabases } from "./config/database";
+import { connectDB, getAllFacebookConfigsFromAllDatabases, getAllSessionsFromAllDatabases, getAllDbNames } from "./config/database";
 import { startWhatsappBot } from "./services/whatsapp";
 import { getEnvironmentConfig } from "./config/environments";
-import { cleanupInactiveConnections } from "./config/connectionManager";
+import { cleanupInactiveConnections, getConnectionByCompanySlug } from "./config/connectionManager";
 import { startAttachmentCleanupScheduler } from "./controllers/email.controller";
+import { CompanySummaryService } from "./services/internal/companySummaryService";
+import { MessageSchedulerService } from "./services/internal/messageSchedulerService";
 import fs from 'fs';
 import path from 'path';
 import { loadRecentFacebookMessages } from './services/meta/messenger';
@@ -76,6 +78,30 @@ if (!fs.existsSync(authDir)) {
 
 console.log('MONGO_URI_QUICKLEARNING:', process.env.MONGO_URI_QUICKLEARNING);
 
+/**
+ * Initialize message schedulers for all companies
+ */
+async function initializeMessageSchedulers(): Promise<void> {
+  try {
+    const companies = await getAllDbNames();
+    console.log(`📅 Starting message schedulers for ${companies.length} companies...`);
+    
+    for (const companyName of companies) {
+      try {
+        const connection = await getConnectionByCompanySlug(companyName);
+        const scheduler = new MessageSchedulerService(connection);
+        scheduler.start();
+      } catch (error) {
+        console.error(`❌ Error starting message scheduler for ${companyName}:`, error);
+      }
+    }
+    
+    console.log(`✅ Message schedulers initialization completed`);
+  } catch (error) {
+    console.error('❌ Error initializing message schedulers:', error);
+  }
+}
+
 async function main() {
   try {
     // Conectar a la base de datos usando la configuración del entorno
@@ -84,32 +110,46 @@ async function main() {
     // Iniciar scheduler de limpieza de attachments
     startAttachmentCleanupScheduler();
     
+    // 🏢 Iniciar actualizaciones automáticas de resúmenes empresariales cada 6 horas
+    CompanySummaryService.scheduleAutomaticUpdates();
+    console.log('📊 Company summary automatic updates enabled (every 6 hours)');
+    
     // Iniciar servidor
     server.listen(config.port, () => {
       console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
       console.log(`🌍 Entorno: ${config.name.toUpperCase()}`);
     });
-    
-    // Iniciar sesiones de WhatsApp
-    const sessions = await getAllSessionsFromAllDatabases();
-    console.log(`📱 Iniciando ${sessions.length} sesiones de WhatsApp...`);
-    
-    for (const session of sessions) {
-      Promise.resolve(startWhatsappBot(session.name, session.company, session.user_id))
-        .catch(err => {
-          console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`, err);
-        });
-    }
-    // Monitoreo periódico de conexiones (cada 5 minutos)
-    setInterval(() => {
-      cleanupInactiveConnections();
-    }, 5 * 60 * 1000);
 
     const fbConfigs = await getAllFacebookConfigsFromAllDatabases();
 
     for (const config of fbConfigs) {
       loadRecentFacebookMessages(config, 10);
     }
+    
+    // Iniciar sesiones de WhatsApp
+    const sessions = await getAllSessionsFromAllDatabases();
+    console.log(`📱 Iniciando ${sessions.length} sesiones de WhatsApp...`);
+    
+    const whatsappPromises = [];
+    for (const session of sessions) {
+      const promise = startWhatsappBot(session.name, session.company, session.user_id)
+        .catch(err => {
+          console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`, err);
+          return { success: false, company: session.company, session: session.name };
+        });
+      whatsappPromises.push(promise);
+    }
+    
+    // Wait for all WhatsApp sessions to finish initialization (success or failure)
+    await Promise.allSettled(whatsappPromises);
+    
+    // 📅 Now initialize message schedulers after WhatsApp clients are ready
+    await initializeMessageSchedulers();
+    
+    // Monitoreo periódico de conexiones (cada 5 minutos)
+    setInterval(() => {
+      cleanupInactiveConnections();
+    }, 5 * 60 * 1000);
     
   } catch (error) {
     console.error('❌ Error starting server:', error);

@@ -1,7 +1,7 @@
 import { AgentManager } from './AgentManager';
-import { getWhatsappChatModel } from '../../models/whatsappChat.model';
+import { getWhatsappChatModel, IWhatsappChat } from '../../models/whatsappChat.model';
 import { Connection, isValidObjectId } from 'mongoose';
-import { getFacebookChatModel } from '../../models/facebookChat.model';
+import { getFacebookChatModel, IFacebookChat } from '../../models/facebookChat.model';
 
 export class MessagingAgentService {
   private agentManager: AgentManager;
@@ -25,7 +25,7 @@ export class MessagingAgentService {
     try {
       
       // Use provided chat history or get from database
-      let chatHistory: any[];
+      let chatHistory: IWhatsappChat | null | any[];
       if (providedChatHistory && providedChatHistory.length > 0) {
         // console.log(`📚 Using provided chat history: ${providedChatHistory.length} messages`);
         chatHistory = providedChatHistory;
@@ -102,7 +102,7 @@ export class MessagingAgentService {
     try {
       
       // Use provided chat history or get from database
-      let chatHistory: any[];
+      let chatHistory: IFacebookChat | null | any[];
       if (providedChatHistory && providedChatHistory.length > 0) {
         // console.log(`📚 Using provided chat history: ${providedChatHistory.length} messages`);
         chatHistory = providedChatHistory;
@@ -230,11 +230,11 @@ export class MessagingAgentService {
   /**
    * Get chat history for context
    */
-  private async getChatHistory(phoneUser: string, conn: Connection, sessionId?: string): Promise<any[]> {
+  private async getChatHistory(phoneUser: string, conn: Connection, sessionId?: string): Promise<IWhatsappChat | null | any[]> {
     try {
       const WhatsappChat = getWhatsappChatModel(conn);
       // Try session-scoped history when sessionId provided and valid
-      let chatHistory = null as any;
+      let chatHistory = null as IWhatsappChat | null;
       if (typeof sessionId === 'string' && isValidObjectId(sessionId)) {
         chatHistory = await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId });
       } else if (sessionId) {
@@ -246,24 +246,18 @@ export class MessagingAgentService {
         return [];
       }
 
-      // Limit to most recent messages to avoid large payloads
-      const recent = chatHistory.messages.slice(-50);
-
-      return recent.map((message: any) => ({
-        role: message.direction === "inbound" ? "user" : "assistant",
-        content: this.cleanMessageContent(message.body || '')
-      }));
+      return chatHistory
     } catch (error) {
       console.error('❌ Error getting chat history:', error);
       return [];
     }
   }
 
-  private async getFacebookChatHistory(userId: string, conn: Connection, sessionId?: string): Promise<any[]> {
+  private async getFacebookChatHistory(userId: string, conn: Connection, sessionId?: string): Promise<IFacebookChat | null | any[]> {
     try {
       const FacebookChat = getFacebookChatModel(conn);
       // Try session-scoped history when sessionId provided and valid
-      let chatHistory = null as any;
+      let chatHistory = null as IFacebookChat | null;
       if (typeof sessionId === 'string' && isValidObjectId(sessionId)) {
         chatHistory = await FacebookChat.findOne({ userId, 'session.id': sessionId });
       } else if (sessionId) {
@@ -278,11 +272,7 @@ export class MessagingAgentService {
       // Limit to most recent messages to avoid large payloads
       const recent = chatHistory.messages.slice(-50);
 
-      return recent.map((message: any) => ({
-        role: message.direction === "inbound" ? "user" : "assistant",
-        content: this.cleanMessageContent(message.body || ''),
-        timestamp: message.createdAt
-      }));
+      return chatHistory;
     } catch (error) {
       console.error('❌ Error getting Facebook chat history:', error);
       return [];

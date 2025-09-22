@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
-import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
+// Servicio OpenAI eliminado - ahora usa sistema dinámico
 import { MessagingAgentService } from "../../services/agents/MessagingAgentService";
 import { getConnectionByCompanySlug, executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
@@ -78,6 +78,7 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
     console.error("❌ Error emitiendo notificación por socket:", error);
   }
 }
+
 
 /**
  * Emitir evento de "escribiendo" para indicar que alguien está escribiendo
@@ -301,9 +302,9 @@ async function analyzeImageFromTwilio(
 /**
  * Webhook de Twilio para recibir mensajes
  */
+
 export const twilioWebhook = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log("📥 [TwilioWebhook] Incoming payload keys:", Object.keys(req.body || {}));
     const {
       From,
       To,
@@ -321,13 +322,11 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       MessageType,
     } = req.body;
 
-    console.log("📥 [TwilioWebhook] From:", From, "To:", To, "BodyLen:", (Body || '').length, "MessageSid:", MessageSid);
 
-    // Validar que es para Quick Learning (verificar número de teléfono)
+    // Validar que es para la empresa correcta (verificar número de teléfono)
     const configuredPhone = envConfig.twilio.phoneNumber;
-    console.log("☎️ [TwilioWebhook] Configured Twilio phone:", configuredPhone);
     if (!To.includes(configuredPhone.replace('+', ''))) {
-      console.warn("⚠️ [TwilioWebhook] Mensaje no dirigido al número de Quick Learning");
+      console.warn("⚠️ Mensaje no dirigido al número configurado");
       res.status(200).send("OK");
       return;
     }
@@ -349,7 +348,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
     const customer = await executeQuickLearningWithReconnection(async (conn) => {
       return await findOrCreateCustomer(phoneUser, ProfileName || "Usuario", Body, conn);
     });
-    console.log("👤 [TwilioWebhook] Customer found/created:", customer?._id?.toString(), "table:", customer?.tableSlug);
 
     // Verificar si tiene AI activada
     const aiEnabled = customer.data.aiEnabled !== false;
@@ -376,7 +374,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         
         // Si es un chat nuevo Y la IA está activada, enviar mensaje de bienvenida
         if (aiEnabled) {
-          const welcomeMessage = "Inglés en Quick Learning, ¡Hablas o Hablas! Soy NatalIA, ¿Cómo te puedo ayudar hoy?";
+          const welcomeMessage = "¡Hola! Gracias por contactarnos. ¿En qué puedo ayudarte hoy?";
           
           // Enviar mensaje de bienvenida
           const welcomeResult = await twilioService.sendMessage({
@@ -402,7 +400,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             };
             
             await chat.save();
-            console.log(`✅ Mensaje de bienvenida enviado a ${phoneUser}`);
             
             // IMPORTANTE: No procesar el mensaje del usuario con IA en el primer mensaje
             // Solo enviar el mensaje de bienvenida y terminar
@@ -488,7 +485,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       };
 
       chat.messages.push(newMessage);
-      console.log("💾 [TwilioWebhook] Pushing inbound message. Total messages before save:", (chat.messages || []).length);
       // Actualizar último mensaje
       const currentDate = new Date();
       chat.lastMessage = {
@@ -496,9 +492,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         date: currentDate,
         respondedBy: "human",
       };
-      console.log("📝 [TwilioWebhook] lastMessage set. Saving chat...");
       await chat.save();
-      console.log("✅ [TwilioWebhook] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje nuevo
       emitNewMessageNotification(phoneUser, newMessage, chat);
@@ -511,23 +505,19 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             // Verificar si es un ObjectId válido (24 caracteres hex)
             if (/^[0-9a-fA-F]{24}$/.test(customer.data.asesor)) {
               advisorId = customer.data.asesor;
-              console.log("🔍 [TwilioWebhook] Advisor is ObjectId string:", advisorId);
             } else {
               // Intentar parsear como JSON
               try {
                 const advisorData = JSON.parse(customer.data.asesor);
                 advisorId = advisorData._id || advisorData.id;
-                console.log("🔍 [TwilioWebhook] Advisor parsed from JSON:", advisorId);
               } catch (jsonError) {
                 console.error("❌ [TwilioWebhook] Error parsing advisor JSON:", jsonError);
                 // Si no es JSON válido, usar el string directamente
                 advisorId = customer.data.asesor;
-                console.log("🔍 [TwilioWebhook] Using advisor as direct string:", advisorId);
               }
             }
           } else if (customer.data.asesor._id || customer.data.asesor.id) {
             advisorId = customer.data.asesor._id || customer.data.asesor.id;
-            console.log("🔍 [TwilioWebhook] Advisor from object:", advisorId);
           }
         }
       } catch (parseError) {
@@ -536,15 +526,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
 
       if (advisorId) {
         try {
-          console.log("🔔 [TwilioWebhook] Creating chat notification for advisor:", advisorId);
-          console.log("🔔 [TwilioWebhook] Notification params:", {
-            company: "quicklearning",
-            userId: advisorId,
-            phoneNumber: phoneUser,
-            senderName: customer.data.nombre || ProfileName || "Usuario",
-            messagePreview: newMessage.body,
-            chatId: chat._id.toString()
-          });
           
           const notification = await NotificationService.createChatNotification({
             company: "quicklearning",
@@ -555,7 +536,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             chatId: chat._id.toString()
           });
           
-          console.log("✅ [TwilioWebhook] Chat notification created successfully:", notification?._id?.toString());
         } catch (notificationError) {
           console.error("❌ [TwilioWebhook] Error creating chat notification:", notificationError);
           console.error("❌ [TwilioWebhook] Error details:", {
@@ -565,13 +545,10 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         }
       } else {
         console.warn("⚠️ [TwilioWebhook] No advisor ID found in customer data, skipping notification");
-        console.log("🔍 [TwilioWebhook] Customer asesor data:", customer?.data?.asesor);
-        console.log("🔍 [TwilioWebhook] Customer data keys:", Object.keys(customer?.data || {}));
       }
       
       // Emitir evento genérico de actualización de chat (compatibilidad con listeners existentes)
       try {
-        console.log("📣 [TwilioWebhook] Emitting socket event:", `whatsapp-message-quicklearning`);
         io.emit(`whatsapp-message-quicklearning`, chat);
       } catch (e) {
         console.error("❌ [TwilioWebhook] Error emitting socket event:", e);
@@ -596,7 +573,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
 
       // Si la AI está desactivada, no procesar con IA
       if (!aiEnabled) {
-        console.log("🤖 AI desactivada para este usuario.");
         return;
       }
 
@@ -638,7 +614,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       
       // Generar respuesta usando el NUEVO sistema de agentes
       const aiResponse = await messagingAgentService.processWhatsAppMessage(
-        'quicklearning',
+        'quicklearning', // Esta empresa específica está bien aquí
         combinedMessage,
         phoneUser,
         conn,
@@ -678,15 +654,12 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             respondedBy: "bot",
           };
 
-          console.log("📝 [BotReply] Saving chat with bot response...");
           await chat.save();
-          console.log("✅ [BotReply] Chat saved:", chat._id?.toString());
 
           // Emitir notificación por socket para respuesta del bot
           emitNewMessageNotification(phoneUser, botMessage, chat);
           // Emitir evento genérico de actualización de chat
           try {
-            console.log("📣 [BotReply] Emitting socket event:", `whatsapp-message-quicklearning`);
             io.emit(`whatsapp-message-quicklearning`, chat);
           } catch (e) {
             console.error("❌ [BotReply] Error emitting socket event:", e);
@@ -700,6 +673,18 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             // Desactivar IA en el chat
             chat.aiEnabled = false;
             await chat.save();
+
+            // Emitir notificación de que la IA se desactivó a sí misma
+            const io = (global as any).io as SocketIOServer;
+            if (io) {
+              io.emit("chat_updated", {
+                phone: phoneUser,
+                aiEnabled: false,
+                reason: "IA desactivada por IA",
+                timestamp: new Date().toISOString()
+              });
+              console.log(`🔔 IA se desactivó a sí misma para ${phoneUser}`);
+            }
 
             // Asignar asesor disponible y enviar mensaje de seguimiento
             try {
@@ -1002,18 +987,15 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         date: currentDate,
         respondedBy: "asesor",
       };
-      console.log("📝 [Send] Saving chat with advisor message...");
       await chat.save();
-      console.log("✅ [Send] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje del asesor
       emitNewMessageNotification(phone, asesorMessage);
       // Emitir evento genérico de actualización de chat
       try {
-        console.log("📣 [Send] Emitting socket event:", `whatsapp-message-quicklearning`);
         io.emit(`whatsapp-message-quicklearning`, chat);
       } catch (e) {
-        console.error("❌ [Send] Error emitting socket event:", e);
+        console.error("❌ Error emitting socket event:", e);
       }
 
       res.status(200).json({
@@ -1095,18 +1077,15 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         date: currentDate,
         respondedBy: "asesor",
       };
-      console.log("📝 [SendTemplate] Saving chat with template message...");
       await chat.save();
-      console.log("✅ [SendTemplate] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje de template del asesor
       emitNewMessageNotification(phone, templateAsesorMessage);
       // Emitir evento genérico de actualización de chat
       try {
-        console.log("📣 [SendTemplate] Emitting socket event:", `whatsapp-message-quicklearning`);
         io.emit(`whatsapp-message-quicklearning`, chat);
       } catch (e) {
-        console.error("❌ [SendTemplate] Error emitting socket event:", e);
+        console.error("❌ Error emitting socket event:", e);
       }
 
       res.status(200).json({

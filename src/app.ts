@@ -180,13 +180,13 @@ app.use("/api/notifications", notificationRoutes);
 // Scheduler routes
 //app.use("/api/scheduler", schedulerRoutes);
 
-// Rutas específicas de Quick Learning
+// Rutas específicas de Quick Learning (mantener para compatibilidad)
 app.use('/api/projects/quicklearning', quickLearningRoutes);
 
-// Rutas de Twilio para Quick Learning
+// Rutas de Twilio para Quick Learning (mantener para compatibilidad)
 app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
 
-// Rutas de métricas para Quick Learning
+// Rutas de métricas para Quick Learning (mantener para compatibilidad)
 app.use('/api/quicklearning', quickLearningMetricsRoutes);
 
 // Rutas de prueba para el nuevo sistema de agentes

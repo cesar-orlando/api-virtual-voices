@@ -50,23 +50,8 @@ export class MessagingAgentService {
           });
           console.log(`🤖 Agent response received: ${response.substring(0, 50)}...`);
           
-          // Check for transfer signals and disable AI if needed (skip for calendar fallback)
-          if ((response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:') ||
-              (response.includes('transferencia bancaria') && response.includes('pagoscinf@quicklearning.com')))) {
-            console.log(`🔄 Señal de transferencia detectada, desactivando IA para ${phoneUser}`);
-            try {
-              await this.disableAIForUser(phoneUser, conn, company);
-              console.log(`🔴 IA desactivada automáticamente para ${phoneUser} después de transferencia`);
-            } catch (disableError) {
-              console.error(`❌ Error desactivando IA para ${phoneUser}:`, disableError);
-            }
-            // Clean the response from transfer signals
-            return response.replace('TRANSFER_PAYMENT_INFO:', '').replace('TRANSFER_TO_ADVISOR:', '').trim();
-          } else if (response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:')) {
-            console.log(`📅 Calendar fallback received transfer signal - cleaning but NOT disabling AI`);
-            // Clean the response from transfer signals but don't disable AI
-            return response.replace('TRANSFER_PAYMENT_INFO:', '').replace('TRANSFER_TO_ADVISOR:', '').trim();
-          }
+          // El sistema dinámico maneja las transferencias a través de herramientas
+          // No hay señales hardcodeadas que procesar
           
           return response;
         } catch (error) {
@@ -142,19 +127,8 @@ export class MessagingAgentService {
           });
           console.log(`🤖 Agent response received: ${response.substring(0, 50)}...`);
           
-          // Check for transfer signals and disable AI if needed
-          if (response.includes('TRANSFER_PAYMENT_INFO:') || response.includes('TRANSFER_TO_ADVISOR:') ||
-              (response.includes('transferencia bancaria') && response.includes('pagoscinf@quicklearning.com'))) {
-            console.log(`🔄 Señal de transferencia detectada, desactivando IA para ${userId}`);
-            try {
-              await this.disableAIForUser(userId, conn, company);
-              console.log(`🔴 IA desactivada automáticamente para ${userId} después de transferencia`);
-            } catch (disableError) {
-              console.error(`❌ Error desactivando IA para ${userId}:`, disableError);
-            }
-            // Clean the response from transfer signals
-            return response.replace('TRANSFER_PAYMENT_INFO:', '').replace('TRANSFER_TO_ADVISOR:', '').trim();
-          }
+          // El sistema dinámico maneja las transferencias a través de herramientas
+          // No hay señales hardcodeadas que procesar
           
           return response;
         } catch (error) {
@@ -201,7 +175,8 @@ export class MessagingAgentService {
    */
   private async disableAIForUser(phoneUser: string, conn: Connection, company: string): Promise<void> {
     try {
-      if (company === 'quicklearning') {
+      // Intentar con el modelo de chat específico de la empresa primero
+      try {
         const getQuickLearningChatModel = (await import('../../models/quicklearning/chat.model')).default;
         const ChatModel = getQuickLearningChatModel(conn);
         await ChatModel.updateOne(
@@ -209,16 +184,22 @@ export class MessagingAgentService {
           { $set: { aiEnabled: false } },
           { upsert: true }
         );
-      } else {
-        const recordModelModule = await import('../../models/record.model');
-        const getRecordModel = recordModelModule.default;
-        const Record = getRecordModel(conn);
-        await Record.updateOne(
-          { tableSlug: 'prospectos', 'data.number': phoneUser },
-          { $set: { ia: false } },
-          { upsert: true }
-        );
+        console.log(`✅ IA desactivada en modelo de chat para ${phoneUser}`);
+        return;
+      } catch (chatError) {
+        console.log(`ℹ️ Modelo de chat no disponible para ${company}, intentando con modelo de registros`);
       }
+
+      // Fallback al modelo de registros genérico
+      const recordModelModule = await import('../../models/record.model');
+      const getRecordModel = recordModelModule.default;
+      const Record = getRecordModel(conn);
+      await Record.updateOne(
+        { tableSlug: 'prospectos', 'data.number': phoneUser },
+        { $set: { ia: false } },
+        { upsert: true }
+      );
+      console.log(`✅ IA desactivada en modelo de registros para ${phoneUser}`);
     } catch (error) {
       console.error(`❌ Error disabling AI for ${phoneUser}:`, error);
       throw error;
@@ -244,6 +225,7 @@ export class MessagingAgentService {
       .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
       .replace(/¿/g, '').replace(/¡/g, ''); // Remove Spanish punctuation
   }
+
 
   /**
    * Get chat history for context

@@ -1,5 +1,4 @@
 import { BaseAgent } from './BaseAgent';
-import { QuickLearningAgent } from './QuickLearningAgent';
 import { GeneralAgent } from './GeneralAgent';
 
 export class AgentManager {
@@ -31,33 +30,14 @@ export class AgentManager {
 
     let agent: BaseAgent;
 
-    switch (company.toLowerCase()) {
-      case 'quicklearning':
-      case 'quick-learning':
-        agent = new QuickLearningAgent(company);
-        await agent.initialize();
-        break;
-      case 'grupokg':
-      case 'grupo-kg':
-      case 'grupo-milkasa':
-      case 'britanicomx':
-      case 'mitsubishi':
-      case 'simple-green':
-      case 'virtualvoices':
-      case 'virtual-voices':
-      case 'diocsa':
-        try {
-          agent = new GeneralAgent(company, agentContext);
-          await agent.initialize();
-          console.log(`🔧 AgentManager: GeneralAgent created successfully for ${company}`);
-        } catch (error) {
-          console.error(`❌ Error creating GeneralAgent for ${company}:`, error);
-          throw error;
-        }
-        break;
-      default:
-        console.log(`❌ No matching case found for company: "${company}" (lowercase: "${company.toLowerCase()}")`);
-        throw new Error(`❌ No agent configured for company: ${company}`);
+    // Todas las empresas usan GeneralAgent para máxima flexibilidad
+    try {
+      agent = new GeneralAgent(company, agentContext);
+      await agent.initialize();
+      console.log(`🔧 AgentManager: GeneralAgent created successfully for ${company}`);
+    } catch (error) {
+      console.error(`❌ Error creating GeneralAgent for ${company}:`, error);
+      throw error;
     }
 
     this.agents.set(agentKey, { agent, lastUsed: Date.now() });

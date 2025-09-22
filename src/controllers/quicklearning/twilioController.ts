@@ -643,7 +643,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
         phoneUser,
         conn,
         config?._id.toString(),
-        conn,
+        undefined, // sessionId
         undefined, // providedChatHistory
       );
 
@@ -805,121 +805,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
   }, 3000); // Esperar 3 segundos antes de procesar
 }
 
-// MENSAJES EXACTOS - Coincidencia exacta con los templates de marketing (SIN puntuación final)
-const EXACT_MESSAGE_MAPPING: { [key: string]: { campaign: string; medio: string } } = {
-  // USA
-  'hola, quiero info sobre los cursos de inglés (u)': {
-    campaign: 'USA',
-    medio: 'Meta'
-  },
-  
-  // CAN
-  'hola, quiero info sobre los cursos de inglés (c)': {
-    campaign: 'CAN',
-    medio: 'Meta'
-  },
-  
-  // PRESENCIAL
-  'hola, quiero más info sobre los cursos presenciales': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  'hola, quiero más info sobre el curso smart': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  'hola. quiero más info de la sucursal satélite': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  'hola. quiero más info de la sucursal satelite': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  
-  // VIRTUAL
-  'hola, quiero más info sobre los cursos virtuales': {
-    campaign: 'VIRTUAL',
-    medio: 'Meta'
-  },
-  
-  // VIRTUAL PROMOS
-  'hola, quiero info sobre la promo virtual': {
-    campaign: 'VIRTUAL PROMOS',
-    medio: 'Meta'
-  },
-  
-  // ONLINE
-  'hola, quiero más info sobre los cursos online': {
-    campaign: 'ONLINE',
-    medio: 'Meta'
-  },
-  
-  // ONLINE PROMOS
-  'hola, quiero info sobre la promo online': {
-    campaign: 'ONLINE PROMOS',
-    medio: 'Meta'
-  },
-  
-  // GENERAL
-  'hola, quiero info sobre los cursos de inglés': {
-    campaign: 'GENERAL',
-    medio: 'Meta'
-  },
-  
-  // RMKT
-  'hola, quiero info sobre los cursos de inglés (r)': {
-    campaign: 'RMKT',
-    medio: 'Meta'
-  },
-  
-  // GOOGLE - Variaciones conocidas
-  'hola, me encantaría recibir información de sus cursos': {
-    campaign: 'GOOGLE',
-    medio: 'Google'
-  },
-  'hola, quiero más información sobre los cursos de inglés de quick learning. los busque en google': {
-    campaign: 'GOOGLE',
-    medio: 'Google'
-  }
-};
-
-/**
- * Detecta la campaña basada en coincidencia exacta del mensaje
- */
-function detectCampaign(message: string): { campaign: string; medio: string } {
-  if (!message) {
-    return { campaign: 'ORGANICO', medio: 'Interno' };
-  }
-  
-  // Normalizar el mensaje: lowercase, trim, quitar espacios extra y puntuación final
-  const normalizedMessage = message.toLowerCase().trim()
-    .replace(/\s+/g, ' ') // Múltiples espacios a uno solo
-    .replace(/[.]{2,}/g, '.') // Múltiples puntos a uno solo
-    .replace(/[.,!?;:]$/, ''); // Quitar puntuación al final
-  
-  // Buscar coincidencia exacta
-  if (EXACT_MESSAGE_MAPPING[normalizedMessage]) {
-    const match = EXACT_MESSAGE_MAPPING[normalizedMessage];
-    console.log(`🎯 Campaña detectada (exacta): ${match.campaign} - Medio: ${match.medio} para mensaje: "${message}"`);
-    return match;
-  }
-  
-  // Detectar nuevos planes presenciales (SMART/PLUS/MAX) con palabras de contexto
-  const planNames = ['smart', 'plus', 'max'];
-  const contextWords = ['curso', 'cursos', 'plan', 'planes', 'paquete', 'paquetes', 'programa', 'programas', 'modalidad', 'modalidades', 'esquema', 'esquemas'];
-  const mentionsPlanWithContext = planNames.some(n => normalizedMessage.includes(n)) && contextWords.some(w => normalizedMessage.includes(w));
-  
-  if (mentionsPlanWithContext) {
-    const foundPlans = planNames.filter(n => normalizedMessage.includes(n));
-    console.log(`🎯 Campaña detectada (SMART/PLUS/MAX): PRESENCIAL - Medio: Meta para planes: ${foundPlans.join(', ')} en mensaje: "${message}"`);
-    return { campaign: 'PRESENCIAL', medio: 'Meta' };
-  }
-  
-  // Si no hay coincidencia exacta, es ORGANICO
-  console.log(`🎯 Campaña detectada (fallback): ORGANICO - Medio: Interno para mensaje: "${message}"`);
-  return { campaign: 'ORGANICO', medio: 'Interno' };
-}
+// La detección de campañas ahora se maneja con la herramienta identify_campaign
 
 /**
  * Buscar o crear cliente en la base de datos
@@ -964,15 +850,15 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         });
       }
 
-      // Detectar campaña y medio con coincidencia exacta
-      const detectionResult = detectCampaign(body);
-      const detectedCampaign = detectionResult.campaign;
-      const medio = detectionResult.medio;
+      // La detección de campaña se maneja ahora con la herramienta identify_campaign
+      // Valores por defecto
+      const detectedCampaign = 'ORGANICO';
+      const medio = 'Interno';
 
-      console.log(`🎯 Campaña detectada para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
+      console.log(`🎯 Usando valores por defecto para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
 
-      // Determinar si AI debe estar desactivada para campañas presenciales (incluyendo SMART y Satélite variants)
-      const aiEnabled = detectedCampaign !== 'PRESENCIAL';
+      // AI habilitada por defecto, se desactivará con herramientas si es necesario
+      const aiEnabled = true;
 
       // Crear nuevo cliente en tabla prospectos con la estructura correcta
       customer = new DynamicRecord({

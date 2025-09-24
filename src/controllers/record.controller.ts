@@ -478,11 +478,21 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
           } else if (fieldName === 'number' || fieldName === 'sessionId' || fieldName === 'tabla') {
             // Add these fields as optional filters - won't affect query if no match
             otherFilters.push({
-              $or: [
-                { [`data.${fieldName}`]: { $regex: `.*${escapeRegExp(String(value))}.*`, $options: 'i' } },
-                { [`data.${fieldName}`]: { $exists: false } }, // Optional: include records without this field
-                { [`data.${fieldName}`]: null }, // Optional: include records with null values
-                { [`data.${fieldName}`]: '' } // Optional: include records with empty strings
+              $or: [{ 
+                $expr: {
+                  $regexMatch: {
+                    input: { 
+                      $convert: {
+                        input: { $ifNull: [ `$data.${fieldName}`, '' ] },
+                        to: "string",
+                        onError: "",
+                        onNull: ""
+                      }
+                    },
+                    regex: `.*${escapeRegExp(String(value))}.*`,
+                    options: 'i'
+                  }
+                }},
               ]
             });
           } else {

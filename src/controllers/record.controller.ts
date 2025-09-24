@@ -67,6 +67,8 @@ function normalizeForCompare(s: unknown): string {
   return String(s)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // remove combining marks
+    .replace(/\u00A0/g, ' ') // replace non-breaking spaces (char 160) with regular spaces
+    .replace(/\s+/g, ' ') // normalize multiple whitespace to single space
     .toLowerCase();
 }
 
@@ -433,7 +435,14 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               const textSearch = textFields.map(field => ({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: { $ifNull: [ `$data.${field}`, '' ] } },
+                    input: { 
+                      $convert: {
+                        input: { $ifNull: [ `$data.${field}`, '' ] },
+                        to: "string",
+                        onError: "",
+                        onNull: ""
+                      }
+                    },
                     regex: `.*${escapeRegExp(String(value))}.*`,
                     options: 'i'
                   }
@@ -469,11 +478,21 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
           } else if (fieldName === 'number' || fieldName === 'sessionId' || fieldName === 'tabla') {
             // Add these fields as optional filters - won't affect query if no match
             otherFilters.push({
-              $or: [
-                { [`data.${fieldName}`]: { $regex: `.*${escapeRegExp(String(value))}.*`, $options: 'i' } },
-                { [`data.${fieldName}`]: { $exists: false } }, // Optional: include records without this field
-                { [`data.${fieldName}`]: null }, // Optional: include records with null values
-                { [`data.${fieldName}`]: '' } // Optional: include records with empty strings
+              $or: [{ 
+                $expr: {
+                  $regexMatch: {
+                    input: { 
+                      $convert: {
+                        input: { $ifNull: [ `$data.${fieldName}`, '' ] },
+                        to: "string",
+                        onError: "",
+                        onNull: ""
+                      }
+                    },
+                    regex: `.*${escapeRegExp(String(value))}.*`,
+                    options: 'i'
+                  }
+                }},
               ]
             });
           } else {
@@ -489,7 +508,14 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               otherFilters.push({
                 $expr: {
                   $regexMatch: {
-                    input: { $toString: { $ifNull: [ `$data.${fieldName}`, '' ] } },
+                    input: { 
+                      $convert: {
+                        input: { $ifNull: [ `$data.${fieldName}`, '' ] },
+                        to: "string",
+                        onError: "",
+                        onNull: ""
+                      }
+                    },
                     regex: `.*${escapeRegExp(String(value))}.*`,
                     options: 'i'
                   }
@@ -596,12 +622,47 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
             if (value !== undefined && value !== null && value !== '') {
               const fieldValue = record.data[fieldName];
               if (typeof value === 'string' && typeof fieldValue === 'string') {
-                const a = normalizeForCompare(fieldValue);
-                const b = normalizeForCompare(value);
+                const a = normalizeForCompare(fieldValue).trim();
+                const b = normalizeForCompare(value).trim();
+                
                 if (a === b) {
                   score += 2; // Exact match
                 } else if (a.includes(b)) {
                   score += 1; // Partial match
+                } else if (b.includes(a)) {
+                  score += 1; // Reverse partial match
+                } else {
+                  // Enhanced word-level matching for better substring detection
+                  const searchWords = b.split(/\s+/).filter(word => word.length > 2); // Skip short words
+                  const recordWords = a.split(/\s+/);
+                  
+                  let wordMatches = 0;
+                  let totalSearchWords = searchWords.length;
+                  
+                  for (const searchWord of searchWords) {
+                    // Check for exact word match
+                    if (recordWords.some(recordWord => recordWord === searchWord)) {
+                      wordMatches += 1;
+                    }
+                    // Check for partial word match (substring)
+                    else if (recordWords.some(recordWord => 
+                      recordWord.includes(searchWord) || searchWord.includes(recordWord)
+                    )) {
+                      wordMatches += 0.5;
+                    }
+                  }
+                  
+                  // Score based on percentage of words matched
+                  if (totalSearchWords > 0 && wordMatches > 0) {
+                    const matchRatio = wordMatches / totalSearchWords;
+                    if (matchRatio >= 0.7) {
+                      score += 1.5; // High word match ratio
+                    } else if (matchRatio >= 0.5) {
+                      score += 1; // Medium word match ratio
+                    } else if (matchRatio >= 0.3) {
+                      score += 0.5; // Low word match ratio
+                    }
+                  }
                 }
               } else if (typeof (value as any) !== 'object' && fieldValue == value) {
                 score += 2; // Exact match for non-string scalar
@@ -2039,7 +2100,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
         return;
       }
     }
-
+    /*
     // If no dynamic filters provided, use a faster Chat-first join to Records
     const useChatFirst = !filters || (typeof filters === 'string' && (filters as string).trim() === '' || (filters as string).trim() === 'undefined' || (filters as string).trim() === 'null');
     if (useChatFirst) {
@@ -2183,6 +2244,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
       });
       return;
     }
+    */
 
     // --- Application-level batching for early stop when enough records with chats are found ---
     const startTime = Date.now();
@@ -2336,9 +2398,13 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const endTime = Date.now();
     const executionTime = endTime - startTime;
 
+    let finalRecords: any[] = pagedRecords as any[];
+    const historyCap = Math.min(10, 200);
+    finalRecords = await attachHistoryToData(conn, finalRecords, 'Record', historyCap);
+
     res.status(200).json({
       success: true,
-      data: pagedRecords,
+      data: finalRecords,
       pagination: {
         page: Number(page),
         limit: Number(limit),

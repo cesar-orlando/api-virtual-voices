@@ -80,7 +80,7 @@ export abstract class BaseAgent {
     try {
       // Check if we need to update the conversation summary
       if (!Array.isArray(context.chatHistory)) {
-        await this.updateConversationSummary(context.chatHistory as IWhatsappChat);
+        await this.updateConversationSummary(context.chatHistory as any);
       }
       
       // Clean the current message
@@ -120,7 +120,7 @@ export abstract class BaseAgent {
   /**
    * Update the conversation summary embedded in the chat document
    */
-  private async updateConversationSummary(chat: IWhatsappChat): Promise<void> {
+  private async updateConversationSummary(chat: any): Promise<void> {
     const lastSummarizedIndex = chat.conversationSummary?.lastSummarizedIndex || 0;
     const newMessagesCount = chat.messages.length - lastSummarizedIndex;
     
@@ -281,7 +281,7 @@ export abstract class BaseAgent {
   }> {
     // Prepare new messages for analysis
     const newMessagesText = newMessages.map((msg) => {
-      const role = msg.direction === 'Inbound' ? 'Cliente' : this.getAssistantName();
+      const role = msg.direction === 'inbound' ? 'Cliente' : this.getAssistantName();
       return `${role}: ${msg.body}`;
     }).join('\n');
 
@@ -427,7 +427,7 @@ IMPORTANTE:
       if (recentMessages.length > 0) {
         context += 'MENSAJES RECIENTES:\n';
         recentMessages.forEach(msg => {
-          const role = msg.direction === 'Inbound' ? 'Cliente' : this.getAssistantName();
+          const role = msg.direction === 'inbound' ? 'Cliente' : this.getAssistantName();
           const cleanContent = this.cleanMessageForContext(msg.body);
           context += `${role}: ${cleanContent}\n`;
         });
@@ -819,7 +819,7 @@ IMPORTANTE:
   /**
    * Force summary update (useful for testing or manual triggers)
    */
-  public async forceSummaryUpdate(chat: IWhatsappChat): Promise<void> {
+  public async forceSummaryUpdate(chat: any): Promise<void> {
     const originalThreshold = this.SUMMARIZATION_THRESHOLD;
     (this as any).SUMMARIZATION_THRESHOLD = 1; // Temporarily lower threshold
     
@@ -844,7 +844,7 @@ IMPORTANTE:
       }
 
       // Update each chat's summary
-      await Promise.all(chats.map(chat => this.updateConversationSummary(chat)));
+      await Promise.all(chats.map(chat => this.updateConversationSummary(chat as any)));
     } catch (error) {
       console.error(`❌ Error forcing summary update for all chats in ${this.company}:`, error);
     }

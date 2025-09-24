@@ -37,7 +37,7 @@ const BranchSchema: Schema = new Schema(
       required: true, 
       uppercase: true,
       trim: true,
-      maxlength: 10
+      maxlength: 20
       // Removemos unique global - será único por empresa
     },
     address: { 

@@ -352,7 +352,7 @@ export const testIA = async (req: Request, res: Response): Promise<void> => {
         'test-frontend-user', // Phone number para testing
         conn,
         aiConfig?._id.toString(),
-        aiConfig?.name,
+        undefined, // sessionId - no hay sesión real en el test
         chatHistory,
       );
 

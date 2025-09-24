@@ -484,6 +484,7 @@ router.post("/simulate-typing", async (req: Request, res: Response) => {
   }
 });
 
+
 /**
  * @swagger
  * /api/quicklearning/twilio/prospectos:

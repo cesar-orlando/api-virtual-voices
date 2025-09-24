@@ -5,6 +5,7 @@ import dynamicRecordRoutes from "./routes/record.routes";
 import whatsappRoutes from './routes/whatsapp.routes';
 import companyRoutes from "./routes/company.routes";
 import iaConfigRoutes from "./routes/iaConfig.routes";
+import chatInternalRoutes from "./routes/chatInternal.routes";
 import toolRoutes from "./routes/tool.routes";
 import uploadRoutes from "./routes/upload.routes";
 import googleRoutes from "./routes/google.routes";
@@ -14,7 +15,7 @@ import sessionRoutes from "./routes/session.routes";
 import calendarEventRoutes from './routes/calendarEvent.routes';
 import taskRoutes from './routes/task.routes';
 import notificationRoutes from './routes/notification.routes';
-//import schedulerRoutes from './routes/scheduler.routes';
+import schedulerRoutes from './routes/scheduler.routes';
 
 // Nuevas rutas del sistema multiempresa
 import coreUserRoutes from "./core/users/user.routes";
@@ -150,6 +151,10 @@ app.use("/api/companies", companyRoutes);
 // Rutas para configuraciones de IA
 app.use("/api/ia-configs", iaConfigRoutes);
 
+// Rutas para chat interno con memoria, RAG y generador de prompts
+app.use("/api/chat-internal", chatInternalRoutes);
+
+
 // Rutas para herramientas dinámicas
 app.use("/api/tools", toolRoutes);
 
@@ -173,15 +178,15 @@ app.use("/api/calendar-events", calendarEventRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 // Scheduler routes
-//app.use("/api/scheduler", schedulerRoutes);
+app.use("/api/scheduler", schedulerRoutes);
 
-// Rutas específicas de Quick Learning
+// Rutas específicas de Quick Learning (mantener para compatibilidad)
 app.use('/api/projects/quicklearning', quickLearningRoutes);
 
-// Rutas de Twilio para Quick Learning
+// Rutas de Twilio para Quick Learning (mantener para compatibilidad)
 app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
 
-// Rutas de métricas para Quick Learning
+// Rutas de métricas para Quick Learning (mantener para compatibilidad)
 app.use('/api/quicklearning', quickLearningMetricsRoutes);
 
 // Rutas de prueba para el nuevo sistema de agentes

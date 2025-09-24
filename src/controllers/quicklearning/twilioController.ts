@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { twilioService } from "../../services/twilio/twilioService";
-import { quickLearningOpenAIService } from "../../services/quicklearning/openaiService";
+// Servicio OpenAI eliminado - ahora usa sistema dinámico
 import { MessagingAgentService } from "../../services/agents/MessagingAgentService";
 import { getConnectionByCompanySlug, executeQuickLearningWithReconnection } from "../../config/connectionManager";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
@@ -17,6 +17,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
 import { io } from "../../server";
 import { NotificationService } from "../../services/internal/notification.service";
+import { getSessionModel } from "../../models/session.model";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
@@ -78,6 +79,7 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
     console.error("❌ Error emitiendo notificación por socket:", error);
   }
 }
+
 
 /**
  * Emitir evento de "escribiendo" para indicar que alguien está escribiendo
@@ -301,9 +303,9 @@ async function analyzeImageFromTwilio(
 /**
  * Webhook de Twilio para recibir mensajes
  */
+
 export const twilioWebhook = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log("📥 [TwilioWebhook] Incoming payload keys:", Object.keys(req.body || {}));
     const {
       From,
       To,
@@ -321,13 +323,11 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       MessageType,
     } = req.body;
 
-    console.log("📥 [TwilioWebhook] From:", From, "To:", To, "BodyLen:", (Body || '').length, "MessageSid:", MessageSid);
 
-    // Validar que es para Quick Learning (verificar número de teléfono)
+    // Validar que es para la empresa correcta (verificar número de teléfono)
     const configuredPhone = envConfig.twilio.phoneNumber;
-    console.log("☎️ [TwilioWebhook] Configured Twilio phone:", configuredPhone);
     if (!To.includes(configuredPhone.replace('+', ''))) {
-      console.warn("⚠️ [TwilioWebhook] Mensaje no dirigido al número de Quick Learning");
+      console.warn("⚠️ Mensaje no dirigido al número configurado");
       res.status(200).send("OK");
       return;
     }
@@ -349,7 +349,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
     const customer = await executeQuickLearningWithReconnection(async (conn) => {
       return await findOrCreateCustomer(phoneUser, ProfileName || "Usuario", Body, conn);
     });
-    console.log("👤 [TwilioWebhook] Customer found/created:", customer?._id?.toString(), "table:", customer?.tableSlug);
 
     // Verificar si tiene AI activada
     const aiEnabled = customer.data.aiEnabled !== false;
@@ -372,11 +371,12 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           conversationStart: new Date(),
           aiEnabled: aiEnabled,
           messages: [],
+          tableSlug: 'prospectos'
         });
         
         // Si es un chat nuevo Y la IA está activada, enviar mensaje de bienvenida
         if (aiEnabled) {
-          const welcomeMessage = "Inglés en Quick Learning, ¡Hablas o Hablas! Soy NatalIA, ¿Cómo te puedo ayudar hoy?";
+          const welcomeMessage = "¡Hola! Gracias por contactarnos. ¿En qué puedo ayudarte hoy?";
           
           // Enviar mensaje de bienvenida
           const welcomeResult = await twilioService.sendMessage({
@@ -392,6 +392,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
               respondedBy: "bot" as const,
               twilioSid: welcomeResult.messageId,
               messageType: "text" as const,
+              msgId: welcomeResult.messageId
             });
             
             // Actualizar último mensaje
@@ -402,7 +403,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             };
             
             await chat.save();
-            console.log(`✅ Mensaje de bienvenida enviado a ${phoneUser}`);
             
             // IMPORTANTE: No procesar el mensaje del usuario con IA en el primer mensaje
             // Solo enviar el mensaje de bienvenida y terminar
@@ -485,10 +485,10 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           lat: Latitude ? parseFloat(Latitude) : undefined,
           lng: Longitude ? parseFloat(Longitude) : undefined,
         },
+        msgId: MessageSid
       };
 
       chat.messages.push(newMessage);
-      console.log("💾 [TwilioWebhook] Pushing inbound message. Total messages before save:", (chat.messages || []).length);
       // Actualizar último mensaje
       const currentDate = new Date();
       chat.lastMessage = {
@@ -496,9 +496,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         date: currentDate,
         respondedBy: "human",
       };
-      console.log("📝 [TwilioWebhook] lastMessage set. Saving chat...");
       await chat.save();
-      console.log("✅ [TwilioWebhook] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje nuevo
       emitNewMessageNotification(phoneUser, newMessage, chat);
@@ -511,23 +509,19 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             // Verificar si es un ObjectId válido (24 caracteres hex)
             if (/^[0-9a-fA-F]{24}$/.test(customer.data.asesor)) {
               advisorId = customer.data.asesor;
-              console.log("🔍 [TwilioWebhook] Advisor is ObjectId string:", advisorId);
             } else {
               // Intentar parsear como JSON
               try {
                 const advisorData = JSON.parse(customer.data.asesor);
                 advisorId = advisorData._id || advisorData.id;
-                console.log("🔍 [TwilioWebhook] Advisor parsed from JSON:", advisorId);
               } catch (jsonError) {
                 console.error("❌ [TwilioWebhook] Error parsing advisor JSON:", jsonError);
                 // Si no es JSON válido, usar el string directamente
                 advisorId = customer.data.asesor;
-                console.log("🔍 [TwilioWebhook] Using advisor as direct string:", advisorId);
               }
             }
           } else if (customer.data.asesor._id || customer.data.asesor.id) {
             advisorId = customer.data.asesor._id || customer.data.asesor.id;
-            console.log("🔍 [TwilioWebhook] Advisor from object:", advisorId);
           }
         }
       } catch (parseError) {
@@ -536,15 +530,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
 
       if (advisorId) {
         try {
-          console.log("🔔 [TwilioWebhook] Creating chat notification for advisor:", advisorId);
-          console.log("🔔 [TwilioWebhook] Notification params:", {
-            company: "quicklearning",
-            userId: advisorId,
-            phoneNumber: phoneUser,
-            senderName: customer.data.nombre || ProfileName || "Usuario",
-            messagePreview: newMessage.body,
-            chatId: chat._id.toString()
-          });
           
           const notification = await NotificationService.createChatNotification({
             company: "quicklearning",
@@ -555,7 +540,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             chatId: chat._id.toString()
           });
           
-          console.log("✅ [TwilioWebhook] Chat notification created successfully:", notification?._id?.toString());
         } catch (notificationError) {
           console.error("❌ [TwilioWebhook] Error creating chat notification:", notificationError);
           console.error("❌ [TwilioWebhook] Error details:", {
@@ -565,13 +549,10 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         }
       } else {
         console.warn("⚠️ [TwilioWebhook] No advisor ID found in customer data, skipping notification");
-        console.log("🔍 [TwilioWebhook] Customer asesor data:", customer?.data?.asesor);
-        console.log("🔍 [TwilioWebhook] Customer data keys:", Object.keys(customer?.data || {}));
       }
       
       // Emitir evento genérico de actualización de chat (compatibilidad con listeners existentes)
       try {
-        console.log("📣 [TwilioWebhook] Emitting socket event:", `whatsapp-message-quicklearning`);
         io.emit(`whatsapp-message-quicklearning`, chat);
       } catch (e) {
         console.error("❌ [TwilioWebhook] Error emitting socket event:", e);
@@ -596,7 +577,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
 
       // Si la AI está desactivada, no procesar con IA
       if (!aiEnabled) {
-        console.log("🤖 AI desactivada para este usuario.");
         return;
       }
 
@@ -635,15 +615,16 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       const combinedMessage = buffer.messages.join("\n");
       
       const config = await getIaConfigModel(conn).findOne();
+      const session = await getSessionModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
       const aiResponse = await messagingAgentService.processWhatsAppMessage(
-        'quicklearning',
+        'quicklearning', // Esta empresa específica está bien aquí
         combinedMessage,
         phoneUser,
         conn,
         config?._id.toString(),
-        conn,
+        session?._id.toString(), // sessionId
         undefined, // providedChatHistory
       );
 
@@ -666,6 +647,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             respondedBy: "bot" as const,
             twilioSid: result.messageId,
             messageType: "text" as const,
+            msgId: result.messageId
           };
 
           chat.messages.push(botMessage);
@@ -678,15 +660,12 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             respondedBy: "bot",
           };
 
-          console.log("📝 [BotReply] Saving chat with bot response...");
           await chat.save();
-          console.log("✅ [BotReply] Chat saved:", chat._id?.toString());
 
           // Emitir notificación por socket para respuesta del bot
           emitNewMessageNotification(phoneUser, botMessage, chat);
           // Emitir evento genérico de actualización de chat
           try {
-            console.log("📣 [BotReply] Emitting socket event:", `whatsapp-message-quicklearning`);
             io.emit(`whatsapp-message-quicklearning`, chat);
           } catch (e) {
             console.error("❌ [BotReply] Error emitting socket event:", e);
@@ -700,6 +679,18 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             // Desactivar IA en el chat
             chat.aiEnabled = false;
             await chat.save();
+
+            // Emitir notificación de que la IA se desactivó a sí misma
+            const io = (global as any).io as SocketIOServer;
+            if (io) {
+              io.emit("chat_updated", {
+                phone: phoneUser,
+                aiEnabled: false,
+                reason: "IA desactivada por IA",
+                timestamp: new Date().toISOString()
+              });
+              console.log(`🔔 IA se desactivó a sí misma para ${phoneUser}`);
+            }
 
             // Asignar asesor disponible y enviar mensaje de seguimiento
             try {
@@ -805,121 +796,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
   }, 3000); // Esperar 3 segundos antes de procesar
 }
 
-// MENSAJES EXACTOS - Coincidencia exacta con los templates de marketing (SIN puntuación final)
-const EXACT_MESSAGE_MAPPING: { [key: string]: { campaign: string; medio: string } } = {
-  // USA
-  'hola, quiero info sobre los cursos de inglés (u)': {
-    campaign: 'USA',
-    medio: 'Meta'
-  },
-  
-  // CAN
-  'hola, quiero info sobre los cursos de inglés (c)': {
-    campaign: 'CAN',
-    medio: 'Meta'
-  },
-  
-  // PRESENCIAL
-  'hola, quiero más info sobre los cursos presenciales': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  'hola, quiero más info sobre el curso smart': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  'hola. quiero más info de la sucursal satélite': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  'hola. quiero más info de la sucursal satelite': {
-    campaign: 'PRESENCIAL',
-    medio: 'Meta'
-  },
-  
-  // VIRTUAL
-  'hola, quiero más info sobre los cursos virtuales': {
-    campaign: 'VIRTUAL',
-    medio: 'Meta'
-  },
-  
-  // VIRTUAL PROMOS
-  'hola, quiero info sobre la promo virtual': {
-    campaign: 'VIRTUAL PROMOS',
-    medio: 'Meta'
-  },
-  
-  // ONLINE
-  'hola, quiero más info sobre los cursos online': {
-    campaign: 'ONLINE',
-    medio: 'Meta'
-  },
-  
-  // ONLINE PROMOS
-  'hola, quiero info sobre la promo online': {
-    campaign: 'ONLINE PROMOS',
-    medio: 'Meta'
-  },
-  
-  // GENERAL
-  'hola, quiero info sobre los cursos de inglés': {
-    campaign: 'GENERAL',
-    medio: 'Meta'
-  },
-  
-  // RMKT
-  'hola, quiero info sobre los cursos de inglés (r)': {
-    campaign: 'RMKT',
-    medio: 'Meta'
-  },
-  
-  // GOOGLE - Variaciones conocidas
-  'hola, me encantaría recibir información de sus cursos': {
-    campaign: 'GOOGLE',
-    medio: 'Google'
-  },
-  'hola, quiero más información sobre los cursos de inglés de quick learning. los busque en google': {
-    campaign: 'GOOGLE',
-    medio: 'Google'
-  }
-};
-
-/**
- * Detecta la campaña basada en coincidencia exacta del mensaje
- */
-function detectCampaign(message: string): { campaign: string; medio: string } {
-  if (!message) {
-    return { campaign: 'ORGANICO', medio: 'Interno' };
-  }
-  
-  // Normalizar el mensaje: lowercase, trim, quitar espacios extra y puntuación final
-  const normalizedMessage = message.toLowerCase().trim()
-    .replace(/\s+/g, ' ') // Múltiples espacios a uno solo
-    .replace(/[.]{2,}/g, '.') // Múltiples puntos a uno solo
-    .replace(/[.,!?;:]$/, ''); // Quitar puntuación al final
-  
-  // Buscar coincidencia exacta
-  if (EXACT_MESSAGE_MAPPING[normalizedMessage]) {
-    const match = EXACT_MESSAGE_MAPPING[normalizedMessage];
-    console.log(`🎯 Campaña detectada (exacta): ${match.campaign} - Medio: ${match.medio} para mensaje: "${message}"`);
-    return match;
-  }
-  
-  // Detectar nuevos planes presenciales (SMART/PLUS/MAX) con palabras de contexto
-  const planNames = ['smart', 'plus', 'max'];
-  const contextWords = ['curso', 'cursos', 'plan', 'planes', 'paquete', 'paquetes', 'programa', 'programas', 'modalidad', 'modalidades', 'esquema', 'esquemas'];
-  const mentionsPlanWithContext = planNames.some(n => normalizedMessage.includes(n)) && contextWords.some(w => normalizedMessage.includes(w));
-  
-  if (mentionsPlanWithContext) {
-    const foundPlans = planNames.filter(n => normalizedMessage.includes(n));
-    console.log(`🎯 Campaña detectada (SMART/PLUS/MAX): PRESENCIAL - Medio: Meta para planes: ${foundPlans.join(', ')} en mensaje: "${message}"`);
-    return { campaign: 'PRESENCIAL', medio: 'Meta' };
-  }
-  
-  // Si no hay coincidencia exacta, es ORGANICO
-  console.log(`🎯 Campaña detectada (fallback): ORGANICO - Medio: Interno para mensaje: "${message}"`);
-  return { campaign: 'ORGANICO', medio: 'Interno' };
-}
+// La detección de campañas ahora se maneja con la herramienta identify_campaign
 
 /**
  * Buscar o crear cliente en la base de datos
@@ -964,15 +841,15 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         });
       }
 
-      // Detectar campaña y medio con coincidencia exacta
-      const detectionResult = detectCampaign(body);
-      const detectedCampaign = detectionResult.campaign;
-      const medio = detectionResult.medio;
+      // La detección de campaña se maneja ahora con la herramienta identify_campaign
+      // Valores por defecto
+      const detectedCampaign = 'ORGANICO';
+      const medio = 'Interno';
 
-      console.log(`🎯 Campaña detectada para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
+      console.log(`🎯 Usando valores por defecto para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
 
-      // Determinar si AI debe estar desactivada para campañas presenciales (incluyendo SMART y Satélite variants)
-      const aiEnabled = detectedCampaign !== 'PRESENCIAL';
+      // AI habilitada por defecto, se desactivará con herramientas si es necesario
+      const aiEnabled = true;
 
       // Crear nuevo cliente en tabla prospectos con la estructura correcta
       customer = new DynamicRecord({
@@ -1100,6 +977,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
           conversationStart: new Date(),
           aiEnabled: false,
           messages: [],
+          tableSlug: 'prospectos'
         });
       }
       const currentDate = new Date();
@@ -1109,6 +987,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         respondedBy: "asesor" as const,
         twilioSid: result.messageId,
         messageType: "text" as const,
+        msgId: result.messageId
       };
       chat.messages.push(asesorMessage);
       chat.lastMessage = {
@@ -1116,18 +995,15 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         date: currentDate,
         respondedBy: "asesor",
       };
-      console.log("📝 [Send] Saving chat with advisor message...");
       await chat.save();
-      console.log("✅ [Send] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje del asesor
       emitNewMessageNotification(phone, asesorMessage);
       // Emitir evento genérico de actualización de chat
       try {
-        console.log("📣 [Send] Emitting socket event:", `whatsapp-message-quicklearning`);
         io.emit(`whatsapp-message-quicklearning`, chat);
       } catch (e) {
-        console.error("❌ [Send] Error emitting socket event:", e);
+        console.error("❌ Error emitting socket event:", e);
       }
 
       res.status(200).json({
@@ -1193,6 +1069,7 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
           conversationStart: new Date(),
           aiEnabled: false,
           messages: [],
+          tableSlug: 'prospectos'
         });
       }
       const currentDate = new Date();
@@ -1202,6 +1079,7 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         respondedBy: "asesor" as const,
         twilioSid: result.messageId,
         messageType: "text" as const,
+        msgId: result.messageId
       };
       chat.messages.push(templateAsesorMessage);
       chat.lastMessage = {
@@ -1209,18 +1087,15 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         date: currentDate,
         respondedBy: "asesor",
       };
-      console.log("📝 [SendTemplate] Saving chat with template message...");
       await chat.save();
-      console.log("✅ [SendTemplate] Chat saved:", chat._id?.toString());
 
       // Emitir notificación por socket para mensaje de template del asesor
       emitNewMessageNotification(phone, templateAsesorMessage);
       // Emitir evento genérico de actualización de chat
       try {
-        console.log("📣 [SendTemplate] Emitting socket event:", `whatsapp-message-quicklearning`);
         io.emit(`whatsapp-message-quicklearning`, chat);
       } catch (e) {
-        console.error("❌ [SendTemplate] Error emitting socket event:", e);
+        console.error("❌ Error emitting socket event:", e);
       }
 
       res.status(200).json({

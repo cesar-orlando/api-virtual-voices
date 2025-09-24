@@ -10,6 +10,7 @@ router.post("/testIA/:c_name", testIA);
 // Admin-only: generar prompt desde todos los chats de WhatsApp (solo devuelve promptDraft)
 router.post("/:c_name/:user_id/whatsapp/prompt-from-chats", generateWhatsappPromptFromChats);
 
+
 router.get("/:c_name/:user_id", getAllIAConfigs);
 
 router.get("/:c_name", getGeneralIAConfig);

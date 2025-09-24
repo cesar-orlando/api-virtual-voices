@@ -59,7 +59,7 @@ const UserSchema: Schema = new Schema(
       smtpPassword: { type: String },
       signature: { type: String },
       footerImage: { type: String },
-      isEnabled: { type: Boolean, default: false },
+      isEnabled: { type: Boolean, default: true },
       provider: { 
         type: String, 
         enum: ['gmail', 'outlook', 'yahoo', 'custom', 'other'],

@@ -318,32 +318,55 @@ export async function scrapeMultiLevel(config: ScrapeConfig): Promise<any> {
 		// Limit number of pages to scrape
 		const linksToScrape = relevantLinks.slice(0, maxPages);
 		
-		// Step 3: Scrape discovered pages
-		for (const [index, linkUrl] of linksToScrape.entries()) {
+		// Step 3: Scrape discovered pages concurrently
+		const scrapePromises = linksToScrape.map(async (linkUrl, index) => {
 			try {
+				// Add staggered delay to avoid overwhelming the server
+				await new Promise(resolve => setTimeout(resolve, index * 200));
 				
 				const pageData = await scrapeUrl(linkUrl, search || '');
 				
-				results.discoveredPages.push({
-					url: linkUrl,
-					data: pageData,
-					scrapedAt: new Date().toISOString()
-				});
-				
-				results.summary.successfulScrapes++;
-				
-				// Add delay to be respectful
-				await new Promise(resolve => setTimeout(resolve, 1000));
+				return {
+					success: true,
+					result: {
+						url: linkUrl,
+						data: pageData,
+						scrapedAt: new Date().toISOString()
+					}
+				};
 			} catch (error) {
 				console.warn(`❌ Error scraping ${linkUrl}:`, error);
+				return {
+					success: false,
+					error: {
+						url: linkUrl,
+						error: (error as Error).message
+					}
+				};
+			}
+		});
+
+		// Wait for all scraping operations to complete
+		const scrapeResults = await Promise.allSettled(scrapePromises);
+		
+		// Process results
+		scrapeResults.forEach((result) => {
+			results.summary.totalPages++;
+			
+			if (result.status === 'fulfilled') {
+				if (result.value.success) {
+					results.discoveredPages.push(result.value.result);
+					results.summary.successfulScrapes++;
+				} else {
+					results.summary.errors.push(result.value.error);
+				}
+			} else {
 				results.summary.errors.push({
-					url: linkUrl,
-					error: (error as Error).message
+					url: 'unknown',
+					error: result.reason?.message || 'Promise rejected'
 				});
 			}
-			
-			results.summary.totalPages++;
-		}
+		});
 		
 	} catch (error) {
 		console.error('Error in multi-level scraping:', error);
@@ -749,7 +772,7 @@ ANÁLISIS ADICIONAL:
 		console.error('❌ Error scraping DIOCSA properties:', error.message);
 		// Fallback to standard scraping if enhanced method fails
 		console.log('🔄 Falling back to standard scraping method...');
-		return await scrapeUrl('https://www.diocsa.com.mx/rentas', search);
+		return await scrapeUrl(url, search);
 	}
 }
 

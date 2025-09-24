@@ -243,6 +243,7 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
     if (data) {
       phone = data.phone
       message = data.message
+      type = 'AI-tool'
     }
 
     const conn = await getConnectionByCompanySlug(c_name);
@@ -251,7 +252,7 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
 
     const session = await WhatsappSession.findById(sessionId);
 
-    if (type === "massive") {
+    if (type === "massive" || type === "AI-tool") {
       blockSession(c_name, session.name, phone);
     }
 
@@ -285,6 +286,27 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
         direction: "outbound-massive-api",
         body: sentMessage.body,
         respondedBy: "human",
+        status: 'enviado'
+      } as any;
+      const WhatsappChat = getWhatsappChatModel(conn);
+      await WhatsappChat.findOneAndUpdate(
+        {
+          'session.name': session.name,
+          $or: [
+            { phone: Number(phone.replace('@c.us', '')) },
+            { phone: phone }
+          ]
+        },
+        { $push: { messages: newMessage } },
+        { upsert: true }
+      );
+      unblockSession(c_name, session.name, phone);
+    } else if (type === "AI-tool") {
+      const newMessage = {
+        msgId: sentMessage.id?.id,
+        direction: "outbound-ai-tool",
+        body: sentMessage.body,
+        respondedBy: "AI",
         status: 'enviado'
       } as any;
       const WhatsappChat = getWhatsappChatModel(conn);
@@ -494,7 +516,9 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
 
     // Actualizar el chat con el asesor asignado (o null para desasignar)
     const chat = await Record.findOneAndUpdate(
-      { "data.number": Number(data.number) },
+      { $or: [
+        { "data.number": Number(data.number) }, 
+        { "data.telefono": data.number }] },
       {
         $set: {
           'data.asesor': advisor,

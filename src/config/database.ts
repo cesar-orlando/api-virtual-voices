@@ -128,6 +128,27 @@ export async function getAllFacebookConfigsFromAllDatabases() {
   return allFacebookConfigsArrays.flat();
 }
 
+export async function getAllDbNames(): Promise<string[]> {
+  const admin = mongoose.connection.db.admin();
+  const dbs = await admin.listDatabases();
+
+  const allCompanies: string[] = ['quicklearning'];
+
+  for (const dbInfo of dbs.databases) {
+    const dbName = dbInfo.name;
+    if (dbName === "admin" || dbName === "local") continue;
+
+    try {
+      allCompanies.push(dbName);
+    } catch (err) {
+      console.error(`Error fetching companies from ${dbName}:`, err);
+    }
+  }
+
+  return allCompanies;
+
+}
+
 // Exportar funciones del connection manager para compatibilidad
 export { getConnectionByCompanySlug as getCompanyConnection, getDbConnection as getMainConnection } from "./connectionManager";
 

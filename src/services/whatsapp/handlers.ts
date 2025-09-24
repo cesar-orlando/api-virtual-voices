@@ -196,6 +196,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
         _auditSource: 'Intervención Whatsapp',
       }
       await prospecto?.updateOne({ $set: { 'data.ia': false } }).setOptions({ context: 'query', auditContext, $locals: { auditContext } } as any);
+      
+      
       return;
     }
 

@@ -1,11 +1,18 @@
 import { Agent, tool, run } from '@openai/agents';
 import { getEnvironmentConfig } from '../../config/environments';
 import { DateTime } from 'luxon';
+import { IWhatsappChat } from '../../models/whatsappChat.model';
+import { MessageSchedulerService } from '../internal/messageSchedulerService';
+import { getWhatsappChatModel } from '../../models/whatsappChat.model';
+import { getConnectionByCompanySlug } from '../../config/connectionManager';
+import getCompanyModel from '../../models/company.model';
 
 interface AgentContext {
   company: string;
   phoneUser?: string;
-  chatHistory?: any[];
+  chatHistory?: IWhatsappChat;
+  sessionId?: string;
+  schedulerService?: MessageSchedulerService;
 }
 
 export abstract class BaseAgent {
@@ -13,8 +20,13 @@ export abstract class BaseAgent {
   protected company: string;
   protected openaiApiKey: string;
   protected agentContext: Record<string, any> = {};
+  protected schedulerService?: MessageSchedulerService;
+  
+  // Conversation summarization settings
+  private readonly SUMMARIZATION_THRESHOLD = 10; // Messages threshold for creating/updating summary
+  private readonly MAX_RECENT_MESSAGES = 10; // Keep only last N messages in context
 
-    constructor(company: string) {
+  constructor(company: string) {
     this.company = company;
     const envConfig = getEnvironmentConfig();
     this.openaiApiKey = envConfig.openaiApiKey;
@@ -27,12 +39,16 @@ export abstract class BaseAgent {
     process.env.OPENAI_API_KEY = this.openaiApiKey;
   }
 
+  /**
+   * Set the scheduler service for follow-up scheduling
+   */
+  public setSchedulerService(schedulerService: MessageSchedulerService): void {
+    this.schedulerService = schedulerService;
+  }
+
   public async initialize(): Promise<void> {
-    // Initialize the agent
-    // console.log(`🔧 BaseAgent: Calling initializeAgent for ${this.company}`);
     try {
         await this.initializeAgent();
-        // console.log(`🔧 BaseAgent: initializeAgent completed for ${this.company}`);
     } catch (error) {
         console.error(`❌ Error in BaseAgent initializeAgent for ${this.company}:`, error);
         throw error;
@@ -48,93 +64,52 @@ export abstract class BaseAgent {
    * Get the agent instance
    */
   public getAgent(): Agent<AgentContext> {
-    // console.log(`🔧 BaseAgent: getAgent called for ${this.company}, agent exists: ${!!this.agent}`);
     return this.agent;
   }
 
   /**
    * Process a message and return the response
+   * @param message - The user message
+   * @param context - Agent context
+   * @param chatDocument - The WhatsApp chat document (REQUIRED for summarization)
    */
-  public async processMessage(message: string, context?: AgentContext): Promise<string> {
+  public async processMessage(
+    message: string, 
+    context?: AgentContext,
+  ): Promise<string> {
     try {
-      // console.log(`🔧 BaseAgent: run function imported successfully`);
-      
-      // Build conversation history for context
-      let conversationContext = '';
-      if (context?.chatHistory && context.chatHistory.length > 0) {
-        conversationContext = '\n\nHISTORIAL DE CONVERSACION:\n';
-        context.chatHistory.forEach((msg: any, index: number) => {
-          const role = msg.role === 'user' ? 'Usuario' : 'IA';
-          // Escape special characters that could break JSON
-          const cleanContent = msg.content
-            .replace(/\\/g, '\\\\')  // Escape backslashes first
-            .replace(/"/g, '\\"')    // Escape quotes
-            .replace(/\n/g, ' ')     // Replace newlines with spaces
-            .replace(/\r/g, ' ')     // Replace carriage returns with spaces
-            .replace(/\t/g, ' ')     // Replace tabs with spaces
-            .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ') // Remove control characters
-            // Normalize Spanish characters to ASCII
-            .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u')
-            .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U')
-            .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
-            .replace(/¿/g, '').replace(/¡/g, ''); // Remove Spanish punctuation
-          conversationContext += `${role}: ${cleanContent}\n`;
-        });
-        conversationContext += '\nCONTEXTO ACTUAL:\n';
-        conversationContext += `- Nombre del usuario: ${this.extractUserName(context.chatHistory)}\n`;
-        conversationContext += `- Etapa de conversacion: ${this.determineConversationStage(context.chatHistory)}\n`;
-        conversationContext += `- Modalidad elegida: ${this.extractChosenModality(context.chatHistory)}\n`;
+      // Check if we need to update the conversation summary
+      if (!Array.isArray(context.chatHistory)) {
+        await this.updateConversationSummary(context.chatHistory as any);
       }
       
-      // Clean the current message as well
-      const cleanMessage = message
-        .replace(/\\/g, '\\\\')  // Escape backslashes first
-        .replace(/"/g, '\\"')    // Escape quotes
-        .replace(/\n/g, ' ')     // Replace newlines with spaces
-        .replace(/\r/g, ' ')     // Replace carriage returns with spaces
-        .replace(/\t/g, ' ')     // Replace tabs with spaces
-        .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ') // Remove control characters
-        // Normalize Spanish characters to ASCII
-        .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u')
-        .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U')
-        .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
-        .replace(/¿/g, '').replace(/¡/g, ''); // Remove Spanish punctuation
+      // Clean the current message
+      const cleanMessage = this.cleanMessageForContext(message);
 
+      // Get current time
       const nowInTimezone = DateTime.now().setZone(this.agentContext.timezone);
       const currentTime = nowInTimezone.toFormat('cccc, dd \'de\' MMMM \'de\' yyyy \'a las\' HH:mm \'horas\' (z)');
-
       const currentTimeText = `Hora local actual: ${currentTime}`;
       
-      // Add conversation context to the message
-      const messageWithContext = conversationContext ? 
-        `${conversationContext}\n\nMENSAJE ACTUAL DEL USUARIO:\n${cleanMessage}\n${currentTimeText}` : 
-        `${cleanMessage}\n${currentTimeText}`;
+      // Build optimized context using embedded summary + recent messages + company context
+      const companyContext = await this.getCompanyBusinessContext();
+      const optimizedContext = this.buildOptimizedContext(
+        context.chatHistory, 
+        cleanMessage, 
+        currentTimeText,
+        companyContext
+      );
 
       const agentContext: AgentContext = {
         company: this.company,
+        schedulerService: this.schedulerService,
         ...context
       };
       
-      // SMART CONTEXT: If message is too long, use intelligent context reduction
-      // Different thresholds for different companies
-      let contextThreshold = 4000; // Default
-      
-      if (messageWithContext.length > contextThreshold) {
-        const smartContext = this.buildSmartContext(context?.chatHistory || [], message) + `\n${currentTimeText}`;
-
-        const result = await run(this.agent, smartContext, {
-          context: agentContext
-        });
-        return result.finalOutput || 'No se pudo generar una respuesta.';
-      }
-      
-      const result = await run(this.agent, messageWithContext, {
+      const result = await run(this.agent, optimizedContext, {
         context: agentContext
       });
-      // console.log(`🔧 BaseAgent: Agent run completed for ${this.company}`);
-      // console.log(`🔧 BaseAgent: Result:`, result);
-
-      // console.log(`🔧 BaseAgent: finalOutput:`, result.finalOutput);
+      
       return result.finalOutput || 'No se pudo generar una respuesta.';
     } catch (error) {
       console.error(`❌ Error processing message for ${this.company}:`, error.message);
@@ -143,261 +118,329 @@ export abstract class BaseAgent {
   }
 
   /**
-   * Extract user name from conversation history
+   * Update the conversation summary embedded in the chat document
    */
-  private extractUserName(chatHistory: any[]): string {
-    for (const msg of chatHistory) {
-      if (msg.role === 'user' && msg.content.toLowerCase().includes('llamo')) {
-        const match = msg.content.match(/llamo\s+([A-Za-zÁáÉéÍíÓóÚúÑñ\s]+)/i);
-        if (match) return match[1].trim();
+  private async updateConversationSummary(chat: any): Promise<void> {
+    const lastSummarizedIndex = chat.conversationSummary?.lastSummarizedIndex || 0;
+    const newMessagesCount = chat.messages.length - lastSummarizedIndex;
+    
+    // Check if we need to create or update the summary
+    if (newMessagesCount >= this.SUMMARIZATION_THRESHOLD) {
+      console.log(`🔄 Updating conversation summary for chat ${chat._id}...`);
+      
+      try {
+        // Get new messages to process
+        const newMessages = chat.messages.slice(lastSummarizedIndex);
+        
+        // For large conversations (30+ new messages), process in chunks to avoid token limits
+        if (newMessages.length > 30) {
+          console.log(`⚠️  Large conversation detected (${newMessages.length} messages). Processing in chunks...`);
+          await this.processLargeConversationSummary(chat, newMessages, lastSummarizedIndex);
+        } else {
+          // Normal processing for smaller updates
+          const updatedSummary = await this.createProgressiveSummary(
+            chat.conversationSummary?.summary || '',
+            newMessages
+          );
+          
+          // Update the embedded summary
+          if (!chat.conversationSummary) {
+            chat.conversationSummary = {
+              lastSummarizedIndex: 0,
+              summary: '',
+              extractedFacts: {
+                decisions: [],
+                preferences: []
+              },
+              conversationStage: 'Inicio',
+              tokensSaved: 0,
+              lastUpdated: new Date()
+            };
+          }
+          
+          chat.conversationSummary.lastSummarizedIndex = chat.messages.length;
+          chat.conversationSummary.summary = this.truncateField(updatedSummary.summary, 2000);
+          chat.conversationSummary.extractedFacts = {
+            userName: updatedSummary.extractedFacts.userName ? 
+              this.truncateField(updatedSummary.extractedFacts.userName, 100) : undefined,
+            email: updatedSummary.extractedFacts.email ? 
+              this.truncateField(updatedSummary.extractedFacts.email, 200) : undefined,
+            phone: updatedSummary.extractedFacts.phone ? 
+              this.truncateField(updatedSummary.extractedFacts.phone, 50) : undefined,
+            decisions: updatedSummary.extractedFacts.decisions.map(d => this.truncateField(d, 200)),
+            preferences: updatedSummary.extractedFacts.preferences.map(p => this.truncateField(p, 200))
+          };
+          chat.conversationSummary.conversationStage = this.truncateField(updatedSummary.conversationStage, 100);
+          chat.conversationSummary.tokensSaved = (chat.conversationSummary.tokensSaved || 0) + updatedSummary.tokensSaved;
+          chat.conversationSummary.lastUpdated = new Date();
+          
+          // Save to database
+          await chat.save();
+          
+          console.log(`✅ Summary updated.`);
+        }
+      } catch (error) {
+        console.error('❌ Error updating conversation summary:', error);
       }
     }
-    return 'No proporcionado';
   }
 
-    /**
-   * Build smart context that preserves essential information while reducing length
+  /**
+   * Process large conversations in chunks to avoid token limits
    */
-  private buildSmartContext(chatHistory: any[], currentMessage: string): string {
-    if (!chatHistory || chatHistory.length === 0) {
-      return currentMessage;
-    }
+  private async processLargeConversationSummary(
+    chat: IWhatsappChat, 
+    allNewMessages: any[], 
+    startIndex: number
+  ): Promise<void> {
+    const CHUNK_SIZE = 20; // Process 20 messages at a time
+    let currentSummary = chat.conversationSummary?.summary || '';
+    let totalTokensSaved = 0;
     
-    // Extract key information based on company type
-    const contextInfo = this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg' 
-      ? this.extractRealEstateContext(chatHistory)
-      : this.extractContextInfo(chatHistory);
-    
-    // Build intelligent summary
-    let smartContext = '';
-    
-    // Add context summary for real estate
-    if (this.company === 'grupo-milkasa' || this.company === 'grupokg' || this.company === 'grupo-kg') {
-      const realEstateContext = contextInfo as any; // Cast para evitar errores de tipo
-      if (realEstateContext.userName) {
-        smartContext += `CONTEXTO: Cliente es ${realEstateContext.userName}. `;
-      }
-      if (realEstateContext.greeted) {
-        smartContext += `Ya se realizó el saludo inicial. `;
-      }
-      if (realEstateContext.propertyType) {
-        smartContext += `Busca: ${realEstateContext.propertyType}. `;
-      }
-      if (realEstateContext.location) {
-        smartContext += `Ubicación: ${realEstateContext.location}. `;
-      }
-      if (realEstateContext.operation) {
-        smartContext += `Operación: ${realEstateContext.operation}. `;
-      }
-      if (realEstateContext.budget) {
-        smartContext += `Presupuesto: ${realEstateContext.budget}. `;
-      }
-      if (realEstateContext.currentStage) {
-        smartContext += `Etapa: ${realEstateContext.currentStage}. `;
-      }
-    } else {
-      // Original logic for QuickLearning
-      const quickLearningContext = contextInfo as any; // Cast para evitar errores de tipo  
-      if (quickLearningContext.userName) {
-        smartContext += `CONTEXTO: Usuario es ${quickLearningContext.userName}. `;
-      }
-      if (quickLearningContext.chosenModality) {
-        smartContext += `Modalidad elegida: ${quickLearningContext.chosenModality}. `;
-      }
-      if (quickLearningContext.currentStage) {
-        smartContext += `Etapa: ${quickLearningContext.currentStage}. `;
-      }
-      if (quickLearningContext.providedData && quickLearningContext.providedData.length > 0) {
-        smartContext += `Datos proporcionados: ${quickLearningContext.providedData.join(', ')}. `;
-      }
-    }
-    
-    // Add more recent messages
-    const messageCount = 20;
-    const recentMessages = chatHistory.slice(-messageCount);
-    
-    if (recentMessages.length > 0) {
-      smartContext += '\n\nULTIMOS MENSAJES:\n';
-      recentMessages.forEach((msg: any) => {
-        // Usar el nombre correcto según la empresa
-        let assistantName = 'Asistente'; // Fallback
-        if (this.company === 'grupo-milkasa') {
-          assistantName = 'Alejandro';
-        } else if (this.company === 'grupokg' || this.company === 'grupo-kg') {
-          assistantName = 'Kaigi';
+    // Process messages in chunks
+    for (let i = 0; i < allNewMessages.length; i += CHUNK_SIZE) {
+      const chunk = allNewMessages.slice(i, i + CHUNK_SIZE);
+      const chunkEnd = Math.min(i + CHUNK_SIZE, allNewMessages.length);
+
+      try {
+        const chunkSummary = await this.createProgressiveSummary(currentSummary, chunk);
+        
+        // Update running summary
+        currentSummary = chunkSummary.summary;
+        totalTokensSaved += chunkSummary.tokensSaved;
+        
+        // Update progress in database every few chunks
+        if ((i + CHUNK_SIZE) % 40 === 0 || chunkEnd === allNewMessages.length) {
+          // Update the embedded summary
+          if (!chat.conversationSummary) {
+            chat.conversationSummary = {
+              lastSummarizedIndex: 0,
+              summary: '',
+              extractedFacts: {
+                decisions: [],
+                preferences: []
+              },
+              conversationStage: 'Inicio',
+              tokensSaved: 0,
+              lastUpdated: new Date()
+            };
+          }
+          
+          chat.conversationSummary.lastSummarizedIndex = startIndex + chunkEnd;
+          chat.conversationSummary.summary = this.truncateField(chunkSummary.summary, 2000);
+          chat.conversationSummary.extractedFacts = {
+            userName: chunkSummary.extractedFacts.userName ? 
+              this.truncateField(chunkSummary.extractedFacts.userName, 100) : undefined,
+            email: chunkSummary.extractedFacts.email ? 
+              this.truncateField(chunkSummary.extractedFacts.email, 200) : undefined,
+            phone: chunkSummary.extractedFacts.phone ? 
+              this.truncateField(chunkSummary.extractedFacts.phone, 50) : undefined,
+            decisions: chunkSummary.extractedFacts.decisions.map(d => this.truncateField(d, 200)),
+            preferences: chunkSummary.extractedFacts.preferences.map(p => this.truncateField(p, 200))
+          };
+          chat.conversationSummary.conversationStage = this.truncateField(chunkSummary.conversationStage, 100);
+          chat.conversationSummary.tokensSaved = (chat.conversationSummary.tokensSaved || 0) + totalTokensSaved;
+          chat.conversationSummary.lastUpdated = new Date();
+          
+          await chat.save();
+          
+          // Reset for next batch
+          totalTokensSaved = 0;
         }
         
-        const role = msg.role === 'user' ? 'Cliente' : assistantName;
-        // Clean and limit message content
-        const cleanContent = this.cleanMessageForContext(msg.content);
-        smartContext += `${role}: ${cleanContent}\n`;
+        // Small delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+      } catch (error) {
+        console.error(`❌ Error processing chunk ${Math.floor(i/CHUNK_SIZE) + 1}:`, error);
+        // Continue with next chunk
+      }
+    }
+
+    console.log(`✅ Large conversation summary updated!`);
+
+  }
+
+  /**
+   * Create or update a progressive summary from existing summary + new messages
+   */
+  private async createProgressiveSummary(
+    existingSummary: string,
+    newMessages: any[]
+  ): Promise<{
+    summary: string;
+    extractedFacts: {
+      userName?: string;
+      email?: string;
+      phone?: string;
+      decisions: string[];
+      preferences: string[];
+    };
+    conversationStage: string;
+    tokensSaved: number;
+  }> {
+    // Prepare new messages for analysis
+    const newMessagesText = newMessages.map((msg) => {
+      const role = msg.direction === 'inbound' ? 'Cliente' : this.getAssistantName();
+      return `${role}: ${msg.body}`;
+    }).join('\n');
+
+    // Create progressive summarization prompt
+    const summaryPrompt = `Como experto asistente de ${this.company}, actualiza el resumen de conversación:
+
+${existingSummary ? `RESUMEN ANTERIOR:\n${existingSummary}\n\n` : ''}NUEVOS MENSAJES A INTEGRAR:\n${newMessagesText}
+
+Crea un resumen PROGRESIVO que combine la información anterior con los nuevos mensajes. Proporciona la respuesta en formato JSON:
+
+{
+  "resumen": "Resumen actualizado y conciso que integre toda la información relevante (máximo 1900 caracteres)",
+  "datos_extraidos": {
+    "nombre_usuario": "nombre del cliente si se identificó, o null (máximo 90 caracteres)",
+    "email": "email si se proporcionó, o null (máximo 190 caracteres)", 
+    "telefono": "teléfono si se proporcionó, o null (máximo 40 caracteres)",
+    "decisiones": ["lista de decisiones importantes tomadas hasta ahora (cada item máximo 190 caracteres)"],
+    "preferencias": ["preferencias o requisitos expresados por el cliente (cada item máximo 190 caracteres)"]
+  },
+  "etapa_conversacion": "etapa actual de la conversación (máximo 90 caracteres)",
+  "progreso": "qué ha progresado en esta actualización"
+}
+
+IMPORTANTE: 
+- Responde SOLO con el JSON válido, sin texto adicional
+- Mantén todos los campos dentro de los límites de caracteres especificados
+- Sé conciso pero informativo`;
+
+    try {
+      const result = await run(this.agent, summaryPrompt, {
+        context: { company: this.company }
       });
-    }
-    
-    // Add current message
-    smartContext += `\nMENSAJE ACTUAL DEL CLIENTE:\n${currentMessage}`;
-    
-    console.log(`🔧 Smart context length: ${smartContext.length} (reduced from original)`);
-    
-    return smartContext;
-  }
-  
-  /**
-   * Extract key information from chat history
-   */
-  private extractContextInfo(chatHistory: any[]): {
-    userName: string | null;
-    chosenModality: string | null;
-    currentStage: string;
-    providedData: string[];
-  } {
-    let userName: string | null = null;
-    let chosenModality: string | null = null;
-    let currentStage = 'Inicio';
-    const providedData: string[] = [];
-    
-    for (const msg of chatHistory) {
-      if (msg.role === 'user' && msg.content) {
-        const content = msg.content.toLowerCase();
-        
-        // Extract user name (likely short responses after greeting)
-        if (!userName && msg.content.length > 2 && msg.content.length < 25 && 
-            !content.includes('hola') && !content.includes('info') &&
-            !content.includes('si') && !content.includes('no') &&
-            !content.includes('?') && !content.includes('@') &&
-            !/\d{5,}/.test(msg.content)) {
-          userName = msg.content.trim();
-        }
-        
-        // Extract chosen modality
-        if (content.includes('virtual') || content === '2') {
-          chosenModality = 'Virtual';
-        } else if (content.includes('presencial') || content === '1') {
-          chosenModality = 'Presencial';
-        } else if (content.includes('online') || content === '3') {
-          chosenModality = 'Online';
-        }
-        
-        // Extract provided data
-        if (content.includes('@')) {
-          providedData.push('email');
-        }
-        if (/\d{10,}/.test(msg.content.replace(/\s/g, ''))) {
-          providedData.push('telefono');
-        }
-        
-        // Determine current stage
-        if (content.includes('inscrib') || content.includes('quiero')) {
-          currentStage = 'Inscripción';
-        } else if (chosenModality) {
-          currentStage = 'Información específica';
-        } else if (userName) {
-          currentStage = 'Elección de modalidad';
-        }
+
+      let summaryData;
+      try {
+        summaryData = JSON.parse(result.finalOutput || '{}');
+      } catch (parseError) {
+        console.warn('Failed to parse AI summary, creating fallback summary');
+        summaryData = this.createFallbackSummaryData(newMessages);
       }
+
+      // Calculate tokens saved (estimate)
+      const originalTokens = newMessagesText.length / 4;
+      const summaryTokens = (summaryData.resumen?.length || 0) / 4;
+      const tokensSaved = Math.round(Math.max(0, originalTokens - summaryTokens));
+
+      return {
+        summary: summaryData.resumen || 'Resumen no disponible',
+        extractedFacts: {
+          userName: summaryData.datos_extraidos?.nombre_usuario || undefined,
+          email: summaryData.datos_extraidos?.email || undefined,
+          phone: summaryData.datos_extraidos?.telefono || undefined,
+          decisions: summaryData.datos_extraidos?.decisiones || [],
+          preferences: summaryData.datos_extraidos?.preferencias || []
+        },
+        conversationStage: summaryData.etapa_conversacion || 'Conversación en progreso',
+        tokensSaved
+      };
+    } catch (error) {
+      console.error('Error creating AI summary, using fallback:', error);
+      return this.createFallbackSummaryData(newMessages);
     }
-    
-    return { userName, chosenModality, currentStage, providedData };
   }
 
   /**
-   * Extract key information for real estate companies
+   * Create fallback summary data when AI summarization fails
    */
-  private extractRealEstateContext(chatHistory: any[]): {
-    userName: string | null;
-    greeted: boolean;
-    propertyType: string | null;
-    location: string | null;
-    operation: string | null;
-    budget: string | null;
-    currentStage: string;
-    chosenModality?: string | null;  // Para compatibilidad
-    providedData?: string[];  // Para compatibilidad
+  private createFallbackSummaryData(messages: any[]): {
+    summary: string;
+    extractedFacts: {
+      userName?: string;
+      email?: string;
+      phone?: string;
+      decisions: string[];
+      preferences: string[];
+    };
+    conversationStage: string;
+    tokensSaved: number;
   } {
-    let userName: string | null = null;
-    let greeted = false;
-    let propertyType: string | null = null;
-    let location: string | null = null;
-    let operation: string | null = null;
-    let budget: string | null = null;
-    let currentStage = 'Inicio';
+    const messagesText = messages.map(m => m.body || '').join(' ');
+    
+    return {
+      summary: `Conversación actualizada con ${messages.length} nuevos mensajes. Progreso basado en análisis automático.`,
+      extractedFacts: {
+        decisions: [],
+        preferences: []
+      },
+      conversationStage: 'Conversación en progreso',
+      tokensSaved: Math.round(messagesText.length / 8) // Conservative estimate
+    };
+  }
 
-    for (const msg of chatHistory) {
-      if (msg.role === 'user' && msg.content) {
-        const content = msg.content.toLowerCase();
-
-        // Extract user name (likely short responses after greeting)
-        if (!userName && msg.content.length > 2 && msg.content.length < 25 && 
-            !content.includes('hola') && !content.includes('info') &&
-            !content.includes('si') && !content.includes('no') &&
-            !content.includes('?') && !content.includes('@') &&
-            !/\d{5,}/.test(msg.content)) {
-          userName = msg.content.trim();
-        }
-
-        // Check if greeting happened
-        if (content.includes('hola') || content.includes('buenas') || content.includes('buenos días')) {
-          greeted = true;
-        }
-
-        // Extract property type
-        if (content.includes('casa') || content.includes('departamento') || content.includes('depa') || 
-            content.includes('terreno') || content.includes('local') || content.includes('oficina')) {
-          propertyType = content.includes('casa') ? 'casa' : 
-                        content.includes('departamento') || content.includes('depa') ? 'departamento' :
-                        content.includes('terreno') ? 'terreno' : 'propiedad';
-        }
-
-        // Extract location (ciudades de Michoacán)
-        if (content.includes('morelia') || content.includes('uruapan') || content.includes('zamora') ||
-            content.includes('pátzcuaro') || content.includes('patzcuaro') || content.includes('lázaro cárdenas') ||
-            content.includes('apatzingán') || content.includes('zitácuaro') || content.includes('michoacán')) {
-          location = msg.content.trim();
-        }
-
-        // Extract operation
-        if (content.includes('comprar') || content.includes('compra') || content.includes('venta')) {
-          operation = 'compra';
-        } else if (content.includes('rentar') || content.includes('renta') || content.includes('alquiler')) {
-          operation = 'renta';
-        } else if (content.includes('inversión') || content.includes('inversion')) {
-          operation = 'inversión';
-        }
-
-        // Extract budget
-        if (content.includes('presupuesto') || content.includes('$') || content.includes('pesos') ||
-            content.includes('millones') || content.includes('mil') || /\d+[\d,]*/.test(content)) {
-          budget = msg.content.substring(0, 50); // Limitar longitud
-        }
-
-        // Determine current stage
-        if (userName && propertyType && location && operation) {
-          currentStage = 'Búsqueda de propiedades';
-        } else if (userName && (propertyType || location || operation)) {
-          currentStage = 'Recolección de datos';
-        } else if (userName) {
-          currentStage = 'Identificación completada';
-        } else if (greeted) {
-          currentStage = 'Saludo completado';
-        }
+  /**
+   * Build optimized context using embedded summary + recent messages + company context
+   */
+  private buildOptimizedContext(
+    chat: IWhatsappChat | undefined, 
+    currentMessage: string, 
+    currentTime: string,
+    companyContext?: string
+  ): string {
+    let context = '';
+    
+    // Add company-wide business context if available
+    if (companyContext) {
+      context += `${companyContext}\n`;
+    }
+    
+    // Add existing summary if available
+    if (chat?.conversationSummary?.summary) {
+      context += `HISTORIAL: ${chat.conversationSummary.summary}\n`;
+      
+      if (chat.conversationSummary.extractedFacts?.userName) {
+        context += `Cliente: ${chat.conversationSummary.extractedFacts.userName}\n`;
       }
       
-      // Check if assistant already greeted
-      if (msg.role === 'assistant' && msg.content) {
-        const assistantContent = msg.content.toLowerCase();
-        // Detectar saludo según la empresa
-        const greetingPattern = this.company === 'grupokg' || this.company === 'grupo-kg' ? 'soy kaigi' : 'soy alejandro';
-        
-        if (assistantContent.includes('¿con quién tengo el gusto?') || 
-            assistantContent.includes(greetingPattern)) {
-          greeted = true;
-        }
+      if (chat.conversationSummary.extractedFacts?.email) {
+        context += `Email: ${chat.conversationSummary.extractedFacts.email}\n`;
+      }
+      
+      if (chat.conversationSummary.extractedFacts?.phone) {
+        context += `Teléfono: ${chat.conversationSummary.extractedFacts.phone}\n`;
+      }
+      
+      if (chat.conversationSummary.extractedFacts?.decisions?.length > 0) {
+        context += `Decisiones: ${chat.conversationSummary.extractedFacts.decisions.join(', ')}\n`;
+      }
+      
+      if (chat.conversationSummary.extractedFacts?.preferences?.length > 0) {
+        context += `Preferencias: ${chat.conversationSummary.extractedFacts.preferences.join(', ')}\n`;
+      }
+      
+      context += `Etapa: ${chat.conversationSummary.conversationStage}\n\n`;
+    }
+    
+    // Add recent messages (not yet summarized or most recent ones)
+    if (chat?.messages && chat.messages.length > 0) {
+      const lastSummarizedIndex = chat.conversationSummary?.lastSummarizedIndex || 0;
+      const recentMessages = chat.messages.slice(
+        Math.max(lastSummarizedIndex, chat.messages.length - this.MAX_RECENT_MESSAGES)
+      );
+      
+      if (recentMessages.length > 0) {
+        context += 'MENSAJES RECIENTES:\n';
+        recentMessages.forEach(msg => {
+          const role = msg.direction === 'inbound' ? 'Cliente' : this.getAssistantName();
+          const cleanContent = this.cleanMessageForContext(msg.body);
+          context += `${role}: ${cleanContent}\n`;
+        });
+        context += '\n';
       }
     }
-
-    return { userName, greeted, propertyType, location, operation, budget, currentStage };
+    
+    // Add current message and time
+    context += `MENSAJE ACTUAL: ${currentMessage}\n${currentTime}`;
+    
+    return context;
   }
-  
+
   /**
    * Clean message content for context while preserving meaning
    */
@@ -411,50 +454,533 @@ export abstract class BaseAgent {
       .replace(/\r/g, ' ')     // Replace carriage returns with spaces
       .replace(/\t/g, ' ')     // Replace tabs with spaces
       .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ') // Remove control characters
-      // Normalize Spanish characters to ASCII
-      .replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u')
-      .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I').replace(/Ó/g, 'O').replace(/Ú/g, 'U')
-      .replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
-      .replace(/¿/g, '').replace(/¡/g, '') // Remove Spanish punctuation
-      .substring(0, 100) // Limit length
+      .substring(0, 150) // Reasonable limit for context
       .trim();
   }
 
   /**
-   * Determine current conversation stage
+   * Truncate field to respect database model max length constraints
    */
-  private determineConversationStage(chatHistory: any[]): string {
-    const lastMessages = chatHistory.slice(-3);
-    const content = lastMessages.map(m => m.content.toLowerCase()).join(' ');
+  private truncateField(value: string, maxLength: number): string {
+    if (!value) return '';
     
-    if (content.includes('inscribir')) return 'Inscripción';
-    if (content.includes('precio') || content.includes('cuesta')) return 'Información de precios';
-    if (content.includes('virtual') || content.includes('online')) return 'Elección de modalidad';
-    if (content.includes('método')) return 'Explicación del método';
-    if (content.includes('interesado')) return 'Confirmación de interés';
-    if (content.includes('llamo')) return 'Obtención del nombre';
-    
-    return 'Inicio';
-  }
-
-  /**
-   * Extract chosen modality from conversation history
-   */
-  private extractChosenModality(chatHistory: any[]): string {
-    for (const msg of chatHistory) {
-      if (msg.role === 'user') {
-        if (msg.content.toLowerCase().includes('virtual')) return 'Virtual';
-        if (msg.content.toLowerCase().includes('online')) return 'Online';
-        if (msg.content.toLowerCase().includes('presencial')) return 'Presencial';
-      }
+    if (value.length <= maxLength) {
+      return value;
     }
-    return 'No elegida';
+    
+    // Truncate and add ellipsis if needed
+    const truncated = value.substring(0, maxLength - 3);
+    
+    // Try to break at word boundary if possible
+    const lastSpaceIndex = truncated.lastIndexOf(' ');
+    if (lastSpaceIndex > maxLength * 0.8) { // Only if we don't lose too much content
+      return truncated.substring(0, lastSpaceIndex) + '...';
+    }
+    
+    return truncated + '...';
   }
 
   /**
-   * Get company name
+   * Get assistant name based on company
    */
-  public getCompany(): string {
-    return this.company;
+  private getAssistantName(): string {
+    return 'Asistente';
   }
-} 
+
+  /**
+   * Update the company-wide conversation summary
+   * This should be called periodically (e.g., daily or after certain number of chat updates)
+   */
+  public async updateCompanySummary(): Promise<void> {
+    try {
+      console.log(`🔄 Updating company-wide summary for ${this.company}...`);
+      
+      const conn = await getConnectionByCompanySlug(this.company);
+      
+      const CompanyModel = getCompanyModel(conn);
+      const ChatModel = getWhatsappChatModel(conn);
+      
+      const companyDoc = await CompanyModel.findOne({ name: this.company });
+      if (!companyDoc) {
+        console.warn(`⚠️  Company ${this.company} not found, skipping company summary`);
+        return;
+      }
+
+      // Get all chats that have been updated since last company summary
+      const lastSummarizedIndex = companyDoc.conversationSummary?.lastSummarizedChatIndex || 0;
+      
+      // Get recent chats with meaningful conversation summaries
+      const recentChats = await ChatModel.find({
+        'conversationSummary.summary': { $exists: true, $ne: '' },
+      })
+      .select('conversationSummary phone name session messages.createdAt messages.direction')
+      .sort({ updatedAt: -1 })
+      .limit(50); // Process up to 50 recent chats
+
+      if (recentChats.length === 0) {
+        console.log('No new chats to process for company summary');
+        return;
+      }
+
+      // Analyze actual message timestamps for active timeframes
+      const timestampAnalysis = this.analyzeMessageTimestamps(recentChats);
+
+      // Create company-wide summary
+      const companySummary = await this.createCompanySummary(
+        companyDoc.conversationSummary?.summary || '',
+        recentChats,
+        timestampAnalysis
+      );
+
+      // Update company document
+      if (!companyDoc.conversationSummary) {
+        companyDoc.conversationSummary = {
+          lastSummarizedChatIndex: 0,
+          summary: '',
+          aggregatedFacts: {
+            totalChats: 0,
+            activeCustomers: [],
+            commonQuestions: [],
+            businessInsights: [],
+            customerPreferences: [],
+            salesOpportunities: [],
+            supportIssues: []
+          },
+          businessMetrics: {
+            customerSatisfactionTrends: [],
+            mostActiveTimeframes: [],
+            popularProducts: []
+          },
+          lastUpdated: new Date(),
+          tokensSaved: 0
+        };
+      }
+
+      // Update with new data
+      companyDoc.conversationSummary.summary = this.truncateField(companySummary.summary, 3000);
+      companyDoc.conversationSummary.aggregatedFacts = {
+        totalChats: companySummary.aggregatedFacts.totalChats,
+        activeCustomers: companySummary.aggregatedFacts.activeCustomers.map(c => this.truncateField(c, 100)),
+        commonQuestions: companySummary.aggregatedFacts.commonQuestions.map(q => this.truncateField(q, 300)),
+        businessInsights: companySummary.aggregatedFacts.businessInsights.map(i => this.truncateField(i, 300)),
+        customerPreferences: companySummary.aggregatedFacts.customerPreferences.map(p => this.truncateField(p, 200)),
+        salesOpportunities: companySummary.aggregatedFacts.salesOpportunities.map(o => this.truncateField(o, 300)),
+        supportIssues: companySummary.aggregatedFacts.supportIssues.map(i => this.truncateField(i, 300))
+      };
+      companyDoc.conversationSummary.businessMetrics = {
+        averageResponseTime: companySummary.businessMetrics.averageResponseTime ? 
+          this.truncateField(companySummary.businessMetrics.averageResponseTime, 50) : undefined,
+        customerSatisfactionTrends: companySummary.businessMetrics.customerSatisfactionTrends.map(t => this.truncateField(t, 200)),
+        mostActiveTimeframes: companySummary.businessMetrics.mostActiveTimeframes.map(t => this.truncateField(t, 100)),
+        popularProducts: companySummary.businessMetrics.popularProducts.map(p => this.truncateField(p, 150))
+      };
+      companyDoc.conversationSummary.tokensSaved = (companyDoc.conversationSummary.tokensSaved || 0) + companySummary.tokensSaved;
+      companyDoc.conversationSummary.lastUpdated = new Date();
+
+      await companyDoc.save();
+      console.log(`✅ Company summary updated for ${this.company}`);
+
+    } catch (error) {
+      console.error(`❌ Error updating company summary for ${this.company}:`, error);
+    }
+  }
+
+  /**
+   * Analyze message timestamps to determine actual active timeframes
+   */
+  private analyzeMessageTimestamps(chats: any[]): {
+    mostActiveHours: string[];
+    mostActiveDays: string[];
+    peakActivity: string;
+  } {
+    const hourCounts: Record<number, number> = {};
+    const dayCounts: Record<string, number> = {};
+    
+    // Process all messages from all chats
+    chats.forEach(chat => {
+      if (chat.messages && Array.isArray(chat.messages)) {
+        chat.messages
+          .filter((msg: any) => msg.direction === 'inbound' && msg.createdAt) // Only count customer messages
+          .forEach((msg: any) => {
+            const date = new Date(msg.createdAt);
+            const hour = date.getHours();
+            const dayName = date.toLocaleDateString('es-ES', { weekday: 'long' });
+            
+            hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+            dayCounts[dayName] = (dayCounts[dayName] || 0) + 1;
+          });
+      }
+    });
+
+    // Find most active hours (top 3)
+    const topHours = Object.entries(hourCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3)
+      .map(([hour, count]) => {
+        const hourNum = parseInt(hour);
+        const timeRange = `${hourNum.toString().padStart(2, '0')}:00-${(hourNum + 1).toString().padStart(2, '0')}:00`;
+        return `${timeRange} (${count} mensajes)`;
+      });
+
+    // Find most active days (top 3)
+    const topDays = Object.entries(dayCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3)
+      .map(([day, count]) => `${day} (${count} mensajes)`);
+
+    // Determine peak activity period
+    const peakHour = Object.entries(hourCounts)
+      .sort(([,a], [,b]) => b - a)[0];
+    
+    const peakActivity = peakHour 
+      ? `${parseInt(peakHour[0]).toString().padStart(2, '0')}:00-${(parseInt(peakHour[0]) + 1).toString().padStart(2, '0')}:00 con ${peakHour[1]} mensajes`
+      : 'No hay datos suficientes';
+
+    return {
+      mostActiveHours: topHours,
+      mostActiveDays: topDays,
+      peakActivity
+    };
+  }
+
+  /**
+   * Create company-wide summary from individual chat summaries
+   */
+  private async createCompanySummary(
+    existingCompanySummary: string,
+    recentChats: any[],
+    timestampAnalysis?: {
+      mostActiveHours: string[];
+      mostActiveDays: string[];
+      peakActivity: string;
+    }
+  ): Promise<{
+    summary: string;
+    aggregatedFacts: {
+      totalChats: number;
+      activeCustomers: string[];
+      commonQuestions: string[];
+      businessInsights: string[];
+      customerPreferences: string[];
+      salesOpportunities: string[];
+      supportIssues: string[];
+    };
+    businessMetrics: {
+      averageResponseTime?: string;
+      customerSatisfactionTrends: string[];
+      mostActiveTimeframes: string[];
+      popularProducts: string[];
+    };
+    tokensSaved: number;
+  }> {
+    // Prepare chat summaries for analysis
+    const chatSummariesText = recentChats.map((chat, index) => {
+      const customerName = chat.conversationSummary?.extractedFacts?.userName || 
+                          chat.name || 
+                          `Cliente ${chat.phone}`;
+      
+      return `Chat ${index + 1} - ${customerName}:
+Summary: ${chat.conversationSummary?.summary || 'Sin resumen'}
+Stage: ${chat.conversationSummary?.conversationStage || 'Desconocido'}
+Decisions: ${chat.conversationSummary?.extractedFacts?.decisions?.join(', ') || 'Ninguna'}
+Preferences: ${chat.conversationSummary?.extractedFacts?.preferences?.join(', ') || 'Ninguna'}`;
+    }).join('\n\n');
+
+    // Create company summarization prompt
+    const summaryPrompt = `Como experto analista de negocios para ${this.company}, analiza estos resúmenes de conversaciones y crea un análisis empresarial integral:
+
+${existingCompanySummary ? `ANÁLISIS EMPRESARIAL ANTERIOR:\n${existingCompanySummary}\n\n` : ''}NUEVOS RESÚMENES DE CONVERSACIONES A INTEGRAR:\n${chatSummariesText}
+
+Crea un ANÁLISIS EMPRESARIAL INTEGRAL que combine la información anterior con los nuevos datos. Proporciona la respuesta en formato JSON:
+
+{
+  "resumen_empresarial": "Análisis integral del estado del negocio basado en todas las conversaciones (máximo 2900 caracteres)",
+  "datos_agregados": {
+    "total_chats": ${recentChats.length},
+    "clientes_activos": ["lista de clientes identificados activamente comprometidos (máximo 90 caracteres cada uno)"],
+    "preguntas_frecuentes": ["patrones en preguntas de clientes (máximo 290 caracteres cada una)"],
+    "insights_negocio": ["insights importantes para el negocio (máximo 290 caracteres cada uno)"],
+    "preferencias_clientes": ["tendencias en preferencias de clientes (máximo 190 caracteres cada una)"],
+    "oportunidades_venta": ["oportunidades de venta identificadas (máximo 290 caracteres cada una)"],
+    "problemas_soporte": ["problemas recurrentes de soporte (máximo 290 caracteres cada uno)"]
+  },
+  "metricas_negocio": {
+    "tiempo_respuesta_promedio": "estimación del tiempo de respuesta promedio (máximo 40 caracteres)",
+    "tendencias_satisfaccion": ["tendencias en satisfacción del cliente (máximo 190 caracteres cada una)"],
+    "horarios_mas_activos": ["horarios de mayor actividad (máximo 90 caracteres cada uno)"],
+    "productos_populares": ["productos o servicios más mencionados (máximo 140 caracteres cada uno)"]
+  },
+  "progreso": "qué nuevo conocimiento empresarial se ha obtenido"
+}
+
+IMPORTANTE: 
+- Responde SOLO con el JSON válido, sin texto adicional
+- Mantén todos los campos dentro de los límites de caracteres especificados
+- Enfócate en insights accionables para el negocio
+- Identifica patrones y tendencias empresariales`;
+
+    try {
+      const result = await run(this.agent, summaryPrompt, {
+        context: { company: this.company }
+      });
+
+      let summaryData;
+      try {
+        summaryData = JSON.parse(result.finalOutput || '{}');
+      } catch (parseError) {
+        console.warn('Failed to parse AI company summary, creating fallback');
+        summaryData = this.createFallbackCompanySummaryData(recentChats);
+      }
+
+      // Calculate tokens saved (estimate)
+      const originalTokens = chatSummariesText.length / 4;
+      const summaryTokens = (summaryData.resumen_empresarial?.length || 0) / 4;
+      const tokensSaved = Math.round(Math.max(0, originalTokens - summaryTokens));
+
+      return {
+        summary: summaryData.resumen_empresarial || 'Análisis empresarial no disponible',
+        aggregatedFacts: {
+          totalChats: summaryData.datos_agregados?.total_chats || recentChats.length,
+          activeCustomers: summaryData.datos_agregados?.clientes_activos || [],
+          commonQuestions: summaryData.datos_agregados?.preguntas_frecuentes || [],
+          businessInsights: summaryData.datos_agregados?.insights_negocio || [],
+          customerPreferences: summaryData.datos_agregados?.preferencias_clientes || [],
+          salesOpportunities: summaryData.datos_agregados?.oportunidades_venta || [],
+          supportIssues: summaryData.datos_agregados?.problemas_soporte || []
+        },
+        businessMetrics: {
+          averageResponseTime: summaryData.metricas_negocio?.tiempo_respuesta_promedio || undefined,
+          customerSatisfactionTrends: summaryData.metricas_negocio?.tendencias_satisfaccion || [],
+          mostActiveTimeframes: timestampAnalysis?.mostActiveHours || [],
+          popularProducts: summaryData.metricas_negocio?.productos_populares || []
+        },
+        tokensSaved
+      };
+    } catch (error) {
+      console.error('Error creating AI company summary, using fallback:', error);
+      return this.createFallbackCompanySummaryData(recentChats);
+    }
+  }
+
+  /**
+   * Create fallback company summary data when AI summarization fails
+   */
+  private createFallbackCompanySummaryData(chats: any[]): {
+    summary: string;
+    aggregatedFacts: {
+      totalChats: number;
+      activeCustomers: string[];
+      commonQuestions: string[];
+      businessInsights: string[];
+      customerPreferences: string[];
+      salesOpportunities: string[];
+      supportIssues: string[];
+    };
+    businessMetrics: {
+      averageResponseTime?: string;
+      customerSatisfactionTrends: string[];
+      mostActiveTimeframes: string[];
+      popularProducts: string[];
+    };
+    tokensSaved: number;
+  } {
+    const activeCustomers = chats
+      .map(chat => chat.conversationSummary?.extractedFacts?.userName || chat.name)
+      .filter(Boolean)
+      .slice(0, 10); // Limit to 10 active customers
+
+    return {
+      summary: `Análisis empresarial actualizado con ${chats.length} conversaciones recientes. Datos procesados automáticamente.`,
+      aggregatedFacts: {
+        totalChats: chats.length,
+        activeCustomers,
+        commonQuestions: [],
+        businessInsights: [`${chats.length} conversaciones procesadas en el último análisis`],
+        customerPreferences: [],
+        salesOpportunities: [],
+        supportIssues: []
+      },
+      businessMetrics: {
+        customerSatisfactionTrends: [],
+        mostActiveTimeframes: [],
+        popularProducts: []
+      },
+      tokensSaved: Math.round(chats.length * 50) // Conservative estimate
+    };
+  }
+
+  /**
+   * Get conversation summary from chat document (for external access)
+   */
+  public getConversationSummary(chat: IWhatsappChat): any {
+    return chat.conversationSummary || null;
+  }
+
+  /**
+   * Force summary update (useful for testing or manual triggers)
+   */
+  public async forceSummaryUpdate(chat: any): Promise<void> {
+    const originalThreshold = this.SUMMARIZATION_THRESHOLD;
+    (this as any).SUMMARIZATION_THRESHOLD = 1; // Temporarily lower threshold
+    
+    await this.updateConversationSummary(chat);
+    
+    (this as any).SUMMARIZATION_THRESHOLD = originalThreshold; // Restore original
+  }
+
+  public async forceAllChatsSummaryUpdate(limit: number = 100): Promise<void> {
+    try {
+      const conn = await getConnectionByCompanySlug(this.company);
+      const ChatModel = getWhatsappChatModel(conn);
+
+      // Get all chats for the company
+      const chats = await ChatModel.find({})
+        .sort({ updatedAt: -1 })
+        .limit(limit); // Limit to specified number for safety
+
+      if (chats.length === 0) {
+        console.log('No chats found to update summaries');
+        return;
+      }
+
+      // Update each chat's summary
+      await Promise.all(chats.map(chat => this.updateConversationSummary(chat as any)));
+    } catch (error) {
+      console.error(`❌ Error forcing summary update for all chats in ${this.company}:`, error);
+    }
+  }
+
+  /**
+   * Calculate estimated token savings for a chat
+   */
+  public calculateTokenSavings(chat: IWhatsappChat): {
+    messagesCount: number;
+    summarizedMessages: number;
+    recentMessages: number;
+    estimatedSavings: number;
+    percentageSaved: number;
+  } {
+    if (!chat.conversationSummary) {
+      return {
+        messagesCount: chat.messages.length,
+        summarizedMessages: 0,
+        recentMessages: chat.messages.length,
+        estimatedSavings: 0,
+        percentageSaved: 0
+      };
+    }
+
+    const totalMessages = chat.messages.length;
+    const summarizedMessages = chat.conversationSummary.lastSummarizedIndex;
+    const recentMessages = totalMessages - summarizedMessages;
+    
+    // Estimate original tokens for summarized messages
+    const summarizedContent = chat.messages
+      .slice(0, summarizedMessages)
+      .map(m => m.body)
+      .join(' ');
+    
+    const originalTokens = summarizedContent.length / 4;
+    const summaryTokens = (chat.conversationSummary.summary?.length || 0) / 4;
+    const estimatedSavings = Math.max(0, originalTokens - summaryTokens);
+    
+    const percentageSaved = originalTokens > 0 
+      ? Math.round((estimatedSavings / originalTokens) * 100)
+      : 0;
+
+    return {
+      messagesCount: totalMessages,
+      summarizedMessages,
+      recentMessages,
+      estimatedSavings: Math.round(estimatedSavings),
+      percentageSaved
+    };
+  }
+
+  /**
+   * Get company-wide conversation summary (for external access)
+   */
+  public async getCompanyConversationSummary(): Promise<any> {
+    try {
+      const conn = await getConnectionByCompanySlug(this.company);
+      const CompanyModel = getCompanyModel(conn);
+      
+      const companyDoc = await CompanyModel.findOne({ name: this.company });
+      return companyDoc?.conversationSummary || null;
+    } catch (error) {
+      console.error(`❌ Error getting company summary for ${this.company}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Force company summary update (useful for testing or manual triggers)
+   */
+  public async forceCompanySummaryUpdate(): Promise<void> {
+    await this.updateCompanySummary();
+  }
+
+  /**
+   * Get company business insights for context enhancement
+   */
+  public async getCompanyBusinessContext(): Promise<string> {
+    try {
+      const companySummary = await this.getCompanyConversationSummary();
+      if (!companySummary) return '';
+
+      let context = '';
+      
+      if (companySummary.summary) {
+        context += `CONTEXTO EMPRESARIAL: ${companySummary.summary}\n`;
+      }
+
+      if (companySummary.aggregatedFacts?.commonQuestions?.length > 0) {
+        context += `PREGUNTAS FRECUENTES: ${companySummary.aggregatedFacts.commonQuestions.slice(0, 3).join(', ')}\n`;
+      }
+
+      if (companySummary.aggregatedFacts?.businessInsights?.length > 0) {
+        context += `INSIGHTS EMPRESARIALES: ${companySummary.aggregatedFacts.businessInsights.slice(0, 2).join(', ')}\n`;
+      }
+
+      if (companySummary.aggregatedFacts?.customerPreferences?.length > 0) {
+        context += `PREFERENCIAS COMUNES: ${companySummary.aggregatedFacts.customerPreferences.slice(0, 2).join(', ')}\n`;
+      }
+
+      return context;
+    } catch (error) {
+      console.error(`❌ Error getting company business context for ${this.company}:`, error);
+      return '';
+    }
+  }
+
+  /**
+   * Calculate estimated token savings for company-wide summary
+   */
+  public async calculateCompanyTokenSavings(): Promise<{
+    totalChats: number;
+    estimatedSavings: number;
+    lastUpdated?: Date;
+  }> {
+    try {
+      const companySummary = await this.getCompanyConversationSummary();
+      if (!companySummary) {
+        return {
+          totalChats: 0,
+          estimatedSavings: 0
+        };
+      }
+
+      return {
+        totalChats: companySummary.aggregatedFacts?.totalChats || 0,
+        estimatedSavings: companySummary.tokensSaved || 0,
+        lastUpdated: companySummary.lastUpdated
+      };
+    } catch (error) {
+      console.error(`❌ Error calculating company token savings for ${this.company}:`, error);
+      return {
+        totalChats: 0,
+        estimatedSavings: 0
+      };
+    }
+  }
+}

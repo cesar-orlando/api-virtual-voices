@@ -25,13 +25,13 @@ export class MessagingAgentService {
     try {
       
       // Use provided chat history or get from database
-      let chatHistory: IWhatsappChat | null | any[];
+      let chatHistory: any | null;
       if (providedChatHistory && providedChatHistory.length > 0) {
         // console.log(`📚 Using provided chat history: ${providedChatHistory.length} messages`);
         chatHistory = providedChatHistory;
       } else {
         // console.log(`📚 Getting chat history from database for ${phoneUser}`);
-        chatHistory = await this.getChatHistory(phoneUser, conn, sessionId);
+        chatHistory = await this.getChatHistory(phoneUser, conn, sessionId, company);
       }
       
       // Process with agent - with retry logic
@@ -230,12 +230,12 @@ export class MessagingAgentService {
   /**
    * Get chat history for context
    */
-  private async getChatHistory(phoneUser: string, conn: Connection, sessionId?: string): Promise<IWhatsappChat | null | any[]> {
+  private async getChatHistory(phoneUser: string, conn: Connection, sessionId?: string, company?: string): Promise<any | null> {
     try {
       const WhatsappChat = getWhatsappChatModel(conn);
       // Try session-scoped history when sessionId provided and valid
-      let chatHistory = null as IWhatsappChat | null;
-      if (typeof sessionId === 'string' && isValidObjectId(sessionId)) {
+      let chatHistory = null as any | null;
+      if (typeof sessionId === 'string' && isValidObjectId(sessionId) && company && company !== 'quicklearning') {
         chatHistory = await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId });
       } else if (sessionId) {
         console.log(`ℹ️ WhatsApp chat history fallback used for ${phoneUser} (sessionId not found)`);
@@ -246,7 +246,7 @@ export class MessagingAgentService {
         return [];
       }
 
-      return chatHistory
+      return chatHistory;
     } catch (error) {
       console.error('❌ Error getting chat history:', error);
       return [];

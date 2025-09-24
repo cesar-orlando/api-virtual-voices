@@ -17,6 +17,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import path from "path";
 import { io } from "../../server";
 import { NotificationService } from "../../services/internal/notification.service";
+import { getSessionModel } from "../../models/session.model";
 
 // Configuración del entorno
 const envConfig = getEnvironmentConfig();
@@ -370,6 +371,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           conversationStart: new Date(),
           aiEnabled: aiEnabled,
           messages: [],
+          tableSlug: 'prospectos'
         });
         
         // Si es un chat nuevo Y la IA está activada, enviar mensaje de bienvenida
@@ -390,6 +392,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
               respondedBy: "bot" as const,
               twilioSid: welcomeResult.messageId,
               messageType: "text" as const,
+              msgId: welcomeResult.messageId
             });
             
             // Actualizar último mensaje
@@ -482,6 +485,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           lat: Latitude ? parseFloat(Latitude) : undefined,
           lng: Longitude ? parseFloat(Longitude) : undefined,
         },
+        msgId: MessageSid
       };
 
       chat.messages.push(newMessage);
@@ -611,6 +615,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       const combinedMessage = buffer.messages.join("\n");
       
       const config = await getIaConfigModel(conn).findOne();
+      const session = await getSessionModel(conn).findOne();
       
       // Generar respuesta usando el NUEVO sistema de agentes
       const aiResponse = await messagingAgentService.processWhatsAppMessage(
@@ -619,7 +624,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
         phoneUser,
         conn,
         config?._id.toString(),
-        undefined, // sessionId
+        session?._id.toString(), // sessionId
         undefined, // providedChatHistory
       );
 
@@ -642,6 +647,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             respondedBy: "bot" as const,
             twilioSid: result.messageId,
             messageType: "text" as const,
+            msgId: result.messageId
           };
 
           chat.messages.push(botMessage);
@@ -971,6 +977,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
           conversationStart: new Date(),
           aiEnabled: false,
           messages: [],
+          tableSlug: 'prospectos'
         });
       }
       const currentDate = new Date();
@@ -980,6 +987,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         respondedBy: "asesor" as const,
         twilioSid: result.messageId,
         messageType: "text" as const,
+        msgId: result.messageId
       };
       chat.messages.push(asesorMessage);
       chat.lastMessage = {
@@ -1061,6 +1069,7 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
           conversationStart: new Date(),
           aiEnabled: false,
           messages: [],
+          tableSlug: 'prospectos'
         });
       }
       const currentDate = new Date();
@@ -1070,6 +1079,7 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         respondedBy: "asesor" as const,
         twilioSid: result.messageId,
         messageType: "text" as const,
+        msgId: result.messageId
       };
       chat.messages.push(templateAsesorMessage);
       chat.lastMessage = {

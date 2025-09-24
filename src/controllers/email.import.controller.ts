@@ -8,13 +8,13 @@ import getEmailModel from '../models/email.model';
 
 // Servicio mínimo para importar PST
 class PSTImporter {
-  async importPSTFile(filePath: string, companySlug: string, userId: string, maxEmails?: number | 'max') {
-    console.log(`📂 Importando PST: ${filePath}${maxEmails === 'max' ? ' (completo)' : maxEmails ? ` (máximo ${maxEmails} emails)` : ''}`);
+  async importPSTFile(filePath: string, companySlug: string, userId: string) {
+    console.log(`📂 Importando PST: ${filePath}`);
     
     const connection = await getConnectionByCompanySlug(companySlug);
     const EmailModel = getEmailModel(connection);
     
-    const counters = { totalSaved: 0, totalErrors: 0, totalProcessed: 0, maxToProcess: maxEmails === 'max' ? Infinity : (maxEmails || Infinity) };
+    const counters = { totalSaved: 0, totalErrors: 0 };
     
     try {
       const pstFile = new PSTFile(filePath);
@@ -22,7 +22,7 @@ class PSTImporter {
       // Procesar carpetas del PST recursivamente
       await this.processPSTFolder(pstFile.getRootFolder(), EmailModel, companySlug, userId, counters);
       
-      return { totalSaved: counters.totalSaved, totalErrors: counters.totalErrors, totalProcessed: counters.totalProcessed, wasLimited: counters.totalProcessed >= counters.maxToProcess };
+      return { totalSaved: counters.totalSaved, totalErrors: counters.totalErrors };
       
     } catch (error) {
       console.error(`❌ Error importando PST:`, error);
@@ -30,10 +30,7 @@ class PSTImporter {
     }
   }
   
-  private async processPSTFolder(folder: any, EmailModel: any, companySlug: string, userId: string, counters: { totalSaved: number, totalErrors: number, totalProcessed: number, maxToProcess: number }) {
-    // Si ya se alcanzó el límite, detener procesamiento
-    if (counters.totalProcessed >= counters.maxToProcess) return;
-
+  private async processPSTFolder(folder: any, EmailModel: any, companySlug: string, userId: string, counters: { totalSaved: number, totalErrors: number }) {
     const folderName = folder.displayName || 'Root Folder';
     console.log(`📁 Procesando carpeta: ${folderName}`);
     
@@ -48,11 +45,7 @@ class PSTImporter {
       let childMessage = folder.getNextChild();
       
       while (childMessage !== null) {
-        // Verificar límite antes de procesar
-        if (counters.totalProcessed >= counters.maxToProcess) break;
-        
         try {
-          counters.totalProcessed++;
           // Verificar si ya existe
           const messageId = childMessage.internetMessageId || `pst_${Date.now()}_${Math.random()}`;
           const exists = await EmailModel.findOne({
@@ -123,7 +116,6 @@ class PSTImporter {
       const childFolders = folder.getSubFolders();
       
       for (const childFolder of childFolders) {
-        if (counters.totalProcessed >= counters.maxToProcess) break;
         await this.processPSTFolder(childFolder, EmailModel, companySlug, userId, counters);
       }
     }
@@ -313,7 +305,7 @@ class PSTImporter {
 export async function uploadPST(req: Request, res: Response) {
   try {
     const { c_name } = req.params;
-    const { userId, maxEmails } = req.body;
+    const { userId } = req.body;
     
     if (!req.file) {
       return res.status(400).json({ 
@@ -342,9 +334,9 @@ export async function uploadPST(req: Request, res: Response) {
     setTimeout(async () => {
       try {
         const importer = new PSTImporter();
-        const result = await importer.importPSTFile(filePath, c_name, userId, maxEmails);
+        const result = await importer.importPSTFile(filePath, c_name, userId);
         
-        console.log(`✅ PST import completed: ${result.totalSaved} emails imported (${result.totalProcessed} processed)`);
+        console.log(`✅ PST import completed: ${result.totalSaved} emails imported`);
         
         // Limpiar archivo
         await fs.unlink(filePath);
@@ -411,9 +403,9 @@ export async function getPSTStatus(req: Request, res: Response) {
 export async function processLocalPST(req: Request, res: Response) {
   try {
     const { c_name } = req.params;
-    const { filename, userId, maxEmails } = req.body;
+    const { filename, userId } = req.body;
     
-    console.log(`📂 Procesamiento local PST solicitado:`, { filename, c_name, userId, maxEmails });
+    console.log(`📂 Procesamiento local PST solicitado:`, { filename, c_name, userId });
     
     if (!filename || !userId) {
       return res.status(400).json({ 
@@ -479,7 +471,7 @@ export async function processLocalPST(req: Request, res: Response) {
         const importer = new PSTImporter();
         const startTime = Date.now();
         
-        const result = await importer.importPSTFile(filePath, c_name, userId, maxEmails);
+        const result = await importer.importPSTFile(filePath, c_name, userId);
         
         const duration = Date.now() - startTime;
         const durationMinutes = (duration / 1000 / 60).toFixed(1);
@@ -487,7 +479,6 @@ export async function processLocalPST(req: Request, res: Response) {
         console.log(`🎉 PST local procesado exitosamente:`, {
           filename,
           totalSaved: result.totalSaved,
-          totalProcessed: result.totalProcessed,
           totalErrors: result.totalErrors,
           duration: `${durationMinutes} minutos`,
           sizeGB: fileSizeGB.toFixed(2)
@@ -834,9 +825,9 @@ export const testHtmlToText = async (req: Request, res: Response) => {
 export const reprocessPSTWithImprovedConversion = async (req: Request, res: Response) => {
   try {
     const { companySlug } = req.params;
-    const { filename, userId, maxEmails } = req.body;
+    const { filename, userId } = req.body;
 
-    console.log('🔄 Re-procesando PST con conversión HTML-a-texto mejorada:', { filename, companySlug, userId, maxEmails });
+    console.log('🔄 Re-procesando PST con conversión HTML-a-texto mejorada:', { filename, companySlug, userId });
 
     const pstImportsPath = path.join(process.cwd(), 'pst-imports');
     const filePath = path.join(pstImportsPath, filename);
@@ -862,7 +853,7 @@ export const reprocessPSTWithImprovedConversion = async (req: Request, res: Resp
 
     // Re-import with improved conversion
     const importer = new PSTImporter();
-    const result = await importer.importPSTFile(filePath, companySlug, userId, maxEmails);
+    const result = await importer.importPSTFile(filePath, companySlug, userId);
 
     console.log(`✅ Re-procesamiento completado con conversión mejorada`);
 

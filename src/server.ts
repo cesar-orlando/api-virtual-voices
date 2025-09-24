@@ -9,7 +9,6 @@ import { cleanupInactiveConnections, getConnectionByCompanySlug } from "./config
 import { startAttachmentCleanupScheduler } from "./controllers/email.controller";
 import { CompanySummaryService } from "./services/internal/companySummaryService";
 import { MessageSchedulerService } from "./services/internal/messageSchedulerService";
-import EmailAutoStartService from "./services/emailAutoStart.service";
 import fs from 'fs';
 import path from 'path';
 import { loadRecentFacebookMessages } from './services/meta/messenger';
@@ -115,16 +114,6 @@ async function main() {
     CompanySummaryService.scheduleAutomaticUpdates();
     console.log('📊 Company summary automatic updates enabled (every 6 hours)');
     
-    // 📧 Inicializar servicio de auto-monitoreo de emails
-    console.log('📧 Inicializando servicio de auto-monitoreo de emails...');
-    try {
-      const emailAutoStartService = EmailAutoStartService.getInstance();
-      await emailAutoStartService.initialize();
-      console.log('✅ Servicio de auto-monitoreo de emails inicializado (activación por login)');
-    } catch (emailError) {
-      console.error('⚠️ Error inicializando auto-monitoreo de emails (continuando sin él):', emailError);
-    }
-    
     // Iniciar servidor
     server.listen(config.port, () => {
       console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
@@ -169,45 +158,3 @@ async function main() {
 }
 
 main();
-
-// Manejo de cierre limpio del servidor
-process.on('SIGTERM', async () => {
-  console.log('🛑 SIGTERM recibido, cerrando servidor de forma limpia...');
-  await shutdown();
-});
-
-process.on('SIGINT', async () => {
-  console.log('🛑 SIGINT recibido, cerrando servidor de forma limpia...');
-  await shutdown();
-});
-
-async function shutdown() {
-  try {
-    console.log('🔄 Iniciando proceso de cierre...');
-    
-    // Cerrar auto-monitoreo de emails
-    try {
-      const emailAutoStartService = EmailAutoStartService.getInstance();
-      await emailAutoStartService.shutdown();
-      console.log('✅ Auto-monitoreo de emails cerrado');
-    } catch (error) {
-      console.error('❌ Error cerrando auto-monitoreo de emails:', error);
-    }
-    
-    // Cerrar servidor HTTP
-    server.close(() => {
-      console.log('✅ Servidor HTTP cerrado');
-      process.exit(0);
-    });
-    
-    // Forzar cierre después de 10 segundos
-    setTimeout(() => {
-      console.log('⏰ Forzando cierre después de timeout');
-      process.exit(1);
-    }, 10000);
-    
-  } catch (error) {
-    console.error('❌ Error durante el cierre:', error);
-    process.exit(1);
-  }
-}

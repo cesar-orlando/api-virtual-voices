@@ -697,29 +697,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       console.log('🔑 SuperAdmin login detected, userId saved:', user._id);
     }
 
-    // 📧 AUTO-INICIALIZAR MONITOREO DE EMAIL AL LOGIN
-    try {
-      console.log(`📧 Iniciando auto-monitoreo de email para usuario: ${user._id}`);
-      
-      // Usar la función helper para inicializar monitoreo
-      const { startUserEmailMonitoring } = await import('../../utils/emailMonitoringHelper');
-      const monitoringResult = await startUserEmailMonitoring(user._id.toString(), companySlug);
-      
-      console.log(`📧 Resultado del monitoreo: ${monitoringResult.message}`);
-      
-      // Agregar información a la respuesta
-      response.emailMonitoring = monitoringResult;
-      
-    } catch (emailError) {
-      console.error(`⚠️ Error iniciando monitoreo de email para ${user.email}:`, emailError);
-      response.emailMonitoring = {
-        success: false,
-        enabled: false,
-        message: 'Email monitoring failed to start',
-        error: emailError.message
-      };
-    }
-
     res.json(response);
     return;
   } catch (err: any) {
@@ -1152,7 +1129,6 @@ export const getEmailConfigInternal = async (companySlug: string, userId: string
       gmail: { host: 'smtp.gmail.com', port: 587, secure: false },
       outlook: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
       yahoo: { host: 'smtp.mail.yahoo.com', port: 587, secure: false },
-      zoho: { host: 'smtp.zoho.com', port: 587, secure: false },
       custom: { 
         host: emailConfig.smtpHost || 'smtp.gmail.com', 
         port: emailConfig.smtpPort || 587, 
@@ -1164,68 +1140,8 @@ export const getEmailConfigInternal = async (companySlug: string, userId: string
         secure: emailConfig.smtpSecure || false 
       }
     };
-
-    // Configuraciones IMAP por proveedor
-    const imapConfigs = {
-      gmail: { host: 'imap.gmail.com', port: 993, secure: true },
-      outlook: { host: 'outlook.office365.com', port: 993, secure: true },
-      yahoo: { host: 'imap.mail.yahoo.com', port: 993, secure: true },
-      zoho: { host: 'imap.zoho.com', port: 993, secure: true },
-      custom: {
-        // Para custom, intentamos derivar IMAP del SMTP host
-        host: emailConfig.smtpHost ? emailConfig.smtpHost.replace('smtp', 'imap') : 'imap.gmail.com',
-        port: 993,
-        secure: true
-      },
-      other: {
-        // Detectar automáticamente el proveedor basándose en el host SMTP
-        host: (() => {
-          if (!emailConfig.smtpHost) return 'imap.gmail.com';
-          
-          const smtpHost = emailConfig.smtpHost.toLowerCase();
-          
-          // Office 365 / Outlook
-          if (smtpHost.includes('office365') || smtpHost.includes('outlook')) {
-            console.log(`🔍 Detectado Office 365 por host SMTP: ${smtpHost}`);
-            return 'outlook.office365.com';
-          }
-          
-          // Gmail
-          if (smtpHost.includes('gmail')) {
-            console.log(`🔍 Detectado Gmail por host SMTP: ${smtpHost}`);
-            return 'imap.gmail.com';
-          }
-          
-          // Zoho Mail
-          if (smtpHost.includes('zoho')) {
-            console.log(`🔍 Detectado Zoho Mail por host SMTP: ${smtpHost}`);
-            return 'imap.zoho.com';
-          }
-          
-          // Yahoo
-          if (smtpHost.includes('yahoo')) {
-            console.log(`🔍 Detectado Yahoo por host SMTP: ${smtpHost}`);
-            return 'imap.mail.yahoo.com';
-          }
-          
-          // Por defecto, intentar reemplazar smtp por imap
-          console.log(`🔍 Usando conversión automática SMTP->IMAP para: ${smtpHost}`);
-          return smtpHost.replace('smtp', 'imap');
-        })(),
-        port: 993,
-        secure: true
-      }
-    };
     
     const providerConfig = smtpConfigs[emailConfig.provider || 'gmail'];
-    const imapProviderConfig = imapConfigs[emailConfig.provider || 'gmail'];
-    
-    // Log para debugging
-    console.log(`📧 Email Config Debug para ${emailConfig.smtpEmail}:`);
-    console.log(`   - Provider: ${emailConfig.provider || 'gmail'}`);
-    console.log(`   - SMTP Host: ${emailConfig.smtpHost}`);
-    console.log(`   - IMAP Host detectado: ${imapProviderConfig.host}`);
-    console.log(`   - IMAP Port: ${imapProviderConfig.port}`);
     
     // Preparar firma con imagen si existe
     let signature = emailConfig.signature || '';
@@ -1241,20 +1157,12 @@ export const getEmailConfigInternal = async (companySlug: string, userId: string
         user: emailConfig.smtpEmail,
         pass: emailConfig.smtpPassword // ✅ Incluye la contraseña
       },
-      imapConfig: {
-        host: imapProviderConfig.host,
-        port: imapProviderConfig.port,
-        secure: imapProviderConfig.secure,
-        user: emailConfig.smtpEmail,
-        pass: emailConfig.smtpPassword // ✅ Incluye la contraseña
-      },
       signature,
       userInfo: {
         name: user.name,
         email: user.email,
         smtpEmail: emailConfig.smtpEmail
-      },
-      provider: emailConfig.provider || 'gmail'
+      }
     };
   } catch (error) {
     console.error('Error getting internal email config:', error);

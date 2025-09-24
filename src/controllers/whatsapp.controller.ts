@@ -459,7 +459,11 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
         return;
       }
 
-      advisor = { id: targetUser._id, name: targetUser.name };
+      if (data.messagingService == 'twilio') {
+        advisor = JSON.stringify(targetUser);
+      } else {
+        advisor = { id: targetUser._id, name: targetUser.name };
+      }
     } else {
       // ✅ ASIGNACIÓN AUTOMÁTICA EN SECUENCIA (ROUND-ROBIN)
       const sessionBranchId = targetSession.branch?.branchId ? String(targetSession.branch.branchId) : null;
@@ -500,7 +504,11 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
         }
       );
 
-      advisor = { id: selectedUser._id, name: selectedUser.name };
+      if (data.messagingService == 'twilio') {
+        advisor = JSON.stringify(selectedUser);
+      } else {
+        advisor = { id: selectedUser._id, name: selectedUser.name };
+      }
       
       console.log(`🔄 Asignación secuencial: Usuario ${nextUserIndex + 1}/${allUsers.length} - ${selectedUser.name} (Contador: ${currentCounter + 1})`);
     }
@@ -517,7 +525,7 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     // Actualizar el chat con el asesor asignado (o null para desasignar)
     const chat = await Record.findOneAndUpdate(
       { $or: [
-        { "data.number": Number(data.number) }, 
+        { "data.number": Number(data.number) },
         { "data.telefono": data.number }] },
       {
         $set: {

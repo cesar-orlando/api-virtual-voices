@@ -44,6 +44,13 @@ const IaConfigSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+// Performance indexes for high-volume queries
+IaConfigSchema.index({ type: 1 }); // Frequently queried by type ('general', 'personal', 'interno')
+IaConfigSchema.index({ name: 1 }); // Unique name lookups
+IaConfigSchema.index({ "user.id": 1 }); // User-specific configs lookup
+IaConfigSchema.index({ type: 1, "user.id": 1 }); // Compound for user+type queries
+IaConfigSchema.index({ createdAt: -1 }); // Date-based sorting
+
 IaConfigSchema.plugin(auditTrailPlugin as any, {
   rootPaths: [""], // watch whole doc
   includePaths: [

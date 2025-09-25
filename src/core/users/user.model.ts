@@ -89,6 +89,8 @@ const UserSchema: Schema = new Schema(
 UserSchema.index({ email: 1, companySlug: 1 });
 UserSchema.index({ companySlug: 1, role: 1 });
 UserSchema.index({ status: 1 });
+UserSchema.index({ role: 1, status: 1 });
+UserSchema.index({ role: 1, 'branch.branchId': 1, name: 1 }); // Para filtrar por rol y sucursal
 
 // Método para verificar permisos
 UserSchema.methods.hasPermission = function(permission: string): boolean {

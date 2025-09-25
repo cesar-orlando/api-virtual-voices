@@ -49,6 +49,8 @@ RecordSchema.index({ 'data.tel': 1 });
 RecordSchema.index({ 'data.movil': 1 });
 RecordSchema.index({ 'data.number': 1 });
 RecordSchema.index({ createdBy: 1, c_name: 1 }); // Índice para búsquedas por usuario creador
+RecordSchema.index({ tableSlug: 1, 'data.number': 1 }); // Índice para búsquedas por número en tabla específica
+RecordSchema.index({ tableSlug: 1, c_name: 1, 'data.number': 1 }); // Índice compuesto para tabla, empresa y número
 
 // Plugin de auditoría: genera diffs por campo (data.*) y guarda en AuditLog (sin historial embebido)
 RecordSchema.plugin(auditTrailPlugin as any, {

@@ -43,4 +43,4 @@ export const getFileTypeIcon = (filename: string): string => {
     default:
       return 'file-icon.png';
   }
-}; 
+};

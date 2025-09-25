@@ -468,8 +468,8 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
       // ✅ ASIGNACIÓN AUTOMÁTICA EN SECUENCIA (ROUND-ROBIN)
       const sessionBranchId = targetSession.branch?.branchId ? String(targetSession.branch.branchId) : null;
       const branchFilter = sessionBranchId
-        ? { role: 'Asesor', 'branch.branchId': sessionBranchId }
-        : { role: 'Asesor', $or: [{ 'branch.branchId': { $exists: false } }, { 'branch.branchId': null }] };
+        ? { role: 'Asesor', status: 'active', 'branch.branchId': sessionBranchId }
+        : { role: 'Asesor', status: 'active', $or: [{ 'branch.branchId': { $exists: false } }, { 'branch.branchId': null }] };
 
       // Ordenar por nombre para mantener consistencia en el orden
       const allUsers = await UserConfig.find(branchFilter).sort({ name: 1 }).lean();

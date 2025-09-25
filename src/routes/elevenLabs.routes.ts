@@ -8,7 +8,8 @@ import {
   getElevenLabsConversations,
   getElevenLabsConversation,
   getElevenLabsConversationAudio,
-  generatePersonalizedPrompt
+  generatePersonalizedPrompt,
+  syncElevenLabsAgent
 } from "../controllers/elevenLabs.controller";
 
 const router = Router();
@@ -104,5 +105,45 @@ router.delete('/agents/:id', deleteElevenLabsAgent);
 router.get('/conversations/:agentId', getElevenLabsConversations);
 router.get('/conversations/details/:conversationId', getElevenLabsConversation);
 router.get('/conversations/audio/:conversationId', getElevenLabsConversationAudio);
+
+/**
+ * @swagger
+ * /elevenlabs/agents/{id}/sync:
+ *   post:
+ *     summary: Sincronizar agente con ElevenLabs
+ *     tags: [ElevenLabs Agents]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID del agente local
+ *       - in: query
+ *         name: companySlug
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Slug de la empresa
+ *     responses:
+ *       200:
+ *         description: Agente sincronizado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 agent:
+ *                   type: object
+ *                 elevenLabsData:
+ *                   type: object
+ *       404:
+ *         description: Agente no encontrado localmente
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post('/agents/:id/sync', syncElevenLabsAgent);
 
 export default router;

@@ -118,8 +118,8 @@ async function main() {
     // 📧 Inicializar servicio de auto-monitoreo de emails
     console.log('📧 Inicializando servicio de auto-monitoreo de emails...');
     try {
-      const emailAutoStartService = EmailAutoStartService.getInstance();
-      await emailAutoStartService.initialize();
+      //const emailAutoStartService = EmailAutoStartService.getInstance();
+      //await emailAutoStartService.initialize();
       console.log('✅ Servicio de auto-monitoreo de emails inicializado (activación por login)');
     } catch (emailError) {
       console.error('⚠️ Error inicializando auto-monitoreo de emails (continuando sin él):', emailError);

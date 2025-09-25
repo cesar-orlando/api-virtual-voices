@@ -860,6 +860,12 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
     }
   }
 
+  if (data.messagingService == 'twilio') {
+    data['asesor'] = JSON.stringify(data.asesor);
+  }
+
+  delete data.messagingService;
+
   try {
     const conn = await getConnectionByCompanySlug(c_name);
     const Record = getRecordModel(conn);

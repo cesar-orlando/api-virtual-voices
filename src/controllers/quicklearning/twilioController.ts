@@ -692,6 +692,8 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
               console.log(`🔔 IA se desactivó a sí misma para ${phoneUser}`);
             }
 
+            /*
+
             // Asignar asesor disponible y enviar mensaje de seguimiento
             try {
               const { advisor, message: advisorMessage } = await assignAvailableAdvisor(phoneUser, conn);
@@ -731,7 +733,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
               }
             } catch (error) {
               console.error(`❌ Error en asignación de asesor para ${phoneUser}:`, error);
-            }
+            }*/
           }
           
           // Actualizar registros en TODAS las tablas (alumnos, prospectos, clientes, sin_contestar)

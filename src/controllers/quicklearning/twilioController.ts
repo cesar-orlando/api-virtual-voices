@@ -762,7 +762,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
       console.error("❌ Error procesando mensaje con nuevo agente:", error);
       messageBuffers.delete(phoneUser);
     }
-  }, 3000); // Esperar 3 segundos antes de procesar
+  }, 15000); // Esperar 15 segundos antes de procesar
 }
 
 // La detección de campañas ahora se maneja con la herramienta identify_campaign

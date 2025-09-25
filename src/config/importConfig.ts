@@ -1,12 +1,12 @@
 // Configuración para importaciones masivas
 export const IMPORT_CONFIG = {
   // Límites de tamaño
-  MAX_PAYLOAD_SIZE: '50mb',
-  MAX_RECORDS_PER_BATCH: 5000,
-  MAX_FILE_SIZE_MB: 50,
+  MAX_PAYLOAD_SIZE: '200mb',
+  MAX_RECORDS_PER_BATCH: 10000,
+  MAX_FILE_SIZE_MB: 200,
   
   // Timeouts
-  IMPORT_TIMEOUT_MS: 300000, // 5 minutos
+  IMPORT_TIMEOUT_MS: 600000, // 10 minutos
   
   // Configuraciones de validación
   VALIDATION_OPTIONS: {

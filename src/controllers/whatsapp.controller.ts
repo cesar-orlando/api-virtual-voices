@@ -461,7 +461,7 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
       }
 
       if (data.messagingService == 'twilio') {
-        advisor = JSON.stringify(targetUser);
+        advisor = JSON.stringify({ _id: targetUser._id , name: targetUser.name, email: targetUser.email });
       } else {
         advisor = { id: targetUser._id, name: targetUser.name };
       }
@@ -506,7 +506,7 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
       );
 
       if (data.messagingService == 'twilio') {
-        advisor = JSON.stringify(selectedUser);
+        advisor = JSON.stringify({_id: selectedUser._id , name: selectedUser.name, email: selectedUser.email });
       } else {
         advisor = { id: selectedUser._id, name: selectedUser.name };
       }

@@ -69,6 +69,19 @@ const SessionSchema: Schema = new Schema(
   }
 );
 
+// Performance indexes for high-volume queries
+SessionSchema.index({ phone: 1 }); // Phone-based session lookups
+SessionSchema.index({ "user.id": 1 }); // User session queries (WhatsappSession.find)
+SessionSchema.index({ "IA.id": 1 }); // IA configuration lookups
+SessionSchema.index({ status: 1 }); // Session status filtering
+SessionSchema.index({ platform: 1 }); // Platform-specific queries
+SessionSchema.index({ "branch.companyId": 1, "branch.branchId": 1 }); // Branch-based queries
+SessionSchema.index({ "user.id": 1, status: 1 }); // Compound for active user sessions
+SessionSchema.index({ platform: 1, status: 1 }); // Platform + status filtering
+SessionSchema.index({ phone: 1, platform: 1 }); // Phone + platform uniqueness checks
+SessionSchema.index({ updatedAt: -1 }); // Recent activity sorting
+SessionSchema.index({ '_id': 1, 'branch.branchId': 1 }); // Fast lookups by ID + branch
+
 SessionSchema.plugin(auditTrailPlugin as any, {
   rootPaths: [""], // watch whole doc
   includePaths: [

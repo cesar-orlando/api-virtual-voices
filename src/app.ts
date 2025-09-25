@@ -42,7 +42,7 @@ app.use(cors());
 
 // JSON error handling middleware
 app.use(express.json({ 
-  limit: '50mb',
+  limit: '200mb',
   verify: (req, res, buf, encoding) => {
     try {
       JSON.parse(buf.toString());
@@ -54,7 +54,7 @@ app.use(express.json({
   }
 }));
 
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.urlencoded({ limit: '200mb', extended: true }));
 
 // Global JSON error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -278,7 +278,7 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
       path: req.path,
       method: req.method,
       contentLength: req.headers['content-length'],
-      limit: '50mb'
+      limit: '200mb'
     });
     
     res.status(413).json({

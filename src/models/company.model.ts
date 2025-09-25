@@ -63,6 +63,10 @@ const CompanySchema: Schema = new Schema(
   { timestamps: true }
 );
 
+// Performance indexes for company queries
+CompanySchema.index({ name: 1 }, { unique: true }); // Company name lookups (most common)
+CompanySchema.index({ createdAt: -1 }); // Date-based sorting
+
 export default function getCompanyModel(conn: Connection): Model<ICompany>{
   // Verificar si el modelo ya existe en esta conexión
   if (conn.models.Company) {

@@ -13,7 +13,7 @@ const upload = multer({
     // @ts-ignore
     contentType: (multerS3 as any).AUTO_CONTENT_TYPE,
     contentDisposition: 'inline',
-    key: (req, file, cb) => {
+    key: (req, file: Express.Multer.File, cb) => {
       const filename = `${Date.now()}-${file.originalname}`;
       cb(null, `uploads/${filename}`);
     },

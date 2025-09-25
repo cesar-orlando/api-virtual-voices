@@ -9,6 +9,7 @@ import { Message, MessageMedia } from "whatsapp-web.js";
 import fs from "node:fs";
 import path from "node:path";
 import axios from "axios";
+import multer from "multer";
 
 // Obtiene todos los mensajes de todos los chats
 export const getAllWhatsappMessages = async (req: Request, res: Response) => {

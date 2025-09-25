@@ -527,7 +527,7 @@ export async function assignChatToAdvisor(req: Request, res: Response): Promise<
     const chat = await Record.findOneAndUpdate(
       { $or: [
         { "data.number": Number(data.number) },
-        { "data.telefono": data.number }] },
+        { "data.number": data.number }] },
       {
         $set: {
           'data.asesor': advisor,

@@ -698,7 +698,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     // 📧 AUTO-INICIALIZAR MONITOREO DE EMAIL AL LOGIN
-    try {
+    /*try {
       console.log(`📧 Iniciando auto-monitoreo de email para usuario: ${user._id}`);
       
       // Usar la función helper para inicializar monitoreo
@@ -718,7 +718,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         message: 'Email monitoring failed to start',
         error: emailError.message
       };
-    }
+    }*/
 
     res.json(response);
     return;

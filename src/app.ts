@@ -203,7 +203,7 @@ app.use('/api/sessions', sessionRoutes);
 // Rutas de tareas (estilo Trello)
 app.use('/api/tasks', taskRoutes);
 
-app.use('/api/email', emailRoutes);
+//app.use('/api/email', emailRoutes);
 
 // Rutas de ElevenLabs Agents (usando query parameters en lugar de parámetros de ruta)
 app.use('/api/elevenlabs', elevenLabsRoutes);

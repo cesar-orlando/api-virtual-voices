@@ -40,6 +40,8 @@ function emitNewMessageNotification(phone: string, messageData: any, chat: any =
       return;
     }
 
+
+
     // Preparar datos completos para el frontend
     const notificationData = {
       type: "nuevo_mensaje",
@@ -563,7 +565,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       let updated = false;
       for (const tableSlug of tableSlugs) {
         const result = await Record.updateOne(
-          { tableSlug, $or: [{ "data.telefono": phoneUser }, { "data.phone": phoneUser }], c_name: "quicklearning" },
+          { tableSlug, $or: [{ "data.number": phoneUser }, { "data.phone": phoneUser }], c_name: "quicklearning" },
           { $set: { "data.ultimo_mensaje": messageText, "data.lastMessageDate": new Date() } }
         );
         if (result.modifiedCount > 0) {
@@ -757,7 +759,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
                 { 
                   tableSlug,
                   $or: [
-                    { "data.telefono": phoneUser },
+                    { "data.number": phoneUser },
                     { "data.phone": phoneUser }
                   ],
                   c_name: "quicklearning"
@@ -813,7 +815,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         tableSlug,
         $or: [
           { "data.phone": phone },
-          { "data.telefono": phone }
+          { "data.number": phone }
         ],
         c_name: "quicklearning"
       });
@@ -860,7 +862,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
         createdBy: "twilio-webhook",
         data: {
           nombre: profileName,
-          telefono: phone,
+          number: phone,
           email: null,
           clasificacion: "prospecto",
           medio: medio,
@@ -960,7 +962,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       let updated = false;
       for (const tableSlug of tableSlugs) {
         const updateResult = await RecordModel.updateOne(
-          { tableSlug, $or: [{ "data.telefono": phone }, { "data.phone": phone }], c_name: "quicklearning" },
+          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
           { $set: { "data.ultimo_mensaje": message, "data.lastMessageDate": new Date() } }
         );
         if (updateResult.modifiedCount > 0) {
@@ -1052,7 +1054,7 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
       const templateBody = `[TEMPLATE] ${templateId} ${variables ? variables.join(', ') : ''}`;
       for (const tableSlug of tableSlugs) {
         const updateResult = await RecordModel.updateOne(
-          { tableSlug, $or: [{ "data.telefono": phone }, { "data.phone": phone }], c_name: "quicklearning" },
+          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
           { $set: { "data.ultimo_mensaje": templateBody, "data.lastMessageDate": new Date() } }
         );
         if (updateResult.modifiedCount > 0) {

@@ -500,7 +500,7 @@ IMPORTANTE:
       const CompanyModel = getCompanyModel(conn);
       const ChatModel = getWhatsappChatModel(conn);
       
-      const companyDoc = await CompanyModel.findOne({ name: this.company });
+      const companyDoc = await CompanyModel.findOne();
       if (!companyDoc) {
         console.warn(`⚠️  Company ${this.company} not found, skipping company summary`);
         return;

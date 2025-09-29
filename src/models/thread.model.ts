@@ -3,13 +3,15 @@ import mongoose, { Document, Schema, Connection } from 'mongoose';
 export interface IThread extends Document {
   companySlug: string;
   userId: mongoose.Types.ObjectId;
-  personaId: mongoose.Types.ObjectId;
+  personaId?: mongoose.Types.ObjectId | null; // Opcional: para compatibilidad con sistemas legacy
   state: {
     objective?: string;
     tone?: string;
     channel?: string;
     toolsAllowed?: string[];
     summaryMode?: 'fast' | 'smart' | 'deep' | 'auto';
+    llmProvider?: 'openai' | 'anthropic' | 'google' | 'meta';
+    llmModel?: string;
     extra?: any;
   };
   summary: {
@@ -33,7 +35,7 @@ const ThreadSchema = new Schema<IThread>({
   },
   personaId: { 
     type: mongoose.Schema.Types.ObjectId, 
-    required: true 
+    required: false  // Opcional: para chat interno simple
   },
   state: {
     objective: String,
@@ -44,6 +46,15 @@ const ThreadSchema = new Schema<IThread>({
       type: String,
       enum: ['fast', 'smart', 'deep', 'auto'],
       default: 'smart'
+    },
+    llmProvider: {
+      type: String,
+      enum: ['openai', 'anthropic', 'google', 'meta'],
+      default: 'openai'
+    },
+    llmModel: {
+      type: String,
+      default: 'gpt-4o-mini'
     },
     extra: mongoose.Schema.Types.Mixed
   },

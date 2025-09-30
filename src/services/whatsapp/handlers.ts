@@ -1,6 +1,6 @@
 import { Message, Client } from 'whatsapp-web.js';
 import { updateChatRecord } from './chatRecordUtils';
-import { getImageFromUrl, handleAudioMessage, handleFileMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
+import { getImageFromUrl, getPDFFromUrl, handleAudioMessage, handleFileMessage, handleImageMessage, handleVideoMessage } from './mediaUtils';
 import { getDbConnection } from "../../config/connectionManager";
 import { getWhatsappChatModel } from '../../models/whatsappChat.model';
 import { getSessionModel } from '../../models/session.model';
@@ -353,17 +353,35 @@ async function sendCustomResponse(
     // Detect image URLs from amazonaws in the response
     const imageRegex = /(https?:\/\/[^\s]+amazonaws[^\s]+\.(jpg|jpeg|png|gif))/gi;
     const foundImages = typeof response === 'string' ? response.match(imageRegex) : [];
+    
+    // Detect PDF URLs from amazonaws in the response
+    const pdfRegex = /(https?:\/\/[^\s]+amazonaws[^\s]+\.pdf)/gi;
+    const foundPDFs = typeof response === 'string' ? response.match(pdfRegex) : [];
+    
     let textOnly = response;
+    
+    // Remove image URLs from text
     if (foundImages && foundImages.length > 0) {
-      // Remove image URLs from the text response
       foundImages.forEach(url => {
         textOnly = textOnly.replace(url, '').trim();
       });
+    }
+    
+    // Remove PDF URLs from text
+    if (foundPDFs && foundPDFs.length > 0) {
+      foundPDFs.forEach(url => {
+        textOnly = textOnly.replace(url, '').trim();
+      });
+    }
 
+    // Send images first
+    if (foundImages && foundImages.length > 0) {
       for (let i = 0; i < foundImages.length; i++) {
         const result = await getImageFromUrl({ imageUrls: foundImages[i], i });
         // Enviar imagen desde archivo local
-        let sentMessage = await client.sendMessage(message.from, result.media, { caption: i === 0 ? textOnly : undefined });
+        let sentMessage = await client.sendMessage(message.from, result.media, { 
+          caption: i === 0 && !foundPDFs?.length ? textOnly : undefined 
+        });
         // Mark as bot-sent before persisting so message_create won't be misclassified
         rememberBotSentMessage(sentMessage.id?.id);
         sentMessage.body = (sentMessage.body || '') + '\n' + foundImages[i];
@@ -374,11 +392,35 @@ async function sendCustomResponse(
           }
         });
       }
+    }
 
-      console.log(`✅ Custom response with images sent successfully for ${company}`);
-    } else {
-      // Send the message as text only
-      const sentMessage = await client.sendMessage(message.from, response);
+    // Send PDFs
+    if (foundPDFs && foundPDFs.length > 0) {
+      for (let i = 0; i < foundPDFs.length; i++) {
+        const result = await getPDFFromUrl({ pdfUrl: foundPDFs[i], index: i });
+        
+        // Enviar PDF desde archivo local
+        let sentMessage = await client.sendMessage(message.from, result.media, { 
+          caption: (i === 0 && !foundImages?.length) ? textOnly : `📄 Documento adjunto` 
+        });
+        
+        // Mark as bot-sent before persisting
+        rememberBotSentMessage(sentMessage.id?.id);
+        sentMessage.body = (sentMessage.body || '') + '\n' + foundPDFs[i];
+        await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot", null);
+        
+        // Limpiar archivo temporal
+        fs.unlink(result.filePath, (err) => {
+          if (err) {
+            console.error(`Error deleting PDF file ${result.filePath}:`, err);
+          }
+        });
+      }
+    }
+
+    // Send text message if there's remaining text and no media was sent
+    if (textOnly && textOnly.trim().length > 0 && !foundImages?.length && !foundPDFs?.length) {
+      const sentMessage = await client.sendMessage(message.from, textOnly);
       // Mark as bot-sent before persisting
       rememberBotSentMessage(sentMessage.id?.id);
       await updateChatRecord(company, existingRecord, "outbound-api", sentMessage, "bot", null);

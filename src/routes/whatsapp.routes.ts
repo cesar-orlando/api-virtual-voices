@@ -13,7 +13,10 @@ import {
   getFilteredChats,
   getChatAssignments,
   getAssignmentStats,
-  resetAssignmentCounter
+  resetAssignmentCounter,
+  getChatsList,
+  getChatMessagesOptimized,
+  searchChatsAndRecords
 } from "../controllers/whatsapp.controller";
 
 const router = Router();
@@ -33,5 +36,18 @@ router.get("/chats-filtered/:c_name", getFilteredChats);
 router.get("/chat-assignments/:c_name", getChatAssignments);
 router.get("/assignment-stats/:c_name/:sessionId", getAssignmentStats);
 router.post("/reset-counter/:c_name/:sessionId", resetAssignmentCounter);
+
+// ===========================================
+// ARQUITECTURA WHATSAPP-LIKE - RUTAS OPTIMIZADAS
+// ===========================================
+
+// ENDPOINT 1: Lista de chats (WhatsApp-like) - Solo último mensaje, nombre, hora
+router.get("/chats/list/:c_name", getChatsList);
+
+// ENDPOINT 2: Mensajes de UN solo chat (WhatsApp-like)
+router.get("/chats/:c_name/:phone/messages", getChatMessagesOptimized);
+
+// ENDPOINT 3: Búsqueda global (WhatsApp-like)
+router.get("/search/:c_name", searchChatsAndRecords);
 
 export default router;

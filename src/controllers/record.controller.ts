@@ -1952,9 +1952,9 @@ export async function getRecordByPhone(req: Request, res: Response) {
       sortBy = 'updatedAt',
       sortOrder = 'desc',
       filters,
-      sessionId, // ✅ NEW: Session filter parameter
-      tableSlug: tableSlugQuery // optional override; defaults to 'prospectos'
-    } = req.query; // ADDED FILTER PARAMETERS
+      sessionId,
+      tableSlug: tableSlugQuery
+    } = req.query;
     const tableSlug = (typeof tableSlugQuery === 'string' && tableSlugQuery) ? tableSlugQuery : 'prospectos';
 
     const conn = await getConnectionByCompanySlug(c_name);
@@ -1967,7 +1967,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
-    let lastMessageDate: any = null; // ✅ NEW: Variable to store last message date filter
+    let lastMessageDate: any = null;
 
     function isNumberOrConvertible(val: any): boolean {
       if (typeof val === 'number' && !isNaN(val)) return true;
@@ -2067,232 +2067,65 @@ export async function getRecordByPhone(req: Request, res: Response) {
           });
           
           if (searchConditions.length > 0) {
+            // Preservar $or existente si existe
+            if (dynamicMatchFilters.$or) {
+              dynamicMatchFilters.$and = [
+                { $or: dynamicMatchFilters.$or },
+                { $or: searchConditions }
+              ];
+              delete dynamicMatchFilters.$or;
+            } else {
             dynamicMatchFilters.$or = searchConditions;
+            }
           }
         } 
         if (parsedFilters.lastMessageDateLte) {
           lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
         } 
         if (parsedFilters.advisor) {
-          // Ampliar soporte: objeto, string JSON y variantes de campos
+          // Filtro de asesor simplificado y efectivo
           const advisorValue = String(parsedFilters.advisor);
-          const orConditions: any[] = [
-            // data.asesor.id como string
-            { ['data.asesor.id']: advisorValue },
-            // data.asesor._id como string
-            { ['data.asesor._id']: advisorValue },
-            // data.advisor.id (por compatibilidad con otros clientes)
-            { ['data.advisor.id']: advisorValue },
-            // Igualdad directa por si guardaron solo el id en data.asesor
-            { ['data.asesor']: advisorValue },
-            // String JSON con "_id" (QuickLearning)
-            { ['data.asesor']: { $regex: new RegExp(`"_id"\\s*:\\s*"${escapeRegExp(advisorValue)}"`) } },
-          ];
-
-          // Si es ObjectId válido, agregar variantes como ObjectId
-          if (Types.ObjectId.isValid(advisorValue)) {
-            const asObjId = new Types.ObjectId(advisorValue);
-            orConditions.push(
-              { ['data.asesor.id']: asObjId },
-              { ['data.asesor._id']: asObjId },
-              { ['data.advisor.id']: asObjId },
-            );
-          }
-
-          dynamicMatchFilters.$or = orConditions;
+          
+          // Usar solo la búsqueda por regex que sabemos que funciona
+          dynamicMatchFilters['data.asesor'] = { $regex: advisorValue, $options: 'i' };
         }
       } catch (error) {
         res.status(400).json({ message: "Invalid filters format" });
         return;
       }
     }
-    /*
-    // If no dynamic filters provided, use a faster Chat-first join to Records
-    const useChatFirst = !filters || (typeof filters === 'string' && (filters as string).trim() === '' || (filters as string).trim() === 'undefined' || (filters as string).trim() === 'null');
-    if (useChatFirst) {
-      const startT = Date.now();
 
-      // Build chat query
-      const chatQuery: any = {};
-      if (sessionId) {
-        let sessionIdObj = undefined;
-        try {
-          if (Types.ObjectId.isValid(sessionId as string)) {
-            sessionIdObj = new Types.ObjectId(sessionId as string);
-          }
-        } catch (_) {}
-        chatQuery["$or"] = sessionIdObj ? [
-          { "session.id": sessionId },
-          { "session.id": sessionIdObj }
-        ] : [
-          { "session.id": sessionId }
-        ];
-      }
-
-      // Pagination over chats directly
-      const chatSkip = (Number(page) - 1) * Number(limit);
-      const chatSort = { updatedAt: sortOrder === 'desc' ? -1 : 1 } as any;
-
-      const totalChats = await Chats.countDocuments(chatQuery);
-
-      // Previously we sliced to only the last message for performance.
-      // For full conversation context in the frontend, return all messages.
-      const chats = await Chats.find(chatQuery, { phone: 1, session: 1, updatedAt: 1, messages: 1 } as any)
-        .sort(chatSort)
-        .skip(chatSkip)
-        .limit(Number(limit))
-        .lean();
-
-      // Build phone lists and maps
-      const chatByPhone = new Map<string, any>();
-      const phones: string[] = [];
-      const numericPhones: number[] = [];
-      const numericPhonesNoCC: number[] = [];
-      chats.forEach(ch => {
-        if (!ch?.phone) return;
-        const phone = String(ch.phone);
-        chatByPhone.set(phone, ch);
-        phones.push(phone);
-        const digits = phone.replace(/\D+/g, '');
-        if (digits) {
-          const num = Number(digits);
-          if (!Number.isNaN(num)) numericPhones.push(num);
-          // remove leading country code heuristic (keep last 10 digits)
-          const last10 = digits.length > 10 ? Number(digits.slice(-10)) : Number(digits);
-          if (!Number.isNaN(last10)) numericPhonesNoCC.push(last10);
-        }
-      });
-
-      // Bulk fetch matching dynamic records for these phones
-      const phoneOr: any[] = [];
-      if (phones.length) {
-        const phoneFields = getPhoneFieldsForCompany(c_name);
-        phoneFields.forEach(f => {
-          phoneOr.push({ [`data.${f}`]: { $in: phones } });
-        });
-      }
-      if (numericPhones.length) {
-        phoneOr.push({ 'data.number': { $in: numericPhones } });
-      }
-      if (numericPhonesNoCC.length) {
-        phoneOr.push({ 'data.number': { $in: numericPhonesNoCC } });
-      }
-
-      const recordQuery: any = {
-        tableSlug,
-        c_name,
-        ...(phoneOr.length ? { $or: phoneOr } : {})
-      };
-
-      const records = await Record.find(recordQuery)
-        .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
-        .lean();
-
-      // Build phone->record and number->record maps
-      const recordByPhone = new Map<string, any>();
-      const recordByNum = new Map<number, any>();
-      const phoneFields = getPhoneFieldsForCompany(c_name);
-      for (const rec of records) {
-        const phonesFromRec = phoneFields
-          .map(field => rec?.data?.[field])
-          .filter(Boolean)
-          .map((v: any) => String(v));
-        for (const p of phonesFromRec) {
-          if (!recordByPhone.has(p)) recordByPhone.set(p, rec);
-        }
-        if (rec?.data?.number != null) {
-          const recNum = Number(rec.data.number);
-          if (!Number.isNaN(recNum) && !recordByNum.has(recNum)) recordByNum.set(recNum, rec);
-        }
-      }
-
-      // Attach chats to records preserving chat order
-      const results: any[] = [];
-      for (const ch of chats) {
-        const phone = String(ch.phone);
-        let rec = recordByPhone.get(phone);
-        if (!rec) {
-          const digits = phone.replace(/\D+/g, '');
-          const digitsNum = Number(digits);
-          const last10 = digits.length > 10 ? Number(digits.slice(-10)) : digitsNum;
-          rec = recordByNum.get(digitsNum) || recordByNum.get(last10) || null as any;
-        }
-        if (rec) {
-          const lastMsg = ch.messages?.length ? ch.messages[ch.messages.length - 1] : null;
-          if (lastMsg) {
-            rec.data = rec.data || {};
-            rec.data.lastmessagedate = lastMsg.createdAt 
-            rec.data.lastmessage = lastMsg.body;
-          }
-          (rec as any).chats = [ch];
-          (rec as any).totalChats = 1;
-          (rec as any).hasActiveBot = ch.botActive ?? (ch.messages?.length > 0);
-          results.push(rec);
-        }
-      }
-
-      const totalMs = Date.now() - startT;
-      res.status(200).json({
-        success: true,
-        data: results,
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total: totalChats,
-          pages: Math.ceil(totalChats / Number(limit))
-        },
-        performance: {
-          method: "Chat-first join to dynamicrecords",
-          totalMs,
-          fetchedChats: chats.length,
-          matchedRecords: results.length
-        }
-      });
-      return;
-    }
-    */
-
-    // --- Application-level batching for early stop when enough records with chats are found ---
+    // ⚡ FAST APPROACH: Get records first, then attach chats
     const startTime = Date.now();
-    // Smaller batches reduce $in list size and memory pressure
-    const batchSize = Math.min(1000, Math.max(Number(limit) * 2, 200));
-    let foundRecordsWithChats: any[] = [];
-    let totalCandidates = 0;
-    let lastBatch = false;
 
-    // Build base query for dynamicrecords
+    // Build base query for records
     const baseQuery: any = {
       tableSlug,
       c_name: c_name,
       ...dynamicMatchFilters
     };
 
-    // For total count (all candidates, not just with chats)
+    // Get total count
     const totalCount = await Record.countDocuments(baseQuery);
 
-    // For performance info
-    let batches = 0;
-    let skipCandidates = 0;
+    // Get records with pagination
+    const skip = (Number(page) - 1) * Number(limit);
+    const sort: any = {};
+    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // True pagination: accumulate all records-with-chats, then slice for requested page
-    while (!lastBatch && foundRecordsWithChats.length < Number(page) * Number(limit)) {
-      batches++;
-      // Fetch a batch of dynamicrecords
-      const candidates = await Record.find(baseQuery)
-        .sort({ [sortBy as string]: sortOrder === 'desc' ? -1 : 1 })
-        .skip(skipCandidates)
-        .limit(batchSize)
+    const records = await Record.find(baseQuery)
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit))
         .lean();
 
-      if (candidates.length === 0) break;
-      totalCandidates += candidates.length;
-      if (candidates.length < batchSize) lastBatch = true;
-
-      // --- Bulk chat lookup optimization ---
-      // 1. Collect all phone variants for all candidates
+    // ⚡ FAST CHAT LOOKUP: Bulk fetch chats for all records
+    if (records.length > 0) {
+      // Collect all phone variants for all records
       const recordPhoneMap = new Map(); // key: phone variant, value: array of record indexes
       const phoneFields = getPhoneFieldsForCompany(c_name);
-      candidates.forEach((record, idx) => {
+      
+      records.forEach((record, idx) => {
         // Try phone fields in priority order based on company
         let candidatePhoneRaw = null;
         for (const field of phoneFields) {
@@ -2301,7 +2134,9 @@ export async function getRecordByPhone(req: Request, res: Response) {
             break; // Use first non-empty field found
           }
         }
-        const val = candidatePhoneRaw ? String(candidatePhoneRaw).trim() : '';
+        
+        if (candidatePhoneRaw) {
+          const val = String(candidatePhoneRaw).trim();
         const normalized = val.replace(/\s+/g, '').replace(/^\+?52/, '52'); // normalize basic MX prefix use-case
         const withPlus = normalized.startsWith('+') ? normalized : (normalized ? `+${normalized}` : normalized);
         const phoneVariants = Array.from(new Set([
@@ -2311,16 +2146,20 @@ export async function getRecordByPhone(req: Request, res: Response) {
           `${normalized}@c.us`,
           `${withPlus}@c.us`
         ].filter(Boolean)));
+          
         phoneVariants.forEach(variant => {
           if (variant) {
             if (!recordPhoneMap.has(variant)) recordPhoneMap.set(variant, []);
             recordPhoneMap.get(variant).push(idx);
           }
         });
+        }
       });
+
       const allPhoneVariants = Array.from(recordPhoneMap.keys());
 
-      // 2. Build chat query for all variants in batch
+      if (allPhoneVariants.length > 0) {
+        // Build chat query for all variants
       const chatQuery: any = { phone: { $in: allPhoneVariants } };
       if (sessionId) {
         let sessionIdObj = undefined;
@@ -2336,6 +2175,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
           { "session.id": sessionId }
         ];
       }
+
       let chatsInBatch;
       if (lastMessageDate) {
         // Use aggregation to get only chats whose last message's createdAt matches the filter
@@ -2346,65 +2186,69 @@ export async function getRecordByPhone(req: Request, res: Response) {
             }
           },
           { $match: { lastMessageDate: { $lte: lastMessageDate } } },
-          { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1 } }
+            { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1, updatedAt: 1, botActive: 1 } }
         ]);
       } else {
-        const _tChats = Date.now();
-        // Return full messages instead of only the last message
-        chatsInBatch = await Chats.find(chatQuery, { phone: 1, session: 1, messages: 1 } as any)
-          .lean();
-      }
+          // Return only essential chat data for performance
+          chatsInBatch = await Chats.find(chatQuery, { 
+            phone: 1, 
+            session: 1, 
+            messages: 1, 
+            updatedAt: 1, 
+            botActive: 1 
+          } as any).lean();
+        }
 
-      // 3. Map chats to candidate records
-      //    For each chat, assign it to all records whose phoneVariants match
-      const recordChatsMap = new Map(); // key: candidate idx, value: array of chats
-      let matchedRecordsInBatch = 0;
+        // Map chats to records
+        const recordChatsMap = new Map(); // key: record idx, value: array of chats
       chatsInBatch.forEach(chat => {
         const idxs = recordPhoneMap.get(chat.phone);
         if (idxs) {
           idxs.forEach(idx => {
             if (!recordChatsMap.has(idx)) recordChatsMap.set(idx, []);
             recordChatsMap.get(idx).push(chat);
-            matchedRecordsInBatch++;
           });
         }
       });
 
-      // 4. For each candidate, check if it has chats
-      for (let idx = 0; idx < candidates.length; idx++) {
-        const record = candidates[idx];
+        // Attach chats to records
+        records.forEach((record, idx) => {
         const chats = recordChatsMap.get(idx) || [];
-
-        // Deduplication: only add if not already seen
         if (chats.length > 0) {
-          // Add totalChats and hasActiveBot fields for compatibility
-          if (lastMessageDate && sessionId) {
-            record.data.lastmessagedate = chats[0].lastMessageDate;
-            record.data.lastmessage = chats[0].messages[chats[0].messages.length - 1].body;
-          } else if (sessionId) {
-            record.data.lastmessagedate = chats[0].messages[chats[0].messages.length - 1].createdAt;
-            record.data.lastmessage = chats[0].messages[chats[0].messages.length - 1].body;
+            // Add chat data for compatibility
+            (record as any).chats = chats;
+            (record as any).totalChats = chats.length;
+            (record as any).hasActiveBot = chats.some((chat: any) => chat.botActive) || chats.length > 0;
+            
+            // Add last message info if available
+            if (chats[0] && chats[0].messages && chats[0].messages.length > 0) {
+              const lastMsg = chats[0].messages[chats[0].messages.length - 1];
+              record.data = record.data || {};
+              record.data.lastmessagedate = lastMsg.createdAt;
+              record.data.lastmessage = lastMsg.body;
+            }
+          } else {
+            // Ensure compatibility fields exist
+            (record as any).chats = [];
+            (record as any).totalChats = 0;
+            (record as any).hasActiveBot = false;
           }
-          foundRecordsWithChats.push({
-            ...record,
-            chats,
-            totalChats: chats.length,
-            hasActiveBot: chats.length > 0
-          });
-        }
+        });
+      } else {
+        // No phone variants found, ensure compatibility fields exist
+        records.forEach(record => {
+          (record as any).chats = [];
+          (record as any).totalChats = 0;
+          (record as any).hasActiveBot = false;
+        });
       }
-      // Move skip forward for next batch
-      skipCandidates += batchSize;
     }
 
-    // Calculate start/end for true pagination
-    const startIdx = (Number(page) - 1) * Number(limit);
-    const endIdx = startIdx + Number(limit);
-    const pagedRecords = foundRecordsWithChats.slice(startIdx, endIdx);
     const endTime = Date.now();
     const executionTime = endTime - startTime;
 
-    let finalRecords: any[] = pagedRecords as any[];
+    // Add history if needed
+    let finalRecords: any[] = records as any[];
     const historyCap = Math.min(10, 200);
     finalRecords = await attachHistoryToData(conn, finalRecords, 'Record', historyCap);
 
@@ -2418,12 +2262,10 @@ export async function getRecordByPhone(req: Request, res: Response) {
         pages: Math.ceil(totalCount / Number(limit))
       },
       performance: {
-        method: "App-level batching with true pagination on records with chats",
-        batches,
+        method: "Fast records-first with bulk chat lookup",
         executionTimeMs: executionTime,
-        recordsWithChats: foundRecordsWithChats.length,
-        includesMessages: "all messages included",
-        phoneMatching: "name + number + @c.us variants",
+        recordsFound: records.length,
+        phoneMatching: "company-specific phone fields",
         dynamicFilters: Object.keys(dynamicMatchFilters).length > 0,
         lastMessageDate: lastMessageDate !== null,
         filtersApplied: [
@@ -2433,17 +2275,43 @@ export async function getRecordByPhone(req: Request, res: Response) {
         ],
         sortBy: sortBy as string,
         sortOrder: sortOrder as string,
-        earlyPagination: false,
         optimized: true
       },
-      message: `Found ${pagedRecords.length} records (with chats, deduplicated) in ${executionTime}ms using app-level batching and true pagination.`
+      message: `Found ${records.length} records in ${executionTime}ms using fast records-first approach.`,
+      // 📱 CAMPOS ADICIONALES PARA SCROLL INFINITO
+      scrollInfo: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalCount / Number(limit)),
+        hasMorePages: Number(page) < Math.ceil(totalCount / Number(limit)),
+        recordsInThisPage: records.length,
+        totalRecords: totalCount,
+        nextPage: Number(page) < Math.ceil(totalCount / Number(limit)) ? Number(page) + 1 : null,
+        previousPage: Number(page) > 1 ? Number(page) - 1 : null,
+        progressPercentage: Math.round((Number(page) / Math.ceil(totalCount / Number(limit))) * 100),
+        estimatedRemainingPages: Math.max(0, Math.ceil(totalCount / Number(limit)) - Number(page)),
+        loadMoreUrl: `?page=${Number(page) + 1}&limit=${Number(limit)}&sortBy=${sortBy}&sortOrder=${sortOrder}${filters ? `&filters=${encodeURIComponent(filters as string)}` : ''}`
+      },
+      // 👤 INFORMACIÓN DEL ASESOR
+      advisorInfo: (() => {
+        try {
+          const parsedFilters = filters ? JSON.parse(filters as string) : {};
+          return parsedFilters?.advisor ? {
+            advisorId: String(parsedFilters.advisor),
+            totalProspectsAssigned: totalCount,
+            currentPageProspects: records.length,
+            hasMoreProspects: Number(page) < Math.ceil(totalCount / Number(limit))
+          } : null;
+        } catch {
+          return null;
+        }
+      })()
     });
 
   } catch (error) {
     console.error('❌ Error in getRecordByPhone:', error);
     res.status(500).json({
       success: false,
-      message: "Error in ultra-fast aggregation",
+      message: "Error in fast records lookup",
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

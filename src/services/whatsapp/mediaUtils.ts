@@ -443,3 +443,63 @@ export async function getImageFromUrl({ imageUrls, i }: {
     console.error('Error sending image:', err);
   }
 }
+
+export async function getPDFFromUrl({ pdfUrl, index }: { pdfUrl: string, index: number }): Promise<{ media: MessageMedia, filePath: string }> {
+  try {
+    // Download PDF
+    const response = await axios.get(pdfUrl, {
+      responseType: 'arraybuffer',
+      timeout: 30000, // 30 segundos timeout
+      headers: {
+        'User-Agent': 'WhatsApp-Bot/1.0'
+      }
+    });
+
+    if (response.status !== 200) {
+      throw new Error(`Failed to download PDF: ${response.status}`);
+    }
+
+    // Create temporary file
+    const fileDir = path.join(process.cwd(), 'src/media/files');
+    if (!fs.existsSync(fileDir)) {
+      fs.mkdirSync(fileDir, { recursive: true });
+    }
+
+    const fileName = `pdf_${Date.now()}_${index}.pdf`;
+    const filePath = path.join(fileDir, fileName);
+
+    // Write PDF to temporary file
+    fs.writeFileSync(filePath, Buffer.from(response.data));
+
+    // Create MessageMedia from file
+    const media = MessageMedia.fromFilePath(filePath);
+    
+    // Set proper filename for WhatsApp
+    const originalFileName = extractFileNameFromUrl(pdfUrl) || `documento_${index + 1}.pdf`;
+    media.filename = originalFileName;
+
+    return { media, filePath };
+
+  } catch (error) {
+    console.error('❌ Error downloading PDF:', error);
+    throw new Error(`Failed to process PDF from URL: ${error.message}`);
+  }
+}
+
+ //Extract filename from URL
+function extractFileNameFromUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const fileName = path.basename(pathname);
+    
+    // If filename has extension, return it
+    if (fileName && fileName.includes('.')) {
+      return fileName;
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
+  }
+}

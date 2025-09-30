@@ -9,23 +9,51 @@ import getPromptVersionModel from '../models/promptVersion.model';
 import { RAGService } from '../services/rag.service';
 import { MemoryService } from '../services/memory.service';
 import { PromptBuilderService } from '../services/promptBuilder.service';
+import { LLMService } from '../services/llm.service';
+import { getCompanyPrompt } from '../prompts/chatInterno.prompt';
 import { openai } from '../config/openai';
 
 /**
- * 🤖 CONTROLADOR CHAT INTERNO CON MEMORIA, RAG Y GENERADOR DE PROMPTS
- * Implementación según especificación técnica
+ * 🤖 CONTROLADOR CHAT INTERNO SIMPLIFICADO
+ * Chat tipo ChatGPT para uso interno de la empresa
+ * Sin necesidad de configurar personas/IA
  */
 const ragService = new RAGService();
 const memoryService = new MemoryService();
 const promptBuilderService = new PromptBuilderService();
+const llmService = new LLMService();
 
-// 1️⃣ POST /threads - Crear nuevo hilo de chat
+// 1️⃣ POST /threads - Crear nuevo hilo de chat (SIMPLIFICADO)
 export const createThread = async (req: Request, res: Response): Promise<void> => {
   try {
     const { c_name } = req.params;
-    const { userId, personaId, state } = req.body;
+    const { userId, state } = req.body;
+
+    // ✅ Validación de entrada
+    if (!userId) {
+      res.status(400).json({
+        ok: false,
+        error: {
+          code: 'MISSING_USER_ID',
+          message: 'El campo userId es requerido',
+          requestId: req.headers['x-request-id']
+        }
+      });
+      return;
+    }
 
     const conn = await getConnectionByCompanySlug(c_name);
+    if (!conn) {
+      res.status(404).json({
+        ok: false,
+        error: {
+          code: 'COMPANY_NOT_FOUND',
+          message: `Empresa "${c_name}" no encontrada`,
+          requestId: req.headers['x-request-id']
+        }
+      });
+      return;
+    }
 
     // Validar usuario
     const UserModel = getUserModel(conn);
@@ -42,29 +70,34 @@ export const createThread = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Validar persona/IA Config
-    const IaConfig = getIaConfigModel(conn);
-    const persona = await IaConfig.findById(personaId);
-    if (!persona) {
-      res.status(404).json({
+    // Configurar LLM (por defecto OpenAI)
+    const llmProvider = state?.llmProvider || 'openai';
+    const llmModel = state?.llmModel || llmService.getDefaultModel(llmProvider);
+
+    // Validar que el modelo esté disponible
+    if (!llmService.isModelAvailable(llmProvider, llmModel)) {
+      res.status(400).json({
         ok: false,
         error: {
-          code: 'PERSONA_NOT_FOUND',
-          message: 'Persona/configuración IA no encontrada',
+          code: 'INVALID_LLM_MODEL',
+          message: `Modelo "${llmModel}" no disponible para proveedor "${llmProvider}"`,
+          availableModels: llmService.getAvailableModels(llmProvider),
           requestId: req.headers['x-request-id']
         }
       });
       return;
     }
 
-    // Crear nuevo hilo
+    // Crear nuevo hilo SIN personaId (no es necesario)
     const Thread = getThreadModel(conn);
     const newThread = new Thread({
       companySlug: c_name,
       userId,
-      personaId,
+      personaId: null, // No necesitamos persona, usamos prompt interno
       state: {
         summaryMode: 'smart',
+        llmProvider,
+        llmModel,
         ...state
       },
       summary: {
@@ -80,19 +113,27 @@ export const createThread = async (req: Request, res: Response): Promise<void> =
       data: {
         threadId: newThread._id,
         companySlug: c_name,
-        personaName: persona.name,
+        userName: user.name,
         state: newThread.state,
+        llmProvider,
+        llmModel,
         createdAt: newThread.createdAt
       }
     });
 
-  } catch (error) {
-    console.error('Error creating thread:', error);
+  } catch (error: any) {
+    console.error('❌ Error creating thread:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     res.status(500).json({
       ok: false,
       error: {
         code: 'THREAD_CREATION_ERROR',
         message: 'Error al crear hilo de chat',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
         requestId: req.headers['x-request-id']
       }
     });
@@ -137,22 +178,6 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
 
     // Solo generar respuesta si es mensaje del usuario
     if (role === 'user') {
-      // Obtener persona/configuración
-      const IaConfig = getIaConfigModel(conn);
-      const persona = await IaConfig.findById(thread.personaId);
-      
-      if (!persona) {
-        res.status(404).json({
-          ok: false,
-          error: {
-            code: 'PERSONA_NOT_FOUND',
-            message: 'Configuración de persona no encontrada',
-            requestId: req.headers['x-request-id']
-          }
-        });
-        return;
-      }
-
       // RAG: buscar contexto relevante
       const ragResults = await ragService.retrieve(
         conn, 
@@ -170,51 +195,45 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         ragTexts: ragResults
       });
 
+      // Obtener facts de la empresa
+      const companyFacts = await memoryService.getCompanyFacts(conn, c_name);
+
       // Obtener mensajes recientes
       const recentMessages = await Message.find({ threadId })
         .sort({ createdAt: -1 })
         .limit(parseInt(process.env.MAX_RECENT_MESSAGES || '16'));
 
-      // Construir prompt para OpenAI
-      const systemPrompt = `Eres un asistente de IA interno para la empresa ${c_name}. 
-      
-Tu función es ayudar a los usuarios con consultas generales, generar prompts personalizados para sus agentes de IA, y proporcionar asistencia técnica.
+      // Obtener configuración de LLM del hilo
+      const llmProvider = thread.state?.llmProvider || 'openai';
+      const llmModel = thread.state?.llmModel || llmService.getDefaultModel(llmProvider);
 
-INSTRUCCIONES:
-- Responde de manera profesional y útil
-- Si te preguntan sobre generar prompts, explica el proceso paso a paso
-- Mantén un tono amigable pero profesional
-- Si no sabes algo, admítelo y ofrece alternativas
-- NO uses prompts específicos de otras empresas o productos
-- Enfócate en ser un asistente general de IA para esta empresa
-
-CONTEXTO DE LA EMPRESA: ${c_name}`;
+      // Construir prompt usando el archivo de prompts
+      const systemPrompt = getCompanyPrompt(c_name, companyFacts);
 
       const messages: any[] = [
         { role: 'system', content: systemPrompt },
-        ...(context ? [{ role: 'system', content: context }] : []),
+        ...(context ? [{ role: 'system', content: `CONTEXTO ADICIONAL:\n${context}` }] : []),
         ...recentMessages.reverse().map(msg => ({
           role: msg.role,
           content: msg.content
         }))
       ];
 
-      // Generar respuesta con OpenAI
-      const completion = await openai.chat.completions.create({
-        model: process.env.CHAT_MODEL || 'gpt-4o-mini',
-        messages,
-        max_tokens: 1000,
+      // Generar respuesta con el LLM seleccionado
+      const llmResponse = await llmService.generate(llmProvider, messages, {
+        model: llmModel,
+        maxTokens: 1000,
         temperature: 0.7
       });
 
-      const assistantContent = completion.choices[0].message.content || 'Lo siento, no pude generar una respuesta.';
+      const assistantContent = llmResponse.content || 'Lo siento, no pude generar una respuesta.';
 
       // Guardar respuesta del asistente
       const assistantMessage = new Message({
         threadId,
         role: 'assistant',
         content: assistantContent,
-        tokens: completion.usage?.completion_tokens || Math.ceil(assistantContent.length / 4)
+        tokens: llmResponse.tokens?.completion || Math.ceil(assistantContent.length / 4)
       });
       await assistantMessage.save();
 
@@ -225,6 +244,8 @@ CONTEXTO DE LA EMPRESA: ${c_name}`;
           content: assistantContent,
           role: 'assistant',
           tokens: assistantMessage.tokens,
+          llmProvider: llmResponse.provider,
+          llmModel: llmResponse.model,
           ragContext: ragResults.length > 0,
           createdAt: assistantMessage.createdAt
         }
@@ -654,6 +675,194 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
       error: {
         code: 'MESSAGES_FETCH_ERROR',
         message: 'Error al obtener mensajes',
+        requestId: req.headers['x-request-id']
+      }
+    });
+  }
+};
+
+// 🤖 GET /llm/providers - Obtener proveedores LLM disponibles
+export const getLLMProviders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const providers = [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        description: 'GPT-4, GPT-4o, GPT-3.5 Turbo',
+        available: true,
+        models: llmService.getAvailableModels('openai'),
+        defaultModel: llmService.getDefaultModel('openai')
+      },
+      {
+        id: 'anthropic',
+        name: 'Anthropic',
+        description: 'Claude 3.5 Sonnet, Claude 3 Opus',
+        available: false,
+        models: llmService.getAvailableModels('anthropic'),
+        defaultModel: llmService.getDefaultModel('anthropic')
+      },
+      {
+        id: 'google',
+        name: 'Google',
+        description: 'Gemini 2.0 Flash, Gemini 1.5 Pro',
+        available: false,
+        models: llmService.getAvailableModels('google'),
+        defaultModel: llmService.getDefaultModel('google')
+      },
+      {
+        id: 'meta',
+        name: 'Meta',
+        description: 'Llama 3.3 70B, Llama 3.1',
+        available: false,
+        models: llmService.getAvailableModels('meta'),
+        defaultModel: llmService.getDefaultModel('meta')
+      }
+    ];
+
+    res.json({
+      ok: true,
+      data: {
+        providers: providers.filter(p => p.available),
+        allProviders: providers
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting LLM providers:', error);
+    res.status(500).json({
+      ok: false,
+      error: {
+        code: 'LLM_PROVIDERS_ERROR',
+        message: 'Error al obtener proveedores LLM',
+        requestId: req.headers['x-request-id']
+      }
+    });
+  }
+};
+
+// 🤖 GET /llm/models/:provider - Obtener modelos disponibles de un proveedor
+export const getLLMModels = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { provider } = req.params;
+
+    if (!['openai', 'anthropic', 'google', 'meta'].includes(provider)) {
+      res.status(400).json({
+        ok: false,
+        error: {
+          code: 'INVALID_PROVIDER',
+          message: `Proveedor LLM inválido: ${provider}`,
+          requestId: req.headers['x-request-id']
+        }
+      });
+      return;
+    }
+
+    const models = llmService.getAvailableModels(provider as any);
+    const defaultModel = llmService.getDefaultModel(provider as any);
+
+    res.json({
+      ok: true,
+      data: {
+        provider,
+        models,
+        defaultModel
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting LLM models:', error);
+    res.status(500).json({
+      ok: false,
+      error: {
+        code: 'LLM_MODELS_ERROR',
+        message: 'Error al obtener modelos LLM',
+        requestId: req.headers['x-request-id']
+      }
+    });
+  }
+};
+
+// 🏥 GET /health/:c_name - Health check y diagnóstico de configuración
+export const healthCheck = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { c_name } = req.params;
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    if (!conn) {
+      res.status(404).json({
+        ok: false,
+        error: {
+          code: 'COMPANY_NOT_FOUND',
+          message: `Empresa "${c_name}" no encontrada`,
+          requestId: req.headers['x-request-id']
+        }
+      });
+      return;
+    }
+
+    // Verificar usuarios
+    const UserModel = getUserModel(conn);
+    const usersCount = await UserModel.countDocuments();
+    const users = await UserModel.find().select('_id name email role').limit(5);
+
+    // Verificar threads
+    const Thread = getThreadModel(conn);
+    const threadsCount = await Thread.countDocuments({ companySlug: c_name });
+
+    // Verificar proveedores LLM
+    const llmProviders = [
+      { id: 'openai', available: true },
+      { id: 'anthropic', available: false },
+      { id: 'google', available: false },
+      { id: 'meta', available: false }
+    ];
+
+    res.json({
+      ok: true,
+      data: {
+        company: c_name,
+        status: 'healthy',
+        config: {
+          users: {
+            total: usersCount,
+            ready: usersCount > 0,
+            sample: users.map(u => ({ id: u._id, name: u.name, role: u.role }))
+          },
+          threads: {
+            total: threadsCount
+          },
+          llm: {
+            providers: llmProviders,
+            activeProviders: llmProviders.filter(p => p.available).length,
+            note: 'Solo OpenAI está activo por ahora'
+          },
+          prompt: {
+            location: 'src/prompts/chatInterno.prompt.ts',
+            editable: true,
+            note: 'Edita este archivo para ajustar el comportamiento del chat'
+          }
+        },
+        ready: usersCount > 0,
+        examplePayload: usersCount > 0 ? {
+          userId: users[0]._id,
+          state: {
+            llmProvider: 'openai',
+            llmModel: 'gpt-4o-mini',
+            summaryMode: 'smart'
+          }
+        } : null,
+        note: 'Chat interno simplificado - No necesitas personaId, solo userId'
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error in health check:', error);
+    res.status(500).json({
+      ok: false,
+      error: {
+        code: 'HEALTH_CHECK_ERROR',
+        message: 'Error al verificar estado del sistema',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
         requestId: req.headers['x-request-id']
       }
     });

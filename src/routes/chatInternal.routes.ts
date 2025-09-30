@@ -7,7 +7,10 @@ import {
   publishPrompt,
   getThreads,
   getThreadSummary,
-  getMessages
+  getMessages,
+  getLLMProviders,
+  getLLMModels,
+  healthCheck
 } from '../controllers/chatInternal.controller';
 
 import {
@@ -21,6 +24,7 @@ const router = Router();
 /**
  * 🤖 RUTAS CHAT INTERNO CON MEMORIA, RAG Y GENERADOR DE PROMPTS
  * Según especificación técnica
+ * ✨ SOPORTE MULTI-LLM: OpenAI, Anthropic, Google, Meta
  */
 
 // ===== THREADS =====
@@ -59,5 +63,16 @@ router.post('/:c_name/rag/reindex', reindexCollection);
 
 // 🔍 POST /api/chat-internal/:c_name/rag/search (para testing)
 router.post('/:c_name/rag/search', searchDocuments);
+
+// ===== LLM MANAGEMENT =====
+// 🤖 GET /api/chat-internal/llm/providers - Obtener proveedores LLM disponibles
+router.get('/llm/providers', getLLMProviders);
+
+// 🤖 GET /api/chat-internal/llm/models/:provider - Obtener modelos de un proveedor
+router.get('/llm/models/:provider', getLLMModels);
+
+// ===== HEALTH CHECK =====
+// 🏥 GET /api/chat-internal/health/:c_name - Verificar estado y configuración
+router.get('/health/:c_name', healthCheck);
 
 export default router;

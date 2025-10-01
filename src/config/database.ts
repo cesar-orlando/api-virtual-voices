@@ -14,11 +14,12 @@ export async function connectDB() {
     // Validar configuración
     validateEnvironmentConfig(config);
     
-    // Opciones de conexión mejoradas para MongoDB Atlas
+    // Opciones de conexión optimizadas para 50+ usuarios concurrentes
     const connectionOptions = {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
+      maxPoolSize: 50,  // ✅ Aumentado de 10 a 50 para soportar 50+ usuarios
+      minPoolSize: 10,  // ✅ Mínimo de conexiones listas
+      serverSelectionTimeoutMS: 15000,  // ✅ Aumentado de 5s a 15s
+      socketTimeoutMS: 120000,  // ✅ Aumentado de 45s a 120s
       bufferCommands: false,
       ssl: true,
       tls: true,
@@ -26,8 +27,10 @@ export async function connectDB() {
       tlsAllowInvalidHostnames: false,
       retryWrites: true,
       w: 'majority' as const,
-      heartbeatFrequencyMS: 10000,
-      maxIdleTimeMS: 60000,
+      // ✅ Optimizaciones para estabilidad y rendimiento
+      heartbeatFrequencyMS: 30000,  // ✅ Reducido de 10s a 30s (menos overhead)
+      maxIdleTimeMS: 300000,  // ✅ Aumentado de 60s a 5min (menos reconexiones)
+      maxConnecting: 10,  // ✅ Límite de conexiones simultáneas
     };
     
     // Conectar a la base de datos principal

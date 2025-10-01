@@ -357,203 +357,233 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
 
     // Procesar mensaje usando reconexión mejorada
     await executeQuickLearningWithReconnection(async (conn) => {
-      const QuickLearningChat = getQuickLearningChatModel(conn);
-      const Record = getRecordModel(conn);
-
-      let messageText = "";
-      let messageType = "text";
-      let mediaUrls: string[] = [];
-
-      // Procesar diferentes tipos de mensaje
-      if (Body) {
-        messageText = Body;
-        messageType = "text";
-      } else if (MediaUrl0) {
-        // Tratar todos los archivos de imagen (incluyendo stickers webp) como imágenes normales
-        if (MediaContentType0?.startsWith('image/')) {
-          messageType = "image";
-          
-          // Procesar imagen y subirla a S3
-          const publicImageUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
-          mediaUrls = [publicImageUrl];
-          
-          // Analizar imagen con IA
-          try {
-            const imageAnalysis = await analyzeImageFromTwilio(MediaUrl0, MediaContentType0);
-            messageText = `🖼️ El usuario compartió una imagen\n\nDescripción: ${imageAnalysis.description}\n\nTexto extraído: ${imageAnalysis.extractedText}\n\nImagen: ${publicImageUrl}`;
-          } catch (error) {
-            console.error("❌ Error analizando imagen:", error);
-            messageText = `🖼️ El usuario compartió una imagen\n\nImagen: ${publicImageUrl}`;
-          }
-        } else if (MediaContentType0?.startsWith('audio/')) {
-          messageType = "audio";
-          
-          // Procesar audio y subirlo a S3
-          const publicAudioUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
-          mediaUrls = [publicAudioUrl];
-          
-          // Transcribir audio
-          try {
-            const transcription = await transcribeAudio(MediaUrl0);
-            messageText = `🎙️ Audio transcrito: ${transcription}\n\nAudio: ${publicAudioUrl}`;
-          } catch (error) {
-            console.error("❌ Error transcribiendo audio:", error);
-            messageText = `🎙️ El usuario envió un audio\n\nAudio: ${publicAudioUrl}`;
-          }
-        } else if (MediaContentType0?.startsWith('video/')) {
-          messageType = "video";
-          
-          // Procesar video y subirlo a S3
-          const publicVideoUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
-          mediaUrls = [publicVideoUrl];
-          messageText = `🎥 El usuario compartió un video\n\nVideo: ${publicVideoUrl}`;
-        } else {
-          messageType = "document";
-          
-          // Procesar documento y subirlo a S3
-          const publicDocUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
-          mediaUrls = [publicDocUrl];
-          messageText = `📄 El usuario compartió un documento\n\nDocumento: ${publicDocUrl}`;
-        }
-      } else if (Latitude && Longitude) {
-        messageType = "location";
-        const lat = parseFloat(Latitude);
-        const lng = parseFloat(Longitude);
-        messageText = `📍 El usuario compartió su ubicación: https://www.google.com/maps?q=${lat},${lng}`;
-      }
-
-      // Buscar o crear el chat
-      let chat = await QuickLearningChat.findOne({ phone: phoneUser });
-
-      if (!chat) {
-        chat = new QuickLearningChat({
-          phone: phoneUser,
-          profileName: ProfileName || "Usuario",
-          linkedTable: {
-            refModel: "Record",
-            refId: customer._id,
-          },
-          conversationStart: new Date(),
-          aiEnabled: aiEnabled,
-          messages: [],
-          tableSlug: 'prospectos'
-        });
-      }
-
-      // Agregar mensaje al chat
-      const newMessage = {
-        direction: "inbound" as const,
-        body: messageText,
-        respondedBy: "human" as const,
-        twilioSid: MessageSid,
-        mediaUrl: mediaUrls,
-        messageType: messageType as "text" | "image" | "audio" | "video" | "location" | "document" | "sticker",
-        metadata: {
-          lat: Latitude ? parseFloat(Latitude) : undefined,
-          lng: Longitude ? parseFloat(Longitude) : undefined,
-        },
-        msgId: MessageSid
-      };
-
-      chat.messages.push(newMessage);
-      // Actualizar último mensaje
-      const currentDate = new Date();
-      chat.lastMessage = {
-        body: messageText,
-        date: currentDate,
-        respondedBy: "human",
-      };
-      await chat.save();
-
-      // Emitir notificación por socket para mensaje nuevo
-      emitNewMessageNotification(phoneUser, newMessage, chat);
-      
-      // Crear notificación para el asesor asignado
-      let advisorId = null;
       try {
-        if (customer?.data?.asesor) {
-          if (typeof customer.data.asesor === 'string') {
-            // Verificar si es un ObjectId válido (24 caracteres hex)
-            if (/^[0-9a-fA-F]{24}$/.test(customer.data.asesor)) {
-              advisorId = customer.data.asesor;
-            } else {
-              // Intentar parsear como JSON
-              try {
-                const advisorData = JSON.parse(customer.data.asesor);
-                advisorId = advisorData._id || advisorData.id;
-              } catch (jsonError) {
-                console.error("❌ [TwilioWebhook] Error parsing advisor JSON:", jsonError);
-                // Si no es JSON válido, usar el string directamente
-                advisorId = customer.data.asesor;
-              }
+        const QuickLearningChat = getQuickLearningChatModel(conn);
+        const Record = getRecordModel(conn);
+
+        let messageText = "";
+        let messageType = "text";
+        let mediaUrls: string[] = [];
+
+        // Procesar diferentes tipos de mensaje
+        if (Body) {
+          messageText = Body;
+          messageType = "text";
+        } else if (MediaUrl0) {
+          // Tratar todos los archivos de imagen (incluyendo stickers webp) como imágenes normales
+          if (MediaContentType0?.startsWith('image/')) {
+            messageType = "image";
+            
+            // Procesar imagen y subirla a S3
+            const publicImageUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+            mediaUrls = [publicImageUrl];
+            
+            // Analizar imagen con IA
+            try {
+              const imageAnalysis = await analyzeImageFromTwilio(MediaUrl0, MediaContentType0);
+              messageText = `🖼️ El usuario compartió una imagen\n\nDescripción: ${imageAnalysis.description}\n\nTexto extraído: ${imageAnalysis.extractedText}\n\nImagen: ${publicImageUrl}`;
+            } catch (error) {
+              console.error("❌ Error analizando imagen:", error);
+              messageText = `🖼️ El usuario compartió una imagen\n\nImagen: ${publicImageUrl}`;
             }
-          } else if (customer.data.asesor._id || customer.data.asesor.id) {
-            advisorId = customer.data.asesor._id || customer.data.asesor.id;
+          } else if (MediaContentType0?.startsWith('audio/')) {
+            messageType = "audio";
+            
+            // Procesar audio y subirlo a S3
+            const publicAudioUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+            mediaUrls = [publicAudioUrl];
+            
+            // Transcribir audio
+            try {
+              const transcription = await transcribeAudio(MediaUrl0);
+              messageText = `🎙️ Audio transcrito: ${transcription}\n\nAudio: ${publicAudioUrl}`;
+            } catch (error) {
+              console.error("❌ Error transcribiendo audio:", error);
+              messageText = `🎙️ El usuario envió un audio\n\nAudio: ${publicAudioUrl}`;
+            }
+          } else if (MediaContentType0?.startsWith('video/')) {
+            messageType = "video";
+            
+            // Procesar video y subirlo a S3
+            const publicVideoUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+            mediaUrls = [publicVideoUrl];
+            messageText = `🎥 El usuario compartió un video\n\nVideo: ${publicVideoUrl}`;
+          } else {
+            messageType = "document";
+            
+            // Procesar documento y subirlo a S3
+            const publicDocUrl = await processMediaFromTwilio(MediaUrl0, MediaContentType0, MessageSid);
+            mediaUrls = [publicDocUrl];
+            messageText = `📄 El usuario compartió un documento\n\nDocumento: ${publicDocUrl}`;
+          }
+        } else if (Latitude && Longitude) {
+          messageType = "location";
+          const lat = parseFloat(Latitude);
+          const lng = parseFloat(Longitude);
+          messageText = `📍 El usuario compartió su ubicación: https://www.google.com/maps?q=${lat},${lng}`;
+        }
+
+        // Buscar o crear el chat de forma atómica para evitar duplicados
+        let chat = await QuickLearningChat.findOneAndUpdate(
+          { phone: phoneUser },
+          {
+            $setOnInsert: {
+              phone: phoneUser,
+              profileName: ProfileName || "Usuario",
+              linkedTable: {
+                refModel: "Record",
+                refId: customer._id,
+              },
+              conversationStart: new Date(),
+              aiEnabled: aiEnabled,
+              messages: [],
+              tableSlug: 'prospectos',
+              status: 'active',
+            }
+          },
+          {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true
+          }
+        );
+
+        // Agregar mensaje al chat
+        const newMessage = {
+          direction: "inbound" as const,
+          body: messageText,
+          respondedBy: "human" as const,
+          twilioSid: MessageSid,
+          mediaUrl: mediaUrls,
+          messageType: messageType as "text" | "image" | "audio" | "video" | "location" | "document" | "sticker",
+          metadata: {
+            lat: Latitude ? parseFloat(Latitude) : undefined,
+            lng: Longitude ? parseFloat(Longitude) : undefined,
+          },
+          msgId: MessageSid
+        };
+
+        // Add message and update lastMessage atomically to prevent version conflicts
+        const currentDate = new Date();
+        await QuickLearningChat.findByIdAndUpdate(
+          chat._id,
+          {
+            $push: { messages: newMessage },
+            $set: {
+              'lastMessage.body': messageText,
+              'lastMessage.date': currentDate,
+              'lastMessage.respondedBy': "human"
+            }
+          },
+          { new: true }
+        );
+
+        // Emitir notificación por socket para mensaje nuevo
+        emitNewMessageNotification(phoneUser, newMessage, chat);
+      
+        // Crear notificación para el asesor asignado
+        let advisorId = null;
+        try {
+          if (customer?.data?.asesor) {
+            if (typeof customer.data.asesor === 'string') {
+              // Verificar si es un ObjectId válido (24 caracteres hex)
+              if (/^[0-9a-fA-F]{24}$/.test(customer.data.asesor)) {
+                advisorId = customer.data.asesor;
+              } else {
+                // Intentar parsear como JSON
+                try {
+                  const advisorData = JSON.parse(customer.data.asesor);
+                  advisorId = advisorData._id || advisorData.id;
+                } catch (jsonError) {
+                  console.error("❌ [TwilioWebhook] Error parsing advisor JSON:", jsonError);
+                  // Si no es JSON válido, usar el string directamente
+                  advisorId = customer.data.asesor;
+                }
+              }
+            } else if (customer.data.asesor._id || customer.data.asesor.id) {
+              advisorId = customer.data.asesor._id || customer.data.asesor.id;
+            }
+          }
+        } catch (parseError) {
+          console.error("❌ [TwilioWebhook] Error parsing advisor data:", parseError);
+        }
+
+        if (advisorId) {
+          try {
+            
+            const notification = await NotificationService.createChatNotification({
+              company: "quicklearning",
+              userId: advisorId,
+              phoneNumber: phoneUser,
+              senderName: customer.data.nombre || ProfileName || "Usuario",
+              messagePreview: newMessage.body,
+              chatId: chat._id.toString()
+            });
+            
+          } catch (notificationError) {
+            console.error("❌ [TwilioWebhook] Error creating chat notification:", notificationError);
+            console.error("❌ [TwilioWebhook] Error details:", {
+              message: notificationError instanceof Error ? notificationError.message : 'Unknown error',
+              stack: notificationError instanceof Error ? notificationError.stack : undefined
+            });
+          }
+        } else {
+          console.warn("⚠️ [TwilioWebhook] No advisor ID found in customer data, skipping notification");
+        }
+      
+        // Emitir evento genérico de actualización de chat (compatibilidad con listeners existentes)
+        try {
+          io.emit(`whatsapp-message-quicklearning`, chat);
+        } catch (e) {
+          console.error("❌ [TwilioWebhook] Error emitting socket event:", e);
+        }
+
+        // Actualizar ultimo_mensaje y lastMessageDate en la tabla correcta si el usuario ya existe
+        const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar", "nuevo_ingreso"];
+        let updated = false;
+        for (const tableSlug of tableSlugs) {
+          const result = await Record.updateOne(
+            { tableSlug, $or: [{ "data.number": phoneUser }, { "data.phone": phoneUser }], c_name: "quicklearning" },
+            { $set: { "data.ultimo_mensaje": messageText, "data.lastMessageDate": new Date() } }
+          );
+          if (result.modifiedCount > 0) {
+            updated = true;
+            break;
           }
         }
-      } catch (parseError) {
-        console.error("❌ [TwilioWebhook] Error parsing advisor data:", parseError);
-      }
-
-      if (advisorId) {
-        try {
-          
-          const notification = await NotificationService.createChatNotification({
-            company: "quicklearning",
-            userId: advisorId,
-            phoneNumber: phoneUser,
-            senderName: customer.data.nombre || ProfileName || "Usuario",
-            messagePreview: newMessage.body,
-            chatId: chat._id.toString()
-          });
-          
-        } catch (notificationError) {
-          console.error("❌ [TwilioWebhook] Error creating chat notification:", notificationError);
-          console.error("❌ [TwilioWebhook] Error details:", {
-            message: notificationError instanceof Error ? notificationError.message : 'Unknown error',
-            stack: notificationError instanceof Error ? notificationError.stack : undefined
-          });
+        if (!updated) {
+          console.warn(`No se encontró el usuario en ninguna tabla para actualizar ultimo_mensaje: ${phoneUser}`);
         }
-      } else {
-        console.warn("⚠️ [TwilioWebhook] No advisor ID found in customer data, skipping notification");
-      }
-      
-      // Emitir evento genérico de actualización de chat (compatibilidad con listeners existentes)
-      try {
-        io.emit(`whatsapp-message-quicklearning`, chat);
-      } catch (e) {
-        console.error("❌ [TwilioWebhook] Error emitting socket event:", e);
-      }
 
-      // Actualizar ultimo_mensaje y lastMessageDate en la tabla correcta si el usuario ya existe
-      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar", "nuevo_ingreso"];
-      let updated = false;
-      for (const tableSlug of tableSlugs) {
-        const result = await Record.updateOne(
-          { tableSlug, $or: [{ "data.number": phoneUser }, { "data.phone": phoneUser }], c_name: "quicklearning" },
-          { $set: { "data.ultimo_mensaje": messageText, "data.lastMessageDate": new Date() } }
-        );
-        if (result.modifiedCount > 0) {
-          updated = true;
-          break;
+        // Si la AI está desactivada, no procesar con IA
+        if (!aiEnabled) {
+          return;
         }
-      }
-      if (!updated) {
-        console.warn(`No se encontró el usuario en ninguna tabla para actualizar ultimo_mensaje: ${phoneUser}`);
-      }
 
-      // Si la AI está desactivada, no procesar con IA
-      if (!aiEnabled) {
-        return;
-      }
-
-      // Procesar mensaje con buffer para evitar respuestas múltiples
-      await processMessageWithBuffer(phoneUser, messageText, chat, conn);
-    });
+        // Procesar mensaje con buffer para evitar respuestas múltiples
+        await processMessageWithBuffer(phoneUser, messageText, chat, conn);
+        
+        } catch (innerError) {
+          // Handle duplicate key errors specifically in chat processing
+          if (innerError.code === 11000) {
+            console.warn(`⚠️ Duplicate key error for chat ${phoneUser} - handled gracefully`);
+            return; // Exit gracefully
+          }
+          throw innerError; // Re-throw other errors
+        }
+      });
 
     res.status(200).send("OK");
   } catch (error) {
     console.error("❌ Error en webhook de Twilio:", error);
+    
+    // Handle duplicate key errors gracefully
+    if (error.code === 11000) {
+      console.warn("⚠️ Duplicate key error handled gracefully - this is expected in concurrent scenarios");
+      res.status(200).send("OK");
+      return;
+    }
+    
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -617,17 +647,20 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             msgId: result.messageId
           };
 
-          chat.messages.push(botMessage);
-
-          // Actualizar último mensaje
+          // Add bot message and update lastMessage atomically to prevent version conflicts
           const currentDate = new Date();
-          chat.lastMessage = {
-            body: aiResponse,
-            date: currentDate,
-            respondedBy: "bot",
-          };
-
-          await chat.save();
+          await QuickLearningChat.findByIdAndUpdate(
+            chat._id,
+            {
+              $push: { messages: botMessage },
+              $set: {
+                'lastMessage.body': aiResponse,
+                'lastMessage.date': currentDate,
+                'lastMessage.respondedBy': "bot"
+              }
+            },
+            { new: true }
+          );
 
           // Emitir notificación por socket para respuesta del bot
           emitNewMessageNotification(phoneUser, botMessage, chat);
@@ -643,9 +676,12 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
           
           if (isTransferMessage) {
             
-            // Desactivar IA en el chat
-            chat.aiEnabled = false;
-            await chat.save();
+            // Desactivar IA en el chat atomically to prevent version conflicts
+            await QuickLearningChat.findByIdAndUpdate(
+              chat._id,
+              { $set: { aiEnabled: false } },
+              { new: true }
+            );
 
             // Emitir notificación de que la IA se desactivó a sí misma
             const io = (global as any).io as SocketIOServer;
@@ -673,8 +709,8 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
                 });
 
                 if (followUpResult.success) {
-                  // Guardar el mensaje de seguimiento en el chat
-                  chat.messages.push({
+                  // Add follow-up message atomically to prevent version conflicts
+                  const followUpMessage = {
                     direction: "outbound-api",
                     body: advisorMessage,
                     dateCreated: new Date(),
@@ -684,8 +720,13 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
                     mediaUrl: [],
                     messageType: "text",
                     metadata: {}
-                  });
-                  await chat.save();
+                  };
+                  
+                  await QuickLearningChat.findByIdAndUpdate(
+                    chat._id,
+                    { $push: { messages: followUpMessage } },
+                    { new: true }
+                  );
 
                   console.log(`📨 Mensaje de asignación de asesor enviado a ${phoneUser}: ${advisorMessage}`);
                   
@@ -788,28 +829,6 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
     }
 
     if (!customer) {
-      // Buscar un asesor random en el modelo de usuarios
-      const UserModel = getUserModel(conn);
-      const asesores = await UserModel.find({ role: "Asesor", status: "active" }).lean();
-      let asesorRandom = null;
-      if (asesores.length > 0) {
-        const idx = Math.floor(Math.random() * asesores.length);
-        const asesorData = asesores[idx];
-        asesorRandom = JSON.stringify({
-          name: asesorData.name,
-          _id: asesorData._id.toString(),
-          email: asesorData.email
-        });
-      }
-      // Si sigue siendo null, asigna el asesor por defecto
-      if (!asesorRandom) {
-        asesorRandom = JSON.stringify({
-          name: "Asistente",
-          _id: "68871c9e8f2515c9310c0611",
-          email: "asistente@quicklearning.com"
-        });
-      }
-
       // La detección de campaña se maneja ahora con la herramienta identify_campaign
       // Valores por defecto
       const detectedCampaign = 'ORGANICO';
@@ -820,35 +839,75 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       // AI habilitada por defecto, se desactivará con herramientas si es necesario
       const aiEnabled = true;
 
-      // Crear nuevo cliente en tabla prospectos con la estructura correcta
-      customer = new DynamicRecord({
-        tableSlug: "prospectos",
-        c_name: "quicklearning",
-        createdBy: "twilio-webhook",
-        data: {
-          nombre: profileName,
-          number: phone,
-          email: null,
-          clasificacion: "prospecto",
-          medio: medio,
-          curso: null,
-          ciudad: null,
-          campana: detectedCampaign,
-          comentario: null,
-          asesor: asesorRandom,
-          ultimo_mensaje: body || null,
-          aiEnabled: aiEnabled,
-          lastMessageDate: new Date(),
-          createdBy: "twilio-webhook",
-          createdAt: new Date()
+      // Use atomic create to prevent duplicates
+      customer = await DynamicRecord.findOneAndUpdate(
+        {
+          tableSlug: "prospectos",
+          c_name: "quicklearning",
+          "data.number": phone
         },
-      });
-      await customer.save();
-      console.log(`✅ Nuevo cliente creado: ${phone} con campaña: ${detectedCampaign}, medio: ${medio}, AI: ${aiEnabled ? 'activada' : 'desactivada'}`);
+        {
+          $setOnInsert: {
+            tableSlug: "prospectos",
+            c_name: "quicklearning",
+            createdBy: "twilio-webhook",
+            data: {
+              nombre: profileName,
+              number: phone,
+              email: null,
+              clasificacion: "prospecto",
+              medio: medio,
+              curso: null,
+              ciudad: null,
+              campana: detectedCampaign,
+              comentario: null,
+              ultimo_mensaje: body || null,
+              aiEnabled: aiEnabled,
+              lastMessageDate: new Date(),
+              createdBy: "twilio-webhook",
+              createdAt: new Date()
+            }
+          }
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true
+        }
+      );
+      
+      console.log(`✅ Cliente creado/encontrado: ${phone} con campaña: ${detectedCampaign}, medio: ${medio}, AI: ${aiEnabled ? 'activada' : 'desactivada'}`);
     }
 
     return customer;
   } catch (error) {
+    // Handle duplicate key errors gracefully
+    if (error.code === 11000) {
+      console.warn(`⚠️ Duplicate key error for customer ${phone} - attempting recovery`);
+      
+      // Try to find the existing customer that was just created by another concurrent request
+      const DynamicRecord = getRecordModel(conn);
+      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
+      
+      for (const tableSlug of tableSlugs) {
+        const existingCustomer = await DynamicRecord.findOne({
+          tableSlug,
+          $or: [
+            { "data.phone": phone },
+            { "data.number": phone }
+          ],
+          c_name: "quicklearning"
+        });
+        if (existingCustomer) {
+          console.log(`✅ Recovered existing customer: ${phone} from table: ${tableSlug}`);
+          return existingCustomer;
+        }
+      }
+      
+      // If we still can't find it, throw the original error
+      throw error;
+    }
+    
     console.error("❌ Error creando/buscando cliente:", error);
     throw error;
   }
@@ -938,17 +997,25 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
 
       // Guardar el mensaje en la colección de chats
       const QuickLearningChat = getQuickLearningChatModel(conn);
-      let chat = await QuickLearningChat.findOne({ phone });
-      if (!chat) {
-        chat = new QuickLearningChat({
-          phone,
-          profileName: "Sistema",
-          conversationStart: new Date(),
-          aiEnabled: false,
-          messages: [],
-          tableSlug: 'prospectos'
-        });
-      }
+      let chat = await QuickLearningChat.findOneAndUpdate(
+        { phone },
+        {
+          $setOnInsert: {
+            phone,
+            profileName: "Sistema",
+            conversationStart: new Date(),
+            aiEnabled: false,
+            messages: [],
+            tableSlug: 'prospectos',
+            status: 'active'
+          }
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true
+        }
+      );
       const currentDate = new Date();
       const asesorMessage = {
         direction: "outbound-api" as const,
@@ -958,13 +1025,20 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         messageType: "text" as const,
         msgId: result.messageId
       };
-      chat.messages.push(asesorMessage);
-      chat.lastMessage = {
-        body: message,
-        date: currentDate,
-        respondedBy: "asesor",
-      };
-      await chat.save();
+      
+      // Add asesor message and update lastMessage atomically to prevent version conflicts
+      await QuickLearningChat.findByIdAndUpdate(
+        chat._id,
+        {
+          $push: { messages: asesorMessage },
+          $set: {
+            'lastMessage.body': message,
+            'lastMessage.date': currentDate,
+            'lastMessage.respondedBy': "asesor"
+          }
+        },
+        { new: true }
+      );
 
       // Emitir notificación por socket para mensaje del asesor
       emitNewMessageNotification(phone, asesorMessage);
@@ -1030,17 +1104,25 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
 
       // Guardar el mensaje en la colección de chats
       const QuickLearningChat = getQuickLearningChatModel(conn);
-      let chat = await QuickLearningChat.findOne({ phone });
-      if (!chat) {
-        chat = new QuickLearningChat({
-          phone,
-          profileName: "Sistema",
-          conversationStart: new Date(),
-          aiEnabled: false,
-          messages: [],
-          tableSlug: 'prospectos'
-        });
-      }
+      let chat = await QuickLearningChat.findOneAndUpdate(
+        { phone },
+        {
+          $setOnInsert: {
+            phone,
+            profileName: "Sistema",
+            conversationStart: new Date(),
+            aiEnabled: false,
+            messages: [],
+            tableSlug: 'prospectos',
+            status: 'active',
+          }
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true
+        }
+      );
       const currentDate = new Date();
       const templateAsesorMessage = {
         direction: "outbound-api" as const,
@@ -1050,13 +1132,20 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         messageType: "text" as const,
         msgId: result.messageId
       };
-      chat.messages.push(templateAsesorMessage);
-      chat.lastMessage = {
-        body: templateBody,
-        date: currentDate,
-        respondedBy: "asesor",
-      };
-      await chat.save();
+      
+      // Add template message and update lastMessage atomically to prevent version conflicts
+      await QuickLearningChat.findByIdAndUpdate(
+        chat._id,
+        {
+          $push: { messages: templateAsesorMessage },
+          $set: {
+            'lastMessage.body': templateBody,
+            'lastMessage.date': currentDate,
+            'lastMessage.respondedBy': "asesor"
+          }
+        },
+        { new: true }
+      );
 
       // Emitir notificación por socket para mensaje de template del asesor
       emitNewMessageNotification(phone, templateAsesorMessage);

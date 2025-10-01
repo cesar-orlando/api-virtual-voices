@@ -1,6 +1,12 @@
 import express from 'express';
 import { handleMessengerWebhook } from '../services/meta/messenger';
-import { getFacebookChatMessages, getFacebookUsers, sendFacebookMessageController } from '../controllers/meta.controller';
+import { 
+  getFacebookChatMessages, 
+  getFacebookUsers, 
+  sendFacebookMessageController,
+  getDatabaseConnectionsStatus,
+  cleanupDatabaseConnections
+} from '../controllers/meta.controller';
 
 const router = express.Router();
 
@@ -27,5 +33,9 @@ router.post('/messenger/send-message', (req, res, next) => {
 });
 router.get('/messenger/usuarios/:c_name/:user_id', getFacebookUsers);
 router.get("/messenger/messages/:c_name/:sessionId/:userId", getFacebookChatMessages);
+
+// ✅ Endpoints de monitoreo de conexiones de base de datos
+router.get('/database/connections/status', getDatabaseConnectionsStatus);
+router.post('/database/connections/cleanup', cleanupDatabaseConnections);
 
 export default router;

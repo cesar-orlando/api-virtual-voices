@@ -158,25 +158,32 @@ export abstract class BaseAgent {
             };
           }
           
-          chat.conversationSummary.lastSummarizedIndex = chat.messages.length;
-          chat.conversationSummary.summary = this.truncateField(updatedSummary.summary, 2000);
-          chat.conversationSummary.extractedFacts = {
-            userName: updatedSummary.extractedFacts.userName ? 
-              this.truncateField(updatedSummary.extractedFacts.userName, 100) : undefined,
-            email: updatedSummary.extractedFacts.email ? 
-              this.truncateField(updatedSummary.extractedFacts.email, 200) : undefined,
-            phone: updatedSummary.extractedFacts.phone ? 
-              this.truncateField(updatedSummary.extractedFacts.phone, 50) : undefined,
-            decisions: updatedSummary.extractedFacts.decisions.map(d => this.truncateField(d, 200)),
-            preferences: updatedSummary.extractedFacts.preferences.map(p => this.truncateField(p, 200))
+          // Use atomic update to avoid version conflicts
+          const updateOps = {
+            'conversationSummary.lastSummarizedIndex': chat.messages.length,
+            'conversationSummary.summary': this.truncateField(updatedSummary.summary, 2000),
+            'conversationSummary.extractedFacts': {
+              userName: updatedSummary.extractedFacts.userName ? 
+                this.truncateField(updatedSummary.extractedFacts.userName, 100) : undefined,
+              email: updatedSummary.extractedFacts.email ? 
+                this.truncateField(updatedSummary.extractedFacts.email, 200) : undefined,
+              phone: updatedSummary.extractedFacts.phone ? 
+                this.truncateField(updatedSummary.extractedFacts.phone, 50) : undefined,
+              decisions: updatedSummary.extractedFacts.decisions.map(d => this.truncateField(d, 200)),
+              preferences: updatedSummary.extractedFacts.preferences.map(p => this.truncateField(p, 200))
+            },
+            'conversationSummary.conversationStage': this.truncateField(updatedSummary.conversationStage, 100),
+            'conversationSummary.tokensSaved': (chat.conversationSummary?.tokensSaved || 0) + updatedSummary.tokensSaved,
+            'conversationSummary.lastUpdated': new Date()
           };
-          chat.conversationSummary.conversationStage = this.truncateField(updatedSummary.conversationStage, 100);
-          chat.conversationSummary.tokensSaved = (chat.conversationSummary.tokensSaved || 0) + updatedSummary.tokensSaved;
-          chat.conversationSummary.lastUpdated = new Date();
+
+          // Get the appropriate Chat model using company connection
+          const conn = await getConnectionByCompanySlug(this.company);
+          const ChatModel = getWhatsappChatModel(conn);
           
-          // Save to database
-          await chat.save();
-          
+          // Atomic update with retry logic to prevent version conflicts
+          await this.updateConversationSummaryAtomic(String(chat._id), updateOps);
+
           console.log(`✅ Summary updated.`);
         }
       } catch (error) {
@@ -226,24 +233,32 @@ export abstract class BaseAgent {
             };
           }
           
-          chat.conversationSummary.lastSummarizedIndex = startIndex + chunkEnd;
-          chat.conversationSummary.summary = this.truncateField(chunkSummary.summary, 2000);
-          chat.conversationSummary.extractedFacts = {
-            userName: chunkSummary.extractedFacts.userName ? 
-              this.truncateField(chunkSummary.extractedFacts.userName, 100) : undefined,
-            email: chunkSummary.extractedFacts.email ? 
-              this.truncateField(chunkSummary.extractedFacts.email, 200) : undefined,
-            phone: chunkSummary.extractedFacts.phone ? 
-              this.truncateField(chunkSummary.extractedFacts.phone, 50) : undefined,
-            decisions: chunkSummary.extractedFacts.decisions.map(d => this.truncateField(d, 200)),
-            preferences: chunkSummary.extractedFacts.preferences.map(p => this.truncateField(p, 200))
+          // Use atomic update to avoid version conflicts
+          const updateOps = {
+            'conversationSummary.lastSummarizedIndex': startIndex + chunkEnd,
+            'conversationSummary.summary': this.truncateField(chunkSummary.summary, 2000),
+            'conversationSummary.extractedFacts': {
+              userName: chunkSummary.extractedFacts.userName ? 
+                this.truncateField(chunkSummary.extractedFacts.userName, 100) : undefined,
+              email: chunkSummary.extractedFacts.email ? 
+                this.truncateField(chunkSummary.extractedFacts.email, 200) : undefined,
+              phone: chunkSummary.extractedFacts.phone ? 
+                this.truncateField(chunkSummary.extractedFacts.phone, 50) : undefined,
+              decisions: chunkSummary.extractedFacts.decisions.map(d => this.truncateField(d, 200)),
+              preferences: chunkSummary.extractedFacts.preferences.map(p => this.truncateField(p, 200))
+            },
+            'conversationSummary.conversationStage': this.truncateField(chunkSummary.conversationStage, 100),
+            'conversationSummary.tokensSaved': (chat.conversationSummary?.tokensSaved || 0) + totalTokensSaved,
+            'conversationSummary.lastUpdated': new Date()
           };
-          chat.conversationSummary.conversationStage = this.truncateField(chunkSummary.conversationStage, 100);
-          chat.conversationSummary.tokensSaved = (chat.conversationSummary.tokensSaved || 0) + totalTokensSaved;
-          chat.conversationSummary.lastUpdated = new Date();
+
+          // Get the appropriate Chat model using company connection
+          const conn = await getConnectionByCompanySlug(this.company);
+          const ChatModel = getWhatsappChatModel(conn);
           
-          await chat.save();
-          
+          // Atomic update with retry logic to prevent version conflicts
+          await this.updateConversationSummaryAtomic(String(chat._id), updateOps);
+
           // Reset for next batch
           totalTokensSaved = 0;
         }
@@ -259,6 +274,42 @@ export abstract class BaseAgent {
 
     console.log(`✅ Large conversation summary updated!`);
 
+  }
+
+  /**
+   * Atomically update conversation summary with retry logic for version conflicts
+   */
+  private async updateConversationSummaryAtomic(chatId: string, updateOps: any, maxRetries: number = 3): Promise<void> {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        const conn = await getConnectionByCompanySlug(this.company);
+        const ChatModel = getWhatsappChatModel(conn);
+        
+        await ChatModel.findByIdAndUpdate(
+          chatId,
+          { $set: updateOps },
+          { new: true }
+        );
+        
+        return; // Success, exit retry loop
+      } catch (error: any) {
+        attempt++;
+        
+        // Check if it's a version error (optimistic concurrency failure)
+        if (error.name === 'VersionError' || error.message?.includes('version') || error.message?.includes('modifiedPaths')) {
+          if (attempt < maxRetries) {
+            console.warn(`⚠️ Conversation summary update attempt ${attempt}/${maxRetries} failed due to version conflict, retrying...`);
+            // Wait a bit before retrying with exponential backoff
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt - 1) * 100));
+            continue;
+          }
+        }
+        
+        // Re-throw if max retries reached or it's not a version error
+        throw error;
+      }
+    }
   }
 
   /**

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getDbConnection } from '../config/connectionManager';
+import { getDbConnection, getConnectionStats, cleanupInactiveConnections } from '../config/connectionManager';
 import { getFacebookChatModel } from '../models/facebookChat.model';
 import { sendFacebookMessage } from '../services/meta/messenger';
 import { getSessionModel } from '../models/session.model';
@@ -122,5 +122,89 @@ export const getFacebookChatMessages = async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo mensajes del chat', details: error });
+  }
+};
+
+// ✅ Endpoint para monitorear conexiones de base de datos
+export const getDatabaseConnectionsStatus = async (req: Request, res: Response) => {
+  try {
+    const stats = getConnectionStats();
+    
+    // Calcular porcentaje de uso de memoria
+    const memoryUsageMB = Math.round(stats.memoryUsage.rss / 1024 / 1024);
+    const memoryPercentage = Math.round((stats.memoryUsage.rss / (8 * 1024 * 1024 * 1024)) * 100);
+    
+    const response = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      database: {
+        totalConnections: stats.totalConnections,
+        activeConnections: stats.activeConnections,
+        inactiveConnections: stats.inactiveConnections,
+        connectionsByCompany: stats.connectionsByCompany,
+        limits: {
+          maxConnectionsPerCompany: stats.maxConnectionsPerCompany,
+          maxTotalConnections: stats.maxTotalConnections
+        }
+      },
+      system: {
+        memoryUsage: {
+          rss: memoryUsageMB,
+          percentage: memoryPercentage,
+          status: memoryPercentage > 80 ? 'warning' : memoryPercentage > 90 ? 'critical' : 'ok'
+        },
+        uptime: process.uptime()
+      },
+      recommendations: []
+    };
+
+    // Agregar recomendaciones basadas en el estado
+    if (stats.totalConnections > 80) {
+      response.recommendations.push('⚠️ Alto número de conexiones activas. Considerar limpieza.');
+    }
+    if (memoryPercentage > 80) {
+      response.recommendations.push('⚠️ Uso de memoria elevado. Monitorear de cerca.');
+    }
+    if (stats.inactiveConnections > 5) {
+      response.recommendations.push('🧹 Conexiones inactivas detectadas. Ejecutar limpieza.');
+    }
+
+    res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error obteniendo estado de conexiones', 
+      details: error 
+    });
+  }
+};
+
+// ✅ Endpoint para limpiar conexiones inactivas
+export const cleanupDatabaseConnections = async (req: Request, res: Response) => {
+  try {
+    const beforeStats = getConnectionStats();
+    cleanupInactiveConnections();
+    const afterStats = getConnectionStats();
+    
+    const cleaned = beforeStats.totalConnections - afterStats.totalConnections;
+    
+    res.status(200).json({
+      success: true,
+      message: `Limpieza completada. ${cleaned} conexiones inactivas eliminadas.`,
+      before: {
+        totalConnections: beforeStats.totalConnections,
+        activeConnections: beforeStats.activeConnections
+      },
+      after: {
+        totalConnections: afterStats.totalConnections,
+        activeConnections: afterStats.activeConnections
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error ejecutando limpieza de conexiones', 
+      details: error 
+    });
   }
 };

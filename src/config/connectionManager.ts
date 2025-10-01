@@ -3,11 +3,96 @@ import { getEnvironmentConfig } from "./environments";
 
 const connections: Record<string, Connection> = {};
 
-// Opciones de conexión mejoradas para MongoDB Atlas
+// ✅ Sistema de gestión de conexiones optimizado
+class ConnectionManager {
+  private static instance: ConnectionManager;
+  private connectionStats: Map<string, { count: number; lastUsed: number }> = new Map();
+  private readonly MAX_CONNECTIONS_PER_COMPANY = 15; // Límite por empresa
+  private readonly MAX_TOTAL_CONNECTIONS = 100; // Límite total del sistema
+  private readonly CONNECTION_CLEANUP_INTERVAL = 300000; // 5 minutos
+
+  static getInstance(): ConnectionManager {
+    if (!ConnectionManager.instance) {
+      ConnectionManager.instance = new ConnectionManager();
+    }
+    return ConnectionManager.instance;
+  }
+
+  // Verificar si podemos crear una nueva conexión
+  canCreateConnection(company: string): boolean {
+    const currentStats = this.connectionStats.get(company) || { count: 0, lastUsed: 0 };
+    const totalConnections = Array.from(this.connectionStats.values())
+      .reduce((sum, stats) => sum + stats.count, 0);
+    
+    return currentStats.count < this.MAX_CONNECTIONS_PER_COMPANY && 
+           totalConnections < this.MAX_TOTAL_CONNECTIONS;
+  }
+
+  // Registrar uso de conexión
+  registerConnection(company: string): void {
+    const currentStats = this.connectionStats.get(company) || { count: 0, lastUsed: 0 };
+    this.connectionStats.set(company, {
+      count: currentStats.count + 1,
+      lastUsed: Date.now()
+    });
+  }
+
+  // Desregistrar conexión
+  unregisterConnection(company: string): void {
+    const currentStats = this.connectionStats.get(company);
+    if (currentStats && currentStats.count > 0) {
+      this.connectionStats.set(company, {
+        count: currentStats.count - 1,
+        lastUsed: currentStats.lastUsed
+      });
+    }
+  }
+
+  // Obtener estadísticas de conexiones
+  getConnectionStats(): Record<string, any> {
+    const stats: Record<string, any> = {};
+    this.connectionStats.forEach((value, key) => {
+      stats[key] = { ...value };
+    });
+    return stats;
+  }
+
+  // Limpiar conexiones inactivas
+  cleanupInactiveConnections(): void {
+    const now = Date.now();
+    const inactiveThreshold = 600000; // 10 minutos
+
+    Object.keys(connections).forEach(key => {
+      const conn = connections[key];
+      const stats = this.connectionStats.get(key);
+      
+      if (conn.readyState !== 1 || 
+          (stats && (now - stats.lastUsed) > inactiveThreshold)) {
+        console.log(`🧹 Cleaning up inactive connection: ${key}`);
+        try {
+          conn.close();
+        } catch (error) {
+          console.warn(`⚠️ Error closing connection ${key}:`, error);
+        }
+        delete connections[key];
+        this.unregisterConnection(key);
+      }
+    });
+  }
+}
+
+// Inicializar limpieza automática
+const connectionManager = ConnectionManager.getInstance();
+setInterval(() => {
+  connectionManager.cleanupInactiveConnections();
+}, connectionManager['CONNECTION_CLEANUP_INTERVAL']);
+
+// Opciones de conexión optimizadas para 50+ usuarios concurrentes
 const getConnectionOptions = () => ({
-  maxPoolSize: 10,
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000,
+  maxPoolSize: 50,  // ✅ Aumentado de 10 a 50 para soportar 50+ usuarios
+  minPoolSize: 10,  // ✅ Mínimo de conexiones listas
+  serverSelectionTimeoutMS: 15000,  // ✅ Aumentado de 5s a 15s
+  socketTimeoutMS: 120000,  // ✅ Aumentado de 45s a 120s
   bufferCommands: false,
   ssl: true,
   tls: true,
@@ -15,15 +100,32 @@ const getConnectionOptions = () => ({
   tlsAllowInvalidHostnames: false,
   retryWrites: true,
   w: 'majority' as const,
-  // Opciones adicionales para estabilidad
-  heartbeatFrequencyMS: 10000,
-  maxIdleTimeMS: 60000,
+  // ✅ Optimizaciones para estabilidad y rendimiento
+  heartbeatFrequencyMS: 30000,  // ✅ Reducido de 10s a 30s (menos overhead)
+  maxIdleTimeMS: 300000,  // ✅ Aumentado de 60s a 5min (menos reconexiones)
+  maxConnecting: 10,  // ✅ Límite de conexiones simultáneas
 });
 
 export async function getDbConnection(dbName: string): Promise<Connection> {
-  // Verificar si ya existe una conexión activa
+  // ✅ Verificar si ya existe una conexión activa
   if (connections[dbName] && connections[dbName].readyState === 1) {
+    connectionManager.registerConnection(dbName);
     return connections[dbName];
+  }
+
+  // ✅ Verificar límites de conexiones antes de crear nueva
+  if (!connectionManager.canCreateConnection(dbName)) {
+    console.warn(`⚠️ Connection limit reached for ${dbName}. Waiting for available connection...`);
+    // Esperar hasta 10 segundos por una conexión disponible
+    let attempts = 0;
+    while (attempts < 20 && !connectionManager.canCreateConnection(dbName)) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+    
+    if (!connectionManager.canCreateConnection(dbName)) {
+      throw new Error(`Connection limit exceeded for ${dbName}. Max connections per company: 15`);
+    }
   }
 
   // Si existe una conexión pero no está activa, limpiarla
@@ -34,6 +136,7 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
       console.warn(`⚠️ Error closing old connection for ${dbName}:`, error);
     }
     delete connections[dbName];
+    connectionManager.unregisterConnection(dbName);
   }
 
   const config = getEnvironmentConfig();
@@ -44,47 +147,57 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
   try {
     const conn = await mongoose.createConnection(uri, getConnectionOptions()).asPromise();
     connections[dbName] = conn;
+    connectionManager.registerConnection(dbName);
     
-    // Manejar eventos de conexión
+    console.log(`✅ New connection created for ${dbName}. Total connections: ${Object.keys(connections).length}`);
+    
+    // ✅ Manejar eventos de conexión con reconexión inteligente
     conn.on('error', async (error) => {
-      // No eliminar la conexión inmediatamente, intentar reconectar
+      console.error(`❌ Database error for ${dbName}:`, error);
+      connectionManager.unregisterConnection(dbName);
       delete connections[dbName];
       
-      // Intentar reconectar después de 5 segundos
+      // ✅ Reconexión con backoff exponencial (menos agresiva)
+      const retryDelay = Math.min(30000, 5000 * Math.pow(2, 0)); // Max 30s
       setTimeout(async () => {
         try {
           await getDbConnection(dbName);
         } catch (reconnectError) {
           console.error(`❌ Failed to reconnect to ${dbName}:`, reconnectError);
         }
-      }, 5000);
+      }, retryDelay);
     });
     
     conn.on('disconnected', async () => {
       console.warn(`⚠️ Database disconnected for ${dbName}`);
-      // No eliminar inmediatamente, intentar reconectar
+      connectionManager.unregisterConnection(dbName);
       delete connections[dbName];
       
-      // Intentar reconectar después de 3 segundos
+      // ✅ Reconexión menos agresiva
       setTimeout(async () => {
         try {
           await getDbConnection(dbName);
         } catch (reconnectError) {
           console.error(`❌ Failed to reconnect to ${dbName} after disconnect:`, reconnectError);
         }
-      }, 3000);
+      }, 10000); // 10 segundos en lugar de 3
     });
     
     conn.on('reconnected', () => {
+      console.log(`✅ Database reconnected for ${dbName}`);
+      connectionManager.registerConnection(dbName);
     });
     
     conn.on('close', () => {
+      console.log(`🔌 Database connection closed for ${dbName}`);
+      connectionManager.unregisterConnection(dbName);
       delete connections[dbName];
     });
     
     return conn;
   } catch (error) {
     console.error(`❌ Error creating connection for ${dbName}:`, error);
+    connectionManager.unregisterConnection(dbName);
     throw error;
   }
 }
@@ -188,7 +301,7 @@ export function clearConnections(): void {
   });
 }
 
-// Función para obtener información de conexiones activas
+// ✅ Función para obtener información de conexiones activas
 export function getActiveConnections(): string[] {
   return Object.keys(connections).filter(key => {
     const conn = connections[key];
@@ -196,23 +309,35 @@ export function getActiveConnections(): string[] {
   });
 }
 
-// Función para limpiar conexiones inactivas
+// ✅ Función para obtener estadísticas detalladas de conexiones
+export function getConnectionStats(): Record<string, any> {
+  const activeConnections = getActiveConnections();
+  const managerStats = connectionManager.getConnectionStats();
+  
+  return {
+    totalConnections: Object.keys(connections).length,
+    activeConnections: activeConnections.length,
+    inactiveConnections: Object.keys(connections).length - activeConnections.length,
+    connectionsByCompany: managerStats,
+    maxConnectionsPerCompany: 15,
+    maxTotalConnections: 100,
+    memoryUsage: process.memoryUsage()
+  };
+}
+
+// ✅ Función para limpiar conexiones inactivas (ahora usa el manager)
 export function cleanupInactiveConnections(): void {
   const beforeCount = Object.keys(connections).length;
-  
-  Object.keys(connections).forEach(key => {
-    const conn = connections[key];
-    if (conn.readyState !== 1) { // Not connected
-      console.log(`🧹 Cleaning up inactive connection: ${key}`);
-      delete connections[key];
-    }
-  });
-  
+  connectionManager.cleanupInactiveConnections();
   const afterCount = Object.keys(connections).length;
+  
   if (beforeCount !== afterCount) {
     console.log(`🧹 Cleaned up ${beforeCount - afterCount} inactive connections`);
   }
 }
+
+// ✅ Exportar el connection manager para uso externo
+export { connectionManager };
 
 // Función para ejecutar operaciones de base de datos con reconexión automática
 export async function executeWithReconnection<T>(

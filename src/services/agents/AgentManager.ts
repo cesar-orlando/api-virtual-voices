@@ -21,9 +21,7 @@ export class AgentManager {
     }
 
     try {
-      const connection = await getConnectionByCompanySlug(company);
-      
-      const schedulerService = new MessageSchedulerService(connection);
+      const schedulerService = new MessageSchedulerService(company);
       this.schedulerServices.set(company, schedulerService);
       
       // Auto-start the scheduler service when first initialized

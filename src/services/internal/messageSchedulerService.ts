@@ -3,7 +3,7 @@ import { getWhatsappChatModel, IWhatsappChat } from '../../models/whatsappChat.m
 import { clients, blockSession, unblockSession } from '../whatsapp/index';
 import { getSessionModel } from '../../models/session.model';
 import { BaseAgent } from '../agents/BaseAgent';
-import { Connection } from 'mongoose';
+import { getConnectionByCompanySlug } from '../../config/connectionManager';
 import { DateTime } from 'luxon';
 import { run } from '@openai/agents';
 import { Message } from 'whatsapp-web.js';
@@ -17,7 +17,7 @@ export class MessageSchedulerService {
   
   
   constructor(
-    private connection: Connection,
+    private companyName: string,
   ) {
   }
   /**
@@ -30,7 +30,7 @@ export class MessageSchedulerService {
     }
 
     this.isRunning = true;
-    console.log(`📅 Starting message scheduler for ${this.connection.name} (checking every ${this.CHECK_INTERVAL_MS/1000}s)`);
+    console.log(`📅 Starting message scheduler for ${this.companyName} (checking every ${this.CHECK_INTERVAL_MS/1000}s)`);
     
     // Process immediately on start
     this.processScheduledMessages();
@@ -72,7 +72,8 @@ export class MessageSchedulerService {
     messageContent?: string;
     customData?: Record<string, any>;
   }): Promise<IScheduledMessage> {
-    const ScheduledMessageModel = getScheduledMessageModel(this.connection);
+    const connection = await getConnectionByCompanySlug(this.companyName);
+    const ScheduledMessageModel = getScheduledMessageModel(connection);
     
     // Calculate scheduled time
     const now = new Date();
@@ -81,7 +82,7 @@ export class MessageSchedulerService {
     const scheduledFor = new Date(now.getTime() + delayMs);
 
     // Get chat context
-    const ChatModel = getWhatsappChatModel(this.connection);
+    const ChatModel = getWhatsappChatModel(connection);
     const chat = await ChatModel.findById(options.chatId);
     
     const context = chat ? {
@@ -163,7 +164,8 @@ export class MessageSchedulerService {
     if (!this.isRunning) return;
 
     try {
-      const ScheduledMessageModel = getScheduledMessageModel(this.connection);
+      const connection = await getConnectionByCompanySlug(this.companyName);
+      const ScheduledMessageModel = getScheduledMessageModel(connection);
       
       // Find due messages
       const dueMessages = await ScheduledMessageModel.findDueMessages(this.BATCH_SIZE);
@@ -198,7 +200,8 @@ export class MessageSchedulerService {
   private async processSingleMessage(scheduledMessage: IScheduledMessage): Promise<void> {
     try {
       // Get chat document
-      const ChatModel = getWhatsappChatModel(this.connection);
+      const connection = await getConnectionByCompanySlug(this.companyName);
+      const ChatModel = getWhatsappChatModel(connection);
       const chat = await ChatModel.findById(scheduledMessage.chatId);
       
       if (!chat) {
@@ -263,8 +266,9 @@ export class MessageSchedulerService {
     sessionId: string;
   } | null> {
     try {
-      const ChatModel = getWhatsappChatModel(this.connection);
-      const SessionModel = getSessionModel(this.connection);
+      const connection = await getConnectionByCompanySlug(this.companyName);
+      const ChatModel = getWhatsappChatModel(connection);
+      const SessionModel = getSessionModel(connection);
       
       // Get chat to find session ID
       const chat = await ChatModel.findById(chatId);
@@ -368,7 +372,8 @@ export class MessageSchedulerService {
    * Cancel scheduled messages for a chat
    */
   public async cancelScheduledMessages(chatId: string, messageType?: string): Promise<number> {
-    const ScheduledMessageModel = getScheduledMessageModel(this.connection);
+    const connection = await getConnectionByCompanySlug(this.companyName);
+    const ScheduledMessageModel = getScheduledMessageModel(connection);
     
     const query: any = { 
       chatId, 
@@ -397,7 +402,8 @@ export class MessageSchedulerService {
     failed: number;
     sent: number;
   }> {
-    const ScheduledMessageModel = getScheduledMessageModel(this.connection);
+    const connection = await getConnectionByCompanySlug(this.companyName);
+    const ScheduledMessageModel = getScheduledMessageModel(connection);
     
     const [pending, overdue, failed, sent] = await Promise.all([
       ScheduledMessageModel.countDocuments({ status: 'pending' }),

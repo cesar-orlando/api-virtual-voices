@@ -89,8 +89,7 @@ async function initializeMessageSchedulers(): Promise<void> {
     
     for (const companyName of companies) {
       try {
-        const connection = await getConnectionByCompanySlug(companyName);
-        const scheduler = new MessageSchedulerService(connection);
+        const scheduler = new MessageSchedulerService(companyName);
         scheduler.start();
       } catch (error) {
         console.error(`❌ Error starting message scheduler for ${companyName}:`, error);

@@ -154,7 +154,7 @@ async function main() {
     await Promise.allSettled(whatsappPromises);
     
     // 📅 Now initialize message schedulers after WhatsApp clients are ready
-    await initializeMessageSchedulers();
+    //await initializeMessageSchedulers();
     
     // Monitoreo periódico de conexiones (cada 5 minutos)
     setInterval(() => {

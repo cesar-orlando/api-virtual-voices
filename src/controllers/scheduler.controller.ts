@@ -41,8 +41,7 @@ export const scheduleFollowUp = async (req: Request, res: Response) => {
       return;
     }
 
-    const connection = await getConnectionByCompanySlug(company);
-    const schedulerService = new MessageSchedulerService(connection);
+    const schedulerService = new MessageSchedulerService(company);
 
     if (prospects && Array.isArray(prospects)) {
       for (const prospect of prospects) {
@@ -70,6 +69,7 @@ export const scheduleFollowUp = async (req: Request, res: Response) => {
       return;
     }
 
+    const connection = await getConnectionByCompanySlug(company);
     const WhatsappChat = getWhatsappChatModel(connection);
     
     const chat = await WhatsappChat.findOne({ phone, company });
@@ -211,7 +211,7 @@ export const scheduleWithTemplate = async (req: Request, res: Response) => {
     }
 
     // Create scheduler service
-    const schedulerService = new MessageSchedulerService(connection);
+    const schedulerService = new MessageSchedulerService(company);
 
     // Schedule the follow-up
     const scheduledMessage = await schedulerService.scheduleFollowUp({
@@ -347,7 +347,7 @@ export const cancelScheduledMessages = async (req: Request, res: Response) => {
     }
 
     const connection = await getConnectionByCompanySlug(company);
-    const schedulerService = new MessageSchedulerService(connection);
+    const schedulerService = new MessageSchedulerService(company);
     const ScheduledMessage = getScheduledMessageModel(connection);
 
     let cancelledCount = 0;

@@ -651,9 +651,9 @@ IMPORTANTE:
     chats.forEach(chat => {
       if (chat.messages && Array.isArray(chat.messages)) {
         chat.messages
-          .filter((msg: any) => msg.direction === 'inbound' && msg.createdAt) // Only count customer messages
+          .filter((msg: any) => msg.direction === 'inbound' && (msg.createdAt || msg.dateCreated)) // Only count customer messages
           .forEach((msg: any) => {
-            const date = new Date(msg.createdAt);
+            const date = new Date(msg.createdAt || msg.dateCreated);
             const hour = date.getHours();
             const dayName = date.toLocaleDateString('es-ES', { weekday: 'long' });
             

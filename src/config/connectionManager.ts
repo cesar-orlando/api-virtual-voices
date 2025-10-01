@@ -7,8 +7,8 @@ const connections: Record<string, Connection> = {};
 class ConnectionManager {
   private static instance: ConnectionManager;
   private connectionStats: Map<string, { count: number; lastUsed: number }> = new Map();
-  private readonly MAX_CONNECTIONS_PER_COMPANY = 15; // Límite por empresa
-  private readonly MAX_TOTAL_CONNECTIONS = 100; // Límite total del sistema
+  private readonly MAX_CONNECTIONS_PER_COMPANY = 200; // ✅ Aumentado: 200 por empresa (vs 50)
+  private readonly MAX_TOTAL_CONNECTIONS = 450; // ✅ Aumentado: 450 total (vs 400) - Dejamos 50 de margen
   private readonly CONNECTION_CLEANUP_INTERVAL = 300000; // 5 minutos
 
   static getInstance(): ConnectionManager {
@@ -81,16 +81,19 @@ class ConnectionManager {
   }
 }
 
-// Inicializar limpieza automática
-const connectionManager = ConnectionManager.getInstance();
-setInterval(() => {
-  connectionManager.cleanupInactiveConnections();
-}, connectionManager['CONNECTION_CLEANUP_INTERVAL']);
+// ✅ Limpieza automática deshabilitada para evitar problemas en producción
+// const connectionManager = ConnectionManager.getInstance();
+// setInterval(() => {
+//   connectionManager.cleanupInactiveConnections();
+// }, connectionManager['CONNECTION_CLEANUP_INTERVAL']);
 
-// Opciones de conexión optimizadas para 50+ usuarios concurrentes
+// Inicializar connection manager sin limpieza automática
+const connectionManager = ConnectionManager.getInstance();
+
+// Opciones de conexión optimizadas para 500 conexiones MongoDB Atlas
 const getConnectionOptions = () => ({
-  maxPoolSize: 50,  // ✅ Aumentado de 10 a 50 para soportar 50+ usuarios
-  minPoolSize: 10,  // ✅ Mínimo de conexiones listas
+  maxPoolSize: 100,  // ✅ Aumentado a 100 por conexión (aprovechando 500 total)
+  minPoolSize: 20,   // ✅ Aumentado a 20 conexiones listas
   serverSelectionTimeoutMS: 15000,  // ✅ Aumentado de 5s a 15s
   socketTimeoutMS: 120000,  // ✅ Aumentado de 45s a 120s
   bufferCommands: false,
@@ -124,7 +127,7 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
     }
     
     if (!connectionManager.canCreateConnection(dbName)) {
-      throw new Error(`Connection limit exceeded for ${dbName}. Max connections per company: 15`);
+      throw new Error(`Connection limit exceeded for ${dbName}. Max connections per company: 200`);
     }
   }
 
@@ -319,8 +322,10 @@ export function getConnectionStats(): Record<string, any> {
     activeConnections: activeConnections.length,
     inactiveConnections: Object.keys(connections).length - activeConnections.length,
     connectionsByCompany: managerStats,
-    maxConnectionsPerCompany: 15,
-    maxTotalConnections: 100,
+    maxConnectionsPerCompany: 200,
+    maxTotalConnections: 450,
+    mongoAtlasLimit: 500,
+    safetyMargin: 50,
     memoryUsage: process.memoryUsage()
   };
 }

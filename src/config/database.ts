@@ -14,10 +14,10 @@ export async function connectDB() {
     // Validar configuración
     validateEnvironmentConfig(config);
     
-    // Opciones de conexión optimizadas para 50+ usuarios concurrentes
+    // Opciones de conexión optimizadas para 500 conexiones MongoDB Atlas
     const connectionOptions = {
-      maxPoolSize: 50,  // ✅ Aumentado de 10 a 50 para soportar 50+ usuarios
-      minPoolSize: 10,  // ✅ Mínimo de conexiones listas
+      maxPoolSize: 100,  // ✅ Aumentado a 100 por conexión (aprovechando 500 total)
+      minPoolSize: 20,   // ✅ Aumentado a 20 conexiones listas
       serverSelectionTimeoutMS: 15000,  // ✅ Aumentado de 5s a 15s
       socketTimeoutMS: 120000,  // ✅ Aumentado de 45s a 120s
       bufferCommands: false,

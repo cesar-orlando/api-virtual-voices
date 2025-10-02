@@ -25,6 +25,8 @@ import twilioTestRoutes from "./routes/quicklearning/twilioTestRoutes";
 import twilioWebhookRoutes from "./routes/quicklearning/twilioWebhookRoutes";
 import quickLearningMetricsRoutes from "./routes/quicklearning/metricsRoutes";
 import emailRoutes from "./routes/email.routes";
+import emailVerificationRoutes from "./routes/emailVerification.routes";
+import globalSMTPRoutes from "./routes/globalSMTP.routes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -203,7 +205,9 @@ app.use('/api/sessions', sessionRoutes);
 // Rutas de tareas (estilo Trello)
 app.use('/api/tasks', taskRoutes);
 
-//app.use('/api/email', emailRoutes);
+app.use('/api/email', emailRoutes);
+app.use('/api/email-verification', emailVerificationRoutes);
+app.use('/api/global-smtp', globalSMTPRoutes);
 
 // Rutas de ElevenLabs Agents (usando query parameters en lugar de parámetros de ruta)
 app.use('/api/elevenlabs', elevenLabsRoutes);

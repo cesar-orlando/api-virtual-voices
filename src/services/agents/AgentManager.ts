@@ -25,7 +25,7 @@ export class AgentManager {
       this.schedulerServices.set(company, schedulerService);
       
       // Auto-start the scheduler service when first initialized
-      schedulerService.start();
+      //schedulerService.start();
       console.log(`🚀 Auto-started scheduler service for ${company}`);
       
       // Mark global scheduler as running if not already

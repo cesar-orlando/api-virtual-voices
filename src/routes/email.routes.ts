@@ -10,33 +10,26 @@ import {
   simpleImageServe, // <--- nuevo endpoint simple para imágenes
   checkFileHealth, // <--- nuevo endpoint para verificar salud de archivos
   // IMAP Email Reading endpoints
-  startEmailMonitoring,
-  stopEmailMonitoring,
-  getEmailMonitoringStatus,
+  // startEmailMonitoring,
+  // stopEmailMonitoring,
+  // getEmailMonitoringStatus,
   getEnhancedEmailHistory, // <--- HABILITADO: endpoint mejorado de historial
-  syncHistoricalEmails,
+  // syncHistoricalEmails,
   fullEmailSync, // <--- NUEVO endpoint para sincronización completa
-  syncMissedEmails, // <--- NUEVO endpoint para emails perdidos
-  getEmailStats,
+  // syncMissedEmails, // <--- NUEVO endpoint para emails perdidos
+  // getEmailStats,
   // Auto-monitoring endpoints
-  enableAutoMonitoring,
-  disableAutoMonitoring,
-  getAutoMonitoringStatus,
-  reinitializeAutoMonitoring,
-  discoverEmailUsers, // <--- NUEVO endpoint
-  stopUserEmailMonitoring, // <--- NUEVO endpoint para logout
-  getUserEmailMonitoringStatus, // <--- NUEVO endpoint para estado
-  updateExistingEmailsWithContent, // <--- NUEVO endpoint para actualizar contenido
-  updateEmailsWithContent, // <--- NUEVO endpoint simple para actualizar contenido
-  updateEmailById, // <--- NUEVO endpoint para actualizar email por ID
-  updateAllUserEmails, // <--- NUEVO endpoint para actualizar TODOS los emails de un usuario
-  // testEmailSystem // <--- NUEVO endpoint de prueba
+  // enableAutoMonitoring,
+  // disableAutoMonitoring,
+  // getAutoMonitoringStatus,
+  // reinitializeAutoMonitoring,
+  // discoverEmailUsers, // <--- NUEVO endpoint
+  // stopUserEmailMonitoring, // <--- NUEVO endpoint para logout
+  // getUserEmailMonitoringStatus // <--- NUEVO endpoint para estado
 } from "../controllers/email.controller";
 import { uploadPST, getPSTStatus, processLocalPST, listLocalPST, updateEmailBodies, testHtmlToText, reprocessPSTWithImprovedConversion } from "../controllers/email.import.controller";
 import { pstUpload } from "../middlewares/pstUpload.middleware";
 import { detectCompanyFromToken } from "../core/auth/companyMiddleware";
-import { getConnectionByCompanySlug } from "../config/connectionManager";
-import getEmailModel from "../models/email.model";
 
 const router = Router();
 
@@ -51,51 +44,39 @@ router.post("/send-structured/:c_name", detectCompanyFromToken, sendStructuredEm
 // ===============================
 
 // Iniciar monitoreo de emails entrantes (con opción de auto-start)
-router.post("/monitoring/start", startEmailMonitoring);
+// router.post("/monitoring/start", startEmailMonitoring);
 
 // Detener monitoreo de emails entrantes (con opción de remover auto-start)
-router.post("/monitoring/stop", stopEmailMonitoring);
+// router.post("/monitoring/stop", stopEmailMonitoring);
 
 // Obtener estado del monitoreo
-router.get("/monitoring/status", getEmailMonitoringStatus);
+// router.get("/monitoring/status", getEmailMonitoringStatus);
 
 // ===============================
 // AUTO-MONITORING MANAGEMENT
 // ===============================
 
 // Habilitar monitoreo automático (se inicia al arrancar servidor)
-router.post("/auto-monitoring/enable", enableAutoMonitoring);
+// router.post("/auto-monitoring/enable", enableAutoMonitoring);
 
 // Deshabilitar monitoreo automático
-router.post("/auto-monitoring/disable", disableAutoMonitoring);
+// router.post("/auto-monitoring/disable", disableAutoMonitoring);
 
 // Estado del servicio auto-monitoring
-router.get("/auto-monitoring/status", getAutoMonitoringStatus);
+// router.get("/auto-monitoring/status", getAutoMonitoringStatus);
 
 // Reinicializar servicio auto-monitoring
-router.post("/auto-monitoring/reinitialize", reinitializeAutoMonitoring);
+// router.post("/auto-monitoring/reinitialize", reinitializeAutoMonitoring);
 
 // Descubrir usuarios con configuración de email
-router.post("/auto-monitoring/discover-users", discoverEmailUsers);
+// router.post("/auto-monitoring/discover-users", discoverEmailUsers);
 
 // Detener monitoreo para un usuario específico
-router.post("/auto-monitoring/stop-user", stopUserEmailMonitoring);
+// router.post("/auto-monitoring/stop-user", stopUserEmailMonitoring);
 
 // Verificar estado del monitoreo para un usuario específico
-router.get("/auto-monitoring/user-status/:userId", getUserEmailMonitoringStatus);
-router.get("/auto-monitoring/user-status/:c_name/:userId", getUserEmailMonitoringStatus);
-
-// Actualizar emails existentes con contenido completo
-router.post("/update-content/:c_name", updateExistingEmailsWithContent);
-
-// Actualizar emails con contenido (endpoint simple)
-router.post("/update-emails-content/:c_name", updateEmailsWithContent);
-
-// Actualizar email específico por ID
-router.post("/update-email-by-id/:c_name", updateEmailById);
-
-// Actualizar TODOS los emails de un usuario
-router.post("/update-all-user-emails/:c_name", updateAllUserEmails);
+// router.get("/auto-monitoring/user-status/:userId", getUserEmailMonitoringStatus);
+// router.get("/auto-monitoring/user-status/:c_name/:userId", getUserEmailMonitoringStatus);
 
 // ===============================
 // EMAIL HISTORY & ANALYSIS
@@ -108,19 +89,19 @@ router.get("/history-enhanced/:c_name", getEnhancedEmailHistory);
 router.get("/history-enhanced", getEnhancedEmailHistory);
 
 // Sincronizar emails históricos
-router.post("/sync-historical", syncHistoricalEmails);
-router.post("/sync-historical/:c_name", syncHistoricalEmails);
+// router.post("/sync-historical", syncHistoricalEmails);
+// router.post("/sync-historical/:c_name", syncHistoricalEmails);
 
 // Sincronización completa de cuenta de email (retroactiva)
 router.post("/full-sync", fullEmailSync);
 router.post("/full-sync/:c_name", fullEmailSync);
 
 // Sincronizar emails perdidos (últimos días)
-router.post("/sync-missed", syncMissedEmails);
-router.post("/sync-missed/:c_name", syncMissedEmails);
+// router.post("/sync-missed", syncMissedEmails);
+// router.post("/sync-missed/:c_name", syncMissedEmails);
 
 // Obtener estadísticas de emails
-router.get("/stats", getEmailStats);
+// router.get("/stats", getEmailStats);
 
 // ===============================
 // EMAIL HISTORY & ATTACHMENTS
@@ -171,12 +152,5 @@ router.post("/pst/reprocess-improved/:companySlug", reprocessPSTWithImprovedConv
 
 // Listar archivos PST disponibles localmente
 router.get("/pst/list-local", listLocalPST);
-
-// ===============================
-// ENDPOINTS DE PRUEBA Y DEBUG
-// ===============================
-
-// Endpoint de prueba para verificar funcionalidad completa
-// router.get("/test-system/:c_name", testEmailSystem);
 
 export default router;

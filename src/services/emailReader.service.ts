@@ -284,53 +284,53 @@ export class EmailReaderService {
           cutoffDate.setDate(cutoffDate.getDate() - days);
           
           const fetch = this.imap!.fetch(results.slice(-50), { // Limitar a los últimos 50
-            bodies: '', // Obtener el cuerpo completo del email
+            bodies: 'HEADER.FIELDS (FROM TO CC BCC SUBJECT DATE MESSAGE-ID)',
             struct: true
           });
 
           fetch.on('message', (msg, seqno) => {
+            let headers: any = {};
             let uid = 0;
+
+            msg.on('body', (stream, info) => {
+              let buffer = '';
+              stream.on('data', (chunk) => {
+                buffer += chunk.toString('utf8');
+              });
+              stream.once('end', () => {
+                headers = Imap.parseHeader(buffer);
+              });
+            });
 
             msg.once('attributes', (attrs) => {
               uid = attrs.uid;
             });
 
-            msg.on('body', (stream, info) => {
-              // Usar simpleParser directamente con el stream
-              simpleParser(stream, (err, parsed) => {
-                if (err) {
-                  console.error(`❌ Error parseando email ${uid}:`, err);
-                  return;
-                }
+            msg.once('end', () => {
+              try {
+                const emailDate = headers.date ? new Date(headers.date[0]) : new Date();
+                
+                // Filtrar por fecha después de obtener los headers
+                if (emailDate >= cutoffDate) {
+                  const email: ProcessedEmail = {
+                    uid: uid,
+                    messageId: headers['message-id'] ? headers['message-id'][0] : `${uid}-${folderName}`,
+                    subject: headers.subject ? headers.subject[0] : 'Sin asunto',
+                    from: headers.from ? headers.from[0] : '',
+                    to: headers.to ? headers.to[0] : '',
+                    cc: headers.cc ? headers.cc.join(', ') : '',
+                    bcc: headers.bcc ? headers.bcc.join(', ') : '',
+                    date: emailDate,
+                    body: '', // Por ahora no obtenemos el cuerpo completo para mayor velocidad
+                    direction: folderName === 'INBOX' ? 'incoming' : 'outgoing',
+                    source: folderName
+                  };
 
-                try {
-                  const emailDate = parsed.date || new Date();
-                  
-                  // Filtrar por fecha después de obtener los headers
-                  if (emailDate >= cutoffDate) {
-                    const email: ProcessedEmail = {
-                      uid: uid,
-                      messageId: parsed.messageId || `${uid}-${folderName}`,
-                      subject: parsed.subject || 'Sin asunto',
-                      from: parsed.from?.text || parsed.from?.value?.[0]?.address || 'Sin remitente',
-                      to: parsed.to?.text || parsed.to?.value?.[0]?.address || 'Sin destinatario',
-                      cc: parsed.cc?.text || parsed.cc?.value?.map((v: any) => v.address).join(', ') || '',
-                      bcc: parsed.bcc?.text || parsed.bcc?.value?.map((v: any) => v.address).join(', ') || '',
-                      date: emailDate,
-                      body: parsed.text || '',
-                      text: parsed.text || '',
-                      html: parsed.html || '',
-                      direction: folderName === 'INBOX' ? 'incoming' : 'outgoing',
-                      source: folderName
-                    };
-
-                    emails.push(email);
-                    console.log(`✅ Email procesado: ${email.subject} (${email.text?.length || 0} chars)`);
-                  }
-                } catch (error) {
-                  console.error(`❌ Error procesando email ${uid}:`, error);
+                  emails.push(email);
                 }
-              });
+              } catch (error) {
+                console.error(`❌ Error procesando email ${uid}:`, error);
+              }
             });
           });
 

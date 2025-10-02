@@ -7,9 +7,11 @@ const connections: Record<string, Connection> = {};
 class ConnectionManager {
   private static instance: ConnectionManager;
   private connectionStats: Map<string, { count: number; lastUsed: number }> = new Map();
+  private reconnectAttempts: Map<string, number> = new Map(); // ✅ Track reconnection attempts
   private readonly MAX_CONNECTIONS_PER_COMPANY = 200; // ✅ Aumentado: 200 por empresa (vs 50)
   private readonly MAX_TOTAL_CONNECTIONS = 450; // ✅ Aumentado: 450 total (vs 400) - Dejamos 50 de margen
   private readonly CONNECTION_CLEANUP_INTERVAL = 300000; // 5 minutos
+  private readonly MAX_RECONNECT_ATTEMPTS = 5; // ✅ Limit reconnection attempts
 
   static getInstance(): ConnectionManager {
     if (!ConnectionManager.instance) {
@@ -55,6 +57,24 @@ class ConnectionManager {
       stats[key] = { ...value };
     });
     return stats;
+  }
+
+  // ✅ New method: Check if should attempt reconnection
+  shouldAttemptReconnection(company: string): boolean {
+    const attempts = this.reconnectAttempts.get(company) || 0;
+    return attempts < this.MAX_RECONNECT_ATTEMPTS;
+  }
+
+  // ✅ New method: Increment reconnection attempts
+  incrementReconnectAttempts(company: string): number {
+    const attempts = (this.reconnectAttempts.get(company) || 0) + 1;
+    this.reconnectAttempts.set(company, attempts);
+    return attempts;
+  }
+
+  // ✅ New method: Reset reconnection attempts
+  resetReconnectAttempts(company: string): void {
+    this.reconnectAttempts.delete(company);
   }
 
   // Limpiar conexiones inactivas
@@ -112,11 +132,18 @@ const getConnectionOptions = () => ({
 export async function getDbConnection(dbName: string): Promise<Connection> {
   // ✅ Verificar si ya existe una conexión activa
   if (connections[dbName] && connections[dbName].readyState === 1) {
-    connectionManager.registerConnection(dbName);
+    // ✅ FIX: Don't register again for existing connections
+    const currentStats = connectionManager['connectionStats'].get(dbName);
+    if (currentStats) {
+      connectionManager['connectionStats'].set(dbName, {
+        ...currentStats,
+        lastUsed: Date.now()
+      });
+    }
     return connections[dbName];
   }
 
-  // ✅ Verificar límites de conexiones antes de crear nueva
+  // ✅ Verificar límites de conexiones antes de crear nueva (with mutex)
   if (!connectionManager.canCreateConnection(dbName)) {
     console.warn(`⚠️ Connection limit reached for ${dbName}. Waiting for available connection...`);
     // Esperar hasta 10 segundos por una conexión disponible
@@ -124,6 +151,18 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
     while (attempts < 20 && !connectionManager.canCreateConnection(dbName)) {
       await new Promise(resolve => setTimeout(resolve, 500));
       attempts++;
+      
+      // ✅ Check if connection was created by another process
+      if (connections[dbName] && connections[dbName].readyState === 1) {
+        const currentStats = connectionManager['connectionStats'].get(dbName);
+        if (currentStats) {
+          connectionManager['connectionStats'].set(dbName, {
+            ...currentStats,
+            lastUsed: Date.now()
+          });
+        }
+        return connections[dbName];
+      }
     }
     
     if (!connectionManager.canCreateConnection(dbName)) {
@@ -143,9 +182,17 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
   }
 
   const config = getEnvironmentConfig();
-  const uriBase = config.mongoUri.split("/")[0] + "//" + config.mongoUri.split("/")[2];
-
-  const uri = `${uriBase}/${dbName}`;
+  // ✅ FIX: More robust URI construction
+  let uri: string;
+  try {
+    const mongoUrl = new URL(config.mongoUri);
+    mongoUrl.pathname = `/${dbName}`;
+    uri = mongoUrl.toString();
+  } catch (error) {
+    // Fallback to old method if URL parsing fails
+    const uriBase = config.mongoUri.split("/")[0] + "//" + config.mongoUri.split("/")[2];
+    uri = `${uriBase}/${dbName}`;
+  }
   
   try {
     const conn = await mongoose.createConnection(uri, getConnectionOptions()).asPromise();
@@ -160,15 +207,26 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
       connectionManager.unregisterConnection(dbName);
       delete connections[dbName];
       
-      // ✅ Reconexión con backoff exponencial (menos agresiva)
-      const retryDelay = Math.min(30000, 5000 * Math.pow(2, 0)); // Max 30s
-      setTimeout(async () => {
-        try {
-          await getDbConnection(dbName);
-        } catch (reconnectError) {
-          console.error(`❌ Failed to reconnect to ${dbName}:`, reconnectError);
-        }
-      }, retryDelay);
+      // ✅ FIX: Limit reconnection attempts
+      const attempts = connectionManager['reconnectAttempts'].get(dbName) || 0;
+      if (attempts < connectionManager['MAX_RECONNECT_ATTEMPTS']) {
+        connectionManager['reconnectAttempts'].set(dbName, attempts + 1);
+        
+        // ✅ FIX: Proper exponential backoff
+        const retryDelay = Math.min(30000, 5000 * Math.pow(2, attempts));
+        setTimeout(async () => {
+          try {
+            await getDbConnection(dbName);
+            // Reset attempts on successful reconnection
+            connectionManager['reconnectAttempts'].delete(dbName);
+          } catch (reconnectError) {
+            console.error(`❌ Failed to reconnect to ${dbName}:`, reconnectError);
+          }
+        }, retryDelay);
+      } else {
+        console.error(`❌ Max reconnection attempts reached for ${dbName}. Giving up.`);
+        connectionManager['reconnectAttempts'].delete(dbName);
+      }
     });
     
     conn.on('disconnected', async () => {
@@ -176,19 +234,30 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
       connectionManager.unregisterConnection(dbName);
       delete connections[dbName];
       
-      // ✅ Reconexión menos agresiva
-      setTimeout(async () => {
-        try {
-          await getDbConnection(dbName);
-        } catch (reconnectError) {
-          console.error(`❌ Failed to reconnect to ${dbName} after disconnect:`, reconnectError);
-        }
-      }, 10000); // 10 segundos en lugar de 3
+      // ✅ FIX: Apply same reconnection limits to disconnected event
+      const attempts = connectionManager['reconnectAttempts'].get(dbName) || 0;
+      if (attempts < connectionManager['MAX_RECONNECT_ATTEMPTS']) {
+        connectionManager['reconnectAttempts'].set(dbName, attempts + 1);
+        
+        setTimeout(async () => {
+          try {
+            await getDbConnection(dbName);
+            connectionManager['reconnectAttempts'].delete(dbName);
+          } catch (reconnectError) {
+            console.error(`❌ Failed to reconnect to ${dbName} after disconnect:`, reconnectError);
+          }
+        }, 10000);
+      } else {
+        console.error(`❌ Max reconnection attempts reached for ${dbName} after disconnect. Giving up.`);
+        connectionManager['reconnectAttempts'].delete(dbName);
+      }
     });
     
     conn.on('reconnected', () => {
       console.log(`✅ Database reconnected for ${dbName}`);
       connectionManager.registerConnection(dbName);
+      // ✅ Reset reconnection attempts on successful reconnection
+      connectionManager['reconnectAttempts'].delete(dbName);
     });
     
     conn.on('close', () => {
@@ -211,7 +280,20 @@ export async function getQuickLearningConnection(): Promise<Connection> {
   
   // Verificar si ya existe una conexión activa
   if (connections[connectionKey] && connections[connectionKey].readyState === 1) {
+    // ✅ FIX: Update last used time instead of registering again
+    const currentStats = connectionManager['connectionStats'].get(connectionKey);
+    if (currentStats) {
+      connectionManager['connectionStats'].set(connectionKey, {
+        ...currentStats,
+        lastUsed: Date.now()
+      });
+    }
     return connections[connectionKey];
+  }
+
+  // ✅ FIX: Check connection limits for QuickLearning too
+  if (!connectionManager.canCreateConnection(connectionKey)) {
+    throw new Error(`Connection limit exceeded for QuickLearning. Max connections per company: 200`);
   }
 
   // Si existe una conexión pero no está activa, limpiarla
@@ -222,6 +304,7 @@ export async function getQuickLearningConnection(): Promise<Connection> {
       console.warn(`⚠️ Error closing old QuickLearning connection:`, error);
     }
     delete connections[connectionKey];
+    connectionManager.unregisterConnection(connectionKey);
   }
 
   const quicklearningUri = process.env.MONGO_URI_QUICKLEARNING;
@@ -232,6 +315,7 @@ export async function getQuickLearningConnection(): Promise<Connection> {
   try {
     const conn = await mongoose.createConnection(quicklearningUri, getConnectionOptions()).asPromise();
     connections[connectionKey] = conn;
+    connectionManager.registerConnection(connectionKey); // ✅ FIX: Register with connection manager
     
     // Manejar eventos de conexión
     conn.on('error', async (error) => {

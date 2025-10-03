@@ -829,12 +829,41 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
     }
 
     if (!customer) {
-      // La detección de campaña se maneja ahora con la herramienta identify_campaign
-      // Valores por defecto
+
+      const UserConfig = getUserModel(conn);
+      const Session = getSessionModel(conn);
       const detectedCampaign = 'ORGANICO';
       const medio = 'Interno';
 
-      console.log(`🎯 Usando valores por defecto para ${phone}: ${detectedCampaign} - Medio: ${medio}`);
+      const defaultSession = await Session.findOne();
+
+      const sessionBranchId = defaultSession.branch?.branchId ? String(defaultSession.branch.branchId) : null;
+      const branchFilter = sessionBranchId
+        ? { role: 'Asesor', status: 'active', 'branch.branchId': sessionBranchId }
+        : { role: 'Asesor', status: 'active', $or: [{ 'branch.branchId': { $exists: false } }, { 'branch.branchId': null }] };
+
+      // Ordenar por nombre para mantener consistencia en el orden
+      const allUsers = await UserConfig.find(branchFilter).sort({ name: 1 }).lean();
+
+      // Obtener el contador actual de asignaciones para esta sucursal/sesión
+      const currentCounter = defaultSession.metadata?.assignmentCounter || 0;
+      const nextUserIndex = currentCounter % allUsers.length;
+      const selectedUser = allUsers[nextUserIndex];
+
+      // Actualizar el contador en la sesión para la próxima asignación
+      await Session.findByIdAndUpdate(
+        defaultSession._id,
+        { 
+          $set: { 
+            'metadata.assignmentCounter': currentCounter + 1,
+            'metadata.lastAssignmentAt': new Date(),
+            'metadata.lastAssignedTo': selectedUser.name
+          } 
+        }
+      );
+      const advisor = JSON.stringify({name: selectedUser.name, _id: selectedUser._id , email: selectedUser.email });
+
+      console.log(`🎯 Usando valores por defecto para ${phone}: ${detectedCampaign} - Medio: ${medio} - Asesor: ${selectedUser.name}`);
 
       // AI habilitada por defecto, se desactivará con herramientas si es necesario
       const aiEnabled = true;
@@ -860,6 +889,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
               curso: null,
               ciudad: null,
               campana: detectedCampaign,
+              asesor: advisor,
               comentario: null,
               ultimo_mensaje: body || null,
               aiEnabled: aiEnabled,

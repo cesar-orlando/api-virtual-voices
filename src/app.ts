@@ -37,6 +37,7 @@ import { initializeProjects } from "./shared/projectManager";
 import { detectCompanyFromToken } from "./core/auth/companyMiddleware";
 import elevenLabsRoutes from "./routes/elevenLabs.routes";
 import logisticsRoutes from "./routes/logistics.routes";
+import contpaqRoutes from "./contpaq/routes/contpaq.routes";
 
 const app = express();
 
@@ -214,6 +215,9 @@ app.use('/api/elevenlabs', elevenLabsRoutes);
 
 // Rutas de Logística (FedEx, UPS, DHL, etc.)
 app.use('/api/logistics', logisticsRoutes);
+
+// Rutas de Contpaq - Simple Green
+app.use('/api/contpaq', contpaqRoutes);
 
 // Ruta de prueba para ElevenLabs sin parámetros dinámicos
 app.get('/api/elevenlabs-test', (req, res) => {

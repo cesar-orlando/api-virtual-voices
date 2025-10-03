@@ -101,21 +101,21 @@ class ConnectionManager {
   }
 }
 
-// ✅ Limpieza automática deshabilitada para evitar problemas en producción
-// const connectionManager = ConnectionManager.getInstance();
-// setInterval(() => {
-//   connectionManager.cleanupInactiveConnections();
-// }, connectionManager['CONNECTION_CLEANUP_INTERVAL']);
-
-// Inicializar connection manager sin limpieza automática
 const connectionManager = ConnectionManager.getInstance();
 
-// Opciones de conexión optimizadas para 500 conexiones MongoDB Atlas
-const getConnectionOptions = () => ({
-  maxPoolSize: 100,  // ✅ Aumentado a 100 por conexión (aprovechando 500 total)
-  minPoolSize: 20,   // ✅ Aumentado a 20 conexiones listas
-  serverSelectionTimeoutMS: 15000,  // ✅ Aumentado de 5s a 15s
-  socketTimeoutMS: 120000,  // ✅ Aumentado de 45s a 120s
+// Ejecutar limpieza automática de conexiones inactivas a menos que se deshabilite explícitamente
+if (process.env.DISABLE_CONNECTION_CLEANUP !== 'true') {
+  setInterval(() => {
+    connectionManager.cleanupInactiveConnections();
+  }, connectionManager['CONNECTION_CLEANUP_INTERVAL']);
+}
+
+// Opciones de conexión con enfoque conservador para reducir conexiones ociosas
+export const buildMongoConnectionOptions = () => ({
+  maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 25),
+  minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 0),
+  serverSelectionTimeoutMS: 10000,
+  socketTimeoutMS: 60000,
   bufferCommands: false,
   ssl: true,
   tls: true,
@@ -123,10 +123,10 @@ const getConnectionOptions = () => ({
   tlsAllowInvalidHostnames: false,
   retryWrites: true,
   w: 'majority' as const,
-  // ✅ Optimizaciones para estabilidad y rendimiento
-  heartbeatFrequencyMS: 30000,  // ✅ Reducido de 10s a 30s (menos overhead)
-  maxIdleTimeMS: 300000,  // ✅ Aumentado de 60s a 5min (menos reconexiones)
-  maxConnecting: 10,  // ✅ Límite de conexiones simultáneas
+  heartbeatFrequencyMS: 15000,
+  maxIdleTimeMS: 180000,
+  waitQueueTimeoutMS: 10000,
+  maxConnecting: 5,
 });
 
 export async function getDbConnection(dbName: string): Promise<Connection> {
@@ -195,7 +195,7 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
   }
   
   try {
-    const conn = await mongoose.createConnection(uri, getConnectionOptions()).asPromise();
+    const conn = await mongoose.createConnection(uri, buildMongoConnectionOptions()).asPromise();
     connections[dbName] = conn;
     connectionManager.registerConnection(dbName);
     
@@ -313,7 +313,7 @@ export async function getQuickLearningConnection(): Promise<Connection> {
   }
 
   try {
-    const conn = await mongoose.createConnection(quicklearningUri, getConnectionOptions()).asPromise();
+    const conn = await mongoose.createConnection(quicklearningUri, buildMongoConnectionOptions()).asPromise();
     connections[connectionKey] = conn;
     connectionManager.registerConnection(connectionKey); // ✅ FIX: Register with connection manager
     

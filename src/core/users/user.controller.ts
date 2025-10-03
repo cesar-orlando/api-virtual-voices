@@ -363,16 +363,50 @@ export const compareLogin = async (
           getJwtSecret(existingUser.companySlug),
           { expiresIn: "1h" }
         );
-        res.json({
+        // Preparar la respuesta base
+        const userResponse = {
           id: existingUser._id,
           name: existingUser.name,
           email: existingUser.email,
           role: existingUser.role,
           c_name: dbName,
-          companySlug: dbName, // AGREGAR: Para consistencia
-          branchId: existingUser.branch.branchId, // NUEVO: Incluir branchId en la respuesta
+          companySlug: dbName,
+          branchId: existingUser.branch.branchId,
+        };
+
+        let response: any = {
           token,
-        });
+          user: userResponse,
+        };
+
+        // 📧 AUTO-INICIALIZAR MONITOREO DE EMAIL AL LOGIN
+        try {
+          console.log(`📧 Iniciando auto-monitoreo de email para usuario: ${existingUser._id}`);
+          
+          // Usar la función helper para inicializar monitoreo
+          const { startUserEmailMonitoring } = await import('../../utils/emailMonitoringHelper');
+          const monitoringResult = await startUserEmailMonitoring(existingUser._id.toString(), dbName, {
+            syncMissedEmails: true,
+            syncDays: 7,
+            autoSync: true
+          });
+          
+          console.log(`📧 Resultado del monitoreo: ${monitoringResult.message}`);
+          
+          // Agregar información a la respuesta
+          response.emailMonitoring = monitoringResult;
+          
+        } catch (emailError) {
+          console.error(`⚠️ Error iniciando monitoreo de email para ${existingUser.email}:`, emailError);
+          response.emailMonitoring = {
+            success: false,
+            enabled: false,
+            message: 'Email monitoring failed to start',
+            error: emailError.message
+          };
+        }
+
+        res.json(response);
         console.log(
           "✅ Inicio de sesión exitoso para el usuario:",
           existingUser.name,
@@ -697,18 +731,109 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       console.log('🔑 SuperAdmin login detected, userId saved:', user._id);
     }
 
-    // 📧 AUTO-INICIALIZAR MONITOREO DE EMAIL AL LOGIN
-    /*try {
-      console.log(`📧 Iniciando auto-monitoreo de email para usuario: ${user._id}`);
+    // 🔐 VERIFICAR EMAIL ANTES DE CONTINUAR
+    try {
+      console.log(`🔐 Verificando email para usuario: ${user._id}`);
       
-      // Usar la función helper para inicializar monitoreo
-      const { startUserEmailMonitoring } = await import('../../utils/emailMonitoringHelper');
-      const monitoringResult = await startUserEmailMonitoring(user._id.toString(), companySlug);
+      const { validateEmailOnLogin } = await import('../../controllers/emailVerification.controller');
+      const emailValidation = await validateEmailOnLogin(user._id.toString(), email, companySlug);
       
-      console.log(`📧 Resultado del monitoreo: ${monitoringResult.message}`);
+      console.log(`🔐 Resultado de validación de email:`, emailValidation);
       
-      // Agregar información a la respuesta
-      response.emailMonitoring = monitoringResult;
+      // Si el email no es válido o no está autorizado
+      if (!emailValidation.isValid) {
+        res.status(403).json({
+          message: emailValidation.message,
+          alertType: emailValidation.alertType,
+          emailVerification: {
+            isValid: false,
+            isVerified: false,
+            needsVerification: false,
+            message: emailValidation.message,
+            alertType: emailValidation.alertType
+          }
+        });
+        return;
+      }
+      
+      // Si el email necesita verificación
+      if (emailValidation.needsVerification) {
+        // Generar código de verificación automáticamente
+        const { generateVerificationCode } = await import('../../controllers/emailVerification.controller');
+        
+        // Simular request para generar código
+        const mockReq = {
+          body: { userId: user._id.toString(), email },
+          params: { c_name: companySlug },
+          headers: { 'company-slug': companySlug },
+          ip: req.ip,
+          get: (header: string) => req.get(header)
+        } as any;
+        
+        const mockRes = {
+          status: (code: number) => ({
+            json: (data: any) => {
+              if (code === 200) {
+                response.emailVerification = {
+                  isValid: true,
+                  isVerified: false,
+                  needsVerification: true,
+                  message: emailValidation.message,
+                  alertType: emailValidation.alertType,
+                  codeSent: true
+                };
+              }
+            }
+          })
+        } as any;
+        
+        await generateVerificationCode(mockReq, mockRes);
+      } else {
+        // Email verificado correctamente
+        response.emailVerification = {
+          isValid: true,
+          isVerified: true,
+          needsVerification: false,
+          message: 'Email verificado correctamente'
+        };
+      }
+      
+    } catch (emailError) {
+      console.error(`⚠️ Error verificando email para ${email}:`, emailError);
+      response.emailVerification = {
+        isValid: false,
+        isVerified: false,
+        needsVerification: false,
+        message: 'Error verificando email. Contacta al soporte.',
+        alertType: 'error'
+      };
+    }
+
+    // 📧 AUTO-INICIALIZAR MONITOREO DE EMAIL AL LOGIN (solo si el email está verificado)
+    try {
+      if (response.emailVerification?.isVerified) {
+        console.log(`📧 Iniciando auto-monitoreo de email para usuario: ${user._id}`);
+        
+        // Usar la función helper para inicializar monitoreo
+        const { startUserEmailMonitoring } = await import('../../utils/emailMonitoringHelper');
+        const monitoringResult = await startUserEmailMonitoring(user._id.toString(), companySlug, {
+          syncMissedEmails: true,
+          syncDays: 7,
+          autoSync: true
+        });
+        
+        console.log(`📧 Resultado del monitoreo: ${monitoringResult.message}`);
+        
+        // Agregar información a la respuesta
+        response.emailMonitoring = monitoringResult;
+      } else {
+        console.log(`📧 Saltando monitoreo de email - email no verificado`);
+        response.emailMonitoring = {
+          success: false,
+          enabled: false,
+          message: 'Email no verificado - monitoreo deshabilitado'
+        };
+      }
       
     } catch (emailError) {
       console.error(`⚠️ Error iniciando monitoreo de email para ${user.email}:`, emailError);
@@ -718,7 +843,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         message: 'Email monitoring failed to start',
         error: emailError.message
       };
-    }*/
+    }
 
     res.json(response);
     return;

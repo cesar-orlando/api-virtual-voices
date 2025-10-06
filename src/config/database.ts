@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { getDbConnection, getBaseMongoUri } from "../config/connectionManager";
+import { buildMongoConnectionOptions, getDbConnection } from "../config/connectionManager";
 import { getSessionModel } from "../models/session.model";
 import getCompanyModel from "../models/company.model";
 import { getEnvironmentConfig, logEnvironmentInfo, validateEnvironmentConfig } from "./environments";
@@ -14,27 +14,8 @@ export async function connectDB() {
     // Validar configuración
     validateEnvironmentConfig(config);
     
-    // Opciones de conexión optimizadas para 500 conexiones MongoDB Atlas
-    const connectionOptions = {
-      maxPoolSize: 100,  // ✅ Aumentado a 100 por conexión (aprovechando 500 total)
-      minPoolSize: 20,   // ✅ Aumentado a 20 conexiones listas
-      serverSelectionTimeoutMS: 15000,  // ✅ Aumentado de 5s a 15s
-      socketTimeoutMS: 120000,  // ✅ Aumentado de 45s a 120s
-      bufferCommands: false,
-      ssl: true,
-      tls: true,
-      tlsAllowInvalidCertificates: false,
-      tlsAllowInvalidHostnames: false,
-      retryWrites: true,
-      w: 'majority' as const,
-      // ✅ Optimizaciones para estabilidad y rendimiento
-      heartbeatFrequencyMS: 30000,  // ✅ Reducido de 10s a 30s (menos overhead)
-      maxIdleTimeMS: 300000,  // ✅ Aumentado de 60s a 5min (menos reconexiones)
-      maxConnecting: 10,  // ✅ Límite de conexiones simultáneas
-    };
-    
-    // Conectar a la base de datos principal
-    await mongoose.connect(config.mongoUri, connectionOptions);
+    // Conectar a la base de datos principal con un pool más conservador
+    await mongoose.connect(config.mongoUri, buildMongoConnectionOptions());
     console.log("✅ Connected to MongoDB");
     console.log(`🗄️  Database: ${config.mongoUri}`);
     console.log(`🌍 Environment: ${config.name.toUpperCase()}`);

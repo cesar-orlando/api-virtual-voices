@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
-import { getConnectionByCompanySlug } from "../../config/connectionManager";
+import { buildMongoConnectionOptions, getConnectionByCompanySlug } from "../../config/connectionManager";
 import getRecordModel from "../../models/record.model";
 
 // Importar el modelo de QuickLearning chat
@@ -153,7 +153,7 @@ export const getQuickLearningMetrics = async (req: Request, res: Response): Prom
     const QUICKLEARNING_URI = process.env.MONGO_URI_QUICKLEARNING || 
       "mongodb+srv://quicklearning:VV235.@quicklearning.ikdoszo.mongodb.net/prod?retryWrites=true&w=majority&appName=quicklearning";
     
-    const quickLearningConnection = mongoose.createConnection(QUICKLEARNING_URI);
+    const quickLearningConnection = mongoose.createConnection(QUICKLEARNING_URI, buildMongoConnectionOptions());
     
     // Definir el esquema y modelo
     const quickLearningChatSchema = new mongoose.Schema({
@@ -666,7 +666,7 @@ export const getQuickLearningDashboard = async (req: Request, res: Response): Pr
     const QUICKLEARNING_URI = process.env.MONGO_URI_QUICKLEARNING || 
       "mongodb+srv://quicklearning:VV235.@quicklearning.ikdoszo.mongodb.net/prod?retryWrites=true&w=majority&appName=quicklearning";
     
-    const quickLearningConnection = mongoose.createConnection(QUICKLEARNING_URI);
+    const quickLearningConnection = mongoose.createConnection(QUICKLEARNING_URI, buildMongoConnectionOptions());
     
     const quickLearningChatSchema = new mongoose.Schema({
       phone: String,
@@ -825,7 +825,7 @@ export const checkQuickLearningChatsRecordsConsistency = async (req: Request, re
     // 2) Cargar chats
     const QUICKLEARNING_URI = process.env.MONGO_URI_QUICKLEARNING ||
       "mongodb+srv://quicklearning:VV235.@quicklearning.ikdoszo.mongodb.net/prod?retryWrites=true&w=majority&appName=quicklearning";
-    const quickLearningConnection = mongoose.createConnection(QUICKLEARNING_URI);
+    const quickLearningConnection = mongoose.createConnection(QUICKLEARNING_URI, buildMongoConnectionOptions());
 
     const quickLearningChatSchema = new mongoose.Schema({
       phone: String,

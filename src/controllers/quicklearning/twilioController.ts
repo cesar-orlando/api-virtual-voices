@@ -423,6 +423,10 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           messageText = `📍 El usuario compartió su ubicación: https://www.google.com/maps?q=${lat},${lng}`;
         }
 
+        // Buscar chat existente para verificar si es nuevo
+        let existingChat = await QuickLearningChat.findOne({ phone: phoneUser });
+        const isNewChat = !existingChat;
+
         // Buscar o crear el chat de forma atómica para evitar duplicados
         let chat = await QuickLearningChat.findOneAndUpdate(
           { phone: phoneUser },
@@ -558,6 +562,49 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
         // Si la AI está desactivada, no procesar con IA
         if (!aiEnabled) {
           return;
+        }
+
+        // Si es un chat nuevo, enviar presentación automática de la IA
+        if (isNewChat) {
+          const aiIntroduction = "Inglés en Quick Learning, ¡Hablas o Hablas! Soy NatalIA, ¿Con quien tengo el gusto?";
+          
+          // Enviar presentación automática
+          const result = await twilioService.sendMessage({
+            to: phoneUser,
+            body: aiIntroduction,
+          });
+
+          if (result.success) {
+            // Agregar presentación al chat
+            const botMessage = {
+              direction: "outbound-api" as const,
+              body: aiIntroduction,
+              respondedBy: "ai" as const,
+              twilioSid: result.messageId || "auto-intro",
+              messageType: "text" as const,
+              msgId: result.messageId || "auto-intro"
+            };
+
+            // Actualizar chat con la presentación
+            await QuickLearningChat.findByIdAndUpdate(
+              chat._id,
+              {
+                $push: { messages: botMessage },
+                $set: {
+                  'lastMessage.body': aiIntroduction,
+                  'lastMessage.date': new Date(),
+                  'lastMessage.respondedBy': "ai"
+                }
+              },
+              { new: true }
+            );
+
+            console.log(`🤖 Presentación automática enviada a ${phoneUser}: ${aiIntroduction}`);
+          } else {
+            console.error(`❌ Error enviando presentación automática a ${phoneUser}:`, result.error);
+          }
+          
+          return; // No procesar el mensaje del usuario después de la presentación
         }
 
         // Procesar mensaje con buffer para evitar respuestas múltiples
@@ -809,6 +856,107 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
 // La detección de campañas ahora se maneja con la herramienta identify_campaign
 
 /**
+ * Detectar mensaje predefinido y extraer MEDIO y CAMPANA
+ */
+function detectPredefinedMessage(message: string): { medio: string; campana: string } | null {
+  const predefinedMessages = [
+    {
+      message: "Hola. Quiero info sobre el inicio de curso.",
+      medio: "META",
+      campana: "Inicio de Curso"
+    },
+    {
+      message: "Hola, quiero info sobre los cursos de inglés (u).",
+      medio: "META",
+      campana: "USA"
+    },
+    {
+      message: "Hola, quiero info sobre los cursos de inglés (c).",
+      medio: "META",
+      campana: "Can"
+    },
+    {
+      message: "Hola, quiero más información sobre los cursos de inglés de Quick Learning. Los busque en Google.",
+      medio: "GOOGLE",
+      campana: "Google"
+    },
+    {
+      message: "Hola, me encantaría recibir información de sus cursos.",
+      medio: "GOOLE",
+      campana: "Google"
+    },
+    {
+      message: "Hola, quiero más info sobre los cursos presenciales.",
+      medio: "META",
+      campana: "Presencial"
+    },
+    {
+      message: "Hola, quiero más info sobre los cursos virtuales.",
+      medio: "Meta",
+      campana: "Virtual"
+    },
+    {
+      message: "Hola, quiero info sobre la promo virtual.",
+      medio: "Meta",
+      campana: "Virtual Promos"
+    },
+    {
+      message: "Hola, quiero más info sobre los cursos online.",
+      medio: "Meta",
+      campana: "Online"
+    },
+    {
+      message: "Hola, quiero info sobre la promo online.",
+      medio: "Meta",
+      campana: "online"
+    },
+    {
+      message: "Hola, quiero info sobre los cursos de inglés.",
+      medio: "Meta",
+      campana: "General"
+    },
+    {
+      message: "Hola. Quiero más info sobre los cursos de inglés en línea.",
+      medio: "Meta",
+      campana: "General"
+    },
+    {
+      message: "Hola, quiero info sobre los cursos de inglés (r).",
+      medio: "Meta",
+      campana: "RMKT"
+    },
+    {
+      message: "Medio: Meta Campana: RMKT",
+      medio: "Meta",
+      campana: "RMKT"
+    },
+    {
+      message: "Hola, quiero más info sobre el curso SMART.",
+      medio: "Meta",
+      campana: "SMART"
+    },
+    {
+      message: "Más info de los cursos, los vi en tik tok.",
+      medio: "TIKTOK",
+      campana: "TIKTOK"
+    }
+  ];
+
+  // Buscar coincidencia exacta
+  for (const predefined of predefinedMessages) {
+    if (message === predefined.message) {
+      return {
+        medio: predefined.medio,
+        campana: predefined.campana
+      };
+    }
+  }
+
+  // Si no hay coincidencia exacta, retornar null para usar valores por defecto
+  return null;
+}
+
+/**
  * Buscar o crear cliente en la base de datos
  */
 async function findOrCreateCustomer(phone: string, profileName: string, body: string, conn: any) {
@@ -832,8 +980,11 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
 
       const UserConfig = getUserModel(conn);
       const Session = getSessionModel(conn);
-      const detectedCampaign = 'ORGANICO';
-      const medio = 'Interno';
+      
+      // Detectar si el mensaje es predefinido
+      const predefinedDetection = detectPredefinedMessage(body);
+      const detectedCampaign = predefinedDetection ? predefinedDetection.campana : 'ORGANICO';
+      const medio = predefinedDetection ? predefinedDetection.medio : 'ORGANICO';
 
       const defaultSession = await Session.findOne();
 
@@ -863,7 +1014,7 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       );
       const advisor = JSON.stringify({name: selectedUser.name, _id: selectedUser._id , email: selectedUser.email });
 
-      console.log(`🎯 Usando valores por defecto para ${phone}: ${detectedCampaign} - Medio: ${medio} - Asesor: ${selectedUser.name}`);
+      console.log(`🎯 ${predefinedDetection ? 'Mensaje predefinido detectado' : 'Usando valores por defecto'} para ${phone}: ${detectedCampaign} - Medio: ${medio} - Asesor: ${selectedUser.name}`);
 
       // AI habilitada por defecto, se desactivará con herramientas si es necesario
       const aiEnabled = true;

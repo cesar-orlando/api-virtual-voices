@@ -859,9 +859,31 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
 // La detección de campañas ahora se maneja con la herramienta identify_campaign
 
 /**
+ * Normalizar mensaje para comparación (minúsculas, sin puntuación, sin espacios extra)
+ */
+function normalizeMessage(message: string | undefined): string {
+  // Manejar casos donde message puede ser undefined (imágenes, ubicaciones, etc.)
+  if (!message || typeof message !== 'string') {
+    return '';
+  }
+  
+  return message
+    .toLowerCase()
+    .replace(/[.,;:!?]/g, '') // Remover puntuación
+    .replace(/\s+/g, ' ') // Normalizar espacios múltiples a uno solo
+    .trim(); // Remover espacios al inicio y final
+}
+
+/**
  * Detectar mensaje predefinido y extraer MEDIO y CAMPANA
  */
-function detectPredefinedMessage(message: string): { medio: string; campana: string } | null {
+function detectPredefinedMessage(message: string | undefined): { medio: string; campana: string } | null {
+  // Si no hay mensaje o está vacío, usar valores por defecto
+  if (!message || typeof message !== 'string') {
+    console.log(`📝 Sin mensaje de texto: "${message}" → Usando valores por defecto (ORGANICO)`);
+    return null;
+  }
+
   const predefinedMessages = [
     {
       message: "Hola. Quiero info sobre el inicio de curso.",
@@ -919,6 +941,11 @@ function detectPredefinedMessage(message: string): { medio: string; campana: str
       campana: "General"
     },
     {
+      message: "Hola. Quiero info sobre los cursos de inglés",
+      medio: "Meta",
+      campana: "General"
+    },
+    {
       message: "Hola. Quiero más info sobre los cursos de inglés en línea.",
       medio: "Meta",
       campana: "General"
@@ -945,9 +972,15 @@ function detectPredefinedMessage(message: string): { medio: string; campana: str
     }
   ];
 
-  // Buscar coincidencia exacta
+  // Normalizar el mensaje del cliente
+  const normalizedClientMessage = normalizeMessage(message);
+
+  // Buscar coincidencia normalizada
   for (const predefined of predefinedMessages) {
-    if (message === predefined.message) {
+    const normalizedPredefinedMessage = normalizeMessage(predefined.message);
+    
+    if (normalizedClientMessage === normalizedPredefinedMessage) {
+      console.log(`🎯 Mensaje predefinido detectado: "${message}" → MEDIO: ${predefined.medio}, CAMPANA: ${predefined.campana}`);
       return {
         medio: predefined.medio,
         campana: predefined.campana
@@ -955,7 +988,8 @@ function detectPredefinedMessage(message: string): { medio: string; campana: str
     }
   }
 
-  // Si no hay coincidencia exacta, retornar null para usar valores por defecto
+  // Si no hay coincidencia, retornar null para usar valores por defecto
+  console.log(`📝 Mensaje no predefinido: "${message}" → Usando valores por defecto (ORGANICO)`);
   return null;
 }
 

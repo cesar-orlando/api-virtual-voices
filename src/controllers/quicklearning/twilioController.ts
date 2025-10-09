@@ -861,7 +861,12 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
 /**
  * Normalizar mensaje para comparación (minúsculas, sin puntuación, sin espacios extra)
  */
-function normalizeMessage(message: string): string {
+function normalizeMessage(message: string | undefined): string {
+  // Manejar casos donde message puede ser undefined (imágenes, ubicaciones, etc.)
+  if (!message || typeof message !== 'string') {
+    return '';
+  }
+  
   return message
     .toLowerCase()
     .replace(/[.,;:!?]/g, '') // Remover puntuación
@@ -872,7 +877,13 @@ function normalizeMessage(message: string): string {
 /**
  * Detectar mensaje predefinido y extraer MEDIO y CAMPANA
  */
-function detectPredefinedMessage(message: string): { medio: string; campana: string } | null {
+function detectPredefinedMessage(message: string | undefined): { medio: string; campana: string } | null {
+  // Si no hay mensaje o está vacío, usar valores por defecto
+  if (!message || typeof message !== 'string') {
+    console.log(`📝 Sin mensaje de texto: "${message}" → Usando valores por defecto (ORGANICO)`);
+    return null;
+  }
+
   const predefinedMessages = [
     {
       message: "Hola. Quiero info sobre el inicio de curso.",

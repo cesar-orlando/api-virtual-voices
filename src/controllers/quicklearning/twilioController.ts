@@ -600,11 +600,14 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
             );
 
             console.log(`🤖 Presentación automática enviada a ${phoneUser}: ${aiIntroduction}`);
+            
+            // Solo retornar si la presentación se envió exitosamente
+            return; // No procesar el mensaje del usuario después de la presentación exitosa
           } else {
             console.error(`❌ Error enviando presentación automática a ${phoneUser}:`, result.error);
+            console.log(`🔄 Fallback: procesando mensaje del cliente normalmente con IA`);
+            // No hacer return aquí - continuar con el procesamiento normal
           }
-          
-          return; // No procesar el mensaje del usuario después de la presentación
         }
 
         // Procesar mensaje con buffer para evitar respuestas múltiples

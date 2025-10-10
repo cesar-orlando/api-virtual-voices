@@ -22,6 +22,9 @@ export abstract class BaseAgent {
   protected agentContext: Record<string, any> = {};
   protected schedulerService?: MessageSchedulerService;
   
+  // ✅ Cache database connection to avoid repeated lookups
+  private cachedConnection?: any;
+  
   // Conversation summarization settings
   private readonly SUMMARIZATION_THRESHOLD = 10; // Messages threshold for creating/updating summary
   private readonly MAX_RECENT_MESSAGES = 10; // Keep only last N messages in context
@@ -37,6 +40,17 @@ export abstract class BaseAgent {
     
     // Set the environment variable for the OpenAI Agents SDK
     process.env.OPENAI_API_KEY = this.openaiApiKey;
+  }
+
+  /**
+   * ✅ Get cached database connection or create new one
+   * This ensures we only call getConnectionByCompanySlug once per agent instance
+   */
+  protected async getConnection(): Promise<any> {
+    if (!this.cachedConnection || this.cachedConnection.readyState !== 1) {
+      this.cachedConnection = await getConnectionByCompanySlug(this.company);
+    }
+    return this.cachedConnection;
   }
 
   /**
@@ -177,8 +191,8 @@ export abstract class BaseAgent {
             'conversationSummary.lastUpdated': new Date()
           };
 
-          // Get the appropriate Chat model using company connection
-          const conn = await getConnectionByCompanySlug(this.company);
+          // Get the appropriate Chat model using cached company connection
+          const conn = await this.getConnection();
           const ChatModel = getWhatsappChatModel(conn);
           
           // Atomic update with retry logic to prevent version conflicts
@@ -252,8 +266,8 @@ export abstract class BaseAgent {
             'conversationSummary.lastUpdated': new Date()
           };
 
-          // Get the appropriate Chat model using company connection
-          const conn = await getConnectionByCompanySlug(this.company);
+          // Get the appropriate Chat model using cached company connection
+          const conn = await this.getConnection();
           const ChatModel = getWhatsappChatModel(conn);
           
           // Atomic update with retry logic to prevent version conflicts
@@ -283,7 +297,7 @@ export abstract class BaseAgent {
     let attempt = 0;
     while (attempt < maxRetries) {
       try {
-        const conn = await getConnectionByCompanySlug(this.company);
+        const conn = await this.getConnection();
         const ChatModel = getWhatsappChatModel(conn);
         
         await ChatModel.findByIdAndUpdate(
@@ -546,7 +560,7 @@ IMPORTANTE:
     try {
       console.log(`🔄 Updating company-wide summary for ${this.company}...`);
       
-      const conn = await getConnectionByCompanySlug(this.company);
+      const conn = await this.getConnection();
       
       const CompanyModel = getCompanyModel(conn);
       const ChatModel = getWhatsappChatModel(conn);
@@ -881,7 +895,7 @@ IMPORTANTE:
 
   public async forceAllChatsSummaryUpdate(limit: number = 100): Promise<void> {
     try {
-      const conn = await getConnectionByCompanySlug(this.company);
+      const conn = await this.getConnection();
       const ChatModel = getWhatsappChatModel(conn);
 
       // Get all chats for the company
@@ -953,7 +967,7 @@ IMPORTANTE:
    */
   public async getCompanyConversationSummary(): Promise<any> {
     try {
-      const conn = await getConnectionByCompanySlug(this.company);
+      const conn = await this.getConnection();
       const CompanyModel = getCompanyModel(conn);
       
       const companyDoc = await CompanyModel.findOne({ name: this.company });

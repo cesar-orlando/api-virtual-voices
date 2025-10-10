@@ -48,7 +48,7 @@ export class GeneralAgent extends BaseAgent {
   private async loadCustomPrompt(): Promise<void> {
     try {
       console.log(`🔧 Loading custom prompt for ${this.company}`);
-      const conn = await getConnectionByCompanySlug(this.company);
+      const conn = await this.getConnection();
       const IaConfig = getIaConfigModel(conn);
       const Company = getCompanyModel(conn);
       // Fetch internal phones from the single company doc in this tenant DB
@@ -84,7 +84,7 @@ export class GeneralAgent extends BaseAgent {
 
   private async loadCompanyTools(): Promise<void> {
     try {
-      const conn = await getConnectionByCompanySlug(this.company);
+      const conn = await this.getConnection();
       const Tool = getToolModel(conn);
       
       // Buscar todas las tools activas para la empresa
@@ -235,7 +235,7 @@ export class GeneralAgent extends BaseAgent {
 
           console.log(`📅 Creating calendar event: ${summary} with start ${startDateTime} and end ${endDateTime}`);
 
-          const conn = await getConnectionByCompanySlug(this.agentContext.company);
+          const conn = await this.getConnection();
 
           const Record = getRecordModel(conn);
           const prospecto = await Record.findOne({ 'data.number': Number(this.agentContext.phoneUser.replace('@c.us','')) });
@@ -369,7 +369,7 @@ export class GeneralAgent extends BaseAgent {
               timeZone: this.agentContext.timezone || 'America/Mexico_City'
             };
 
-            const conn = await getConnectionByCompanySlug(this.agentContext.company);
+            const conn = await this.getConnection();
 
             const Record = getRecordModel(conn);
             const prospecto = await Record.findOne({ 'data.number': Number(this.agentContext.phoneUser.replace('@c.us','')) });

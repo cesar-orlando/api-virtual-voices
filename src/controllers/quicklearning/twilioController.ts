@@ -29,61 +29,6 @@ const messagingAgentService = new MessagingAgentService();
 const messageBuffers = new Map<string, { messages: string[]; timeout: NodeJS.Timeout }>();
 
 /**
- * Emitir notificación por socket cuando llega un mensaje nuevo
- */
-function emitNewMessageNotification(phone: string, messageData: any, chat: any = null) {
-  try {
-    // Obtener la instancia de socket.io desde la app
-    const io = (global as any).io as SocketIOServer;
-    if (!io) {
-      console.log("⚠️ Socket.io no está disponible para notificaciones");
-      return;
-    }
-
-
-
-    // Preparar datos completos para el frontend
-    const notificationData = {
-      type: "nuevo_mensaje",
-      phone: phone,
-      message: {
-        body: messageData.body,
-        direction: messageData.direction,
-        respondedBy: messageData.respondedBy,
-        messageType: messageData.messageType,
-        twilioSid: messageData.twilioSid,
-        timestamp: new Date().toISOString()
-      },
-      chat: chat ? {
-        phone: chat.phone,
-        profileName: chat.profileName,
-        lastMessage: chat.lastMessage,
-        conversationStart: chat.conversationStart,
-        status: chat.status,
-        aiEnabled: chat.aiEnabled,
-        unreadCount: 1, // Se calculará por usuario en el frontend
-        isNewChat: false // Se determinará en el frontend
-      } : null,
-      timestamp: new Date().toISOString(),
-      // Metadata para funcionalidades avanzadas
-      metadata: {
-        shouldBumpChat: true,
-        shouldPlaySound: true,
-        shouldShowNotification: true,
-        priority: messageData.respondedBy === "human" ? "high" : "normal"
-      }
-    };
-
-    // Emitir evento a todos los clientes conectados
-    io.emit("nuevo_mensaje_whatsapp", notificationData);
-
-  } catch (error) {
-    console.error("❌ Error emitiendo notificación por socket:", error);
-  }
-}
-
-
-/**
  * Emitir evento de "escribiendo" para indicar que alguien está escribiendo
  */
 function emitTypingIndicator(phone: string, isTyping: boolean, userType: "human" | "bot" | "asesor") {
@@ -469,7 +414,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
 
         // Add message and update lastMessage atomically to prevent version conflicts
         const currentDate = new Date();
-        await QuickLearningChat.findByIdAndUpdate(
+        const updatedChat = await QuickLearningChat.findByIdAndUpdate(
           chat._id,
           {
             $push: { messages: newMessage },
@@ -481,9 +426,6 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
           },
           { new: true }
         );
-
-        // Emitir notificación por socket para mensaje nuevo
-        emitNewMessageNotification(phoneUser, newMessage, chat);
       
         // Crear notificación para el asesor asignado
         let advisorId = null;
@@ -537,7 +479,7 @@ export const twilioWebhook = async (req: Request, res: Response): Promise<void> 
       
         // Emitir evento genérico de actualización de chat (compatibilidad con listeners existentes)
         try {
-          io.emit(`whatsapp-message-quicklearning`, chat);
+          io.emit(`whatsapp-message-quicklearning`, updatedChat);
         } catch (e) {
           console.error("❌ [TwilioWebhook] Error emitting socket event:", e);
         }
@@ -699,7 +641,7 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
 
           // Add bot message and update lastMessage atomically to prevent version conflicts
           const currentDate = new Date();
-          await QuickLearningChat.findByIdAndUpdate(
+          const updatedChat = await QuickLearningChat.findByIdAndUpdate(
             chat._id,
             {
               $push: { messages: botMessage },
@@ -711,12 +653,9 @@ async function processMessageWithBuffer(phoneUser: string, messageText: string, 
             },
             { new: true }
           );
-
-          // Emitir notificación por socket para respuesta del bot
-          emitNewMessageNotification(phoneUser, botMessage, chat);
           // Emitir evento genérico de actualización de chat
           try {
-            io.emit(`whatsapp-message-quicklearning`, chat);
+            io.emit(`whatsapp-message-quicklearning`, updatedChat);
           } catch (e) {
             console.error("❌ [BotReply] Error emitting socket event:", e);
           }
@@ -1245,7 +1184,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       };
       
       // Add asesor message and update lastMessage atomically to prevent version conflicts
-      await QuickLearningChat.findByIdAndUpdate(
+      const updatedChat = await QuickLearningChat.findByIdAndUpdate(
         chat._id,
         {
           $push: { messages: asesorMessage },
@@ -1257,12 +1196,9 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         },
         { new: true }
       );
-
-      // Emitir notificación por socket para mensaje del asesor
-      emitNewMessageNotification(phone, asesorMessage);
       // Emitir evento genérico de actualización de chat
       try {
-        io.emit(`whatsapp-message-quicklearning`, chat);
+        io.emit(`whatsapp-message-quicklearning`, updatedChat);
       } catch (e) {
         console.error("❌ Error emitting socket event:", e);
       }
@@ -1352,7 +1288,7 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
       };
       
       // Add template message and update lastMessage atomically to prevent version conflicts
-      await QuickLearningChat.findByIdAndUpdate(
+      const updatedChat = await QuickLearningChat.findByIdAndUpdate(
         chat._id,
         {
           $push: { messages: templateAsesorMessage },
@@ -1364,12 +1300,10 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
         },
         { new: true }
       );
-
-      // Emitir notificación por socket para mensaje de template del asesor
-      emitNewMessageNotification(phone, templateAsesorMessage);
+      
       // Emitir evento genérico de actualización de chat
       try {
-        io.emit(`whatsapp-message-quicklearning`, chat);
+        io.emit(`whatsapp-message-quicklearning`, updatedChat);
       } catch (e) {
         console.error("❌ Error emitting socket event:", e);
       }

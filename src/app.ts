@@ -38,6 +38,7 @@ import { detectCompanyFromToken } from "./core/auth/companyMiddleware";
 import elevenLabsRoutes from "./routes/elevenLabs.routes";
 import logisticsRoutes from "./routes/logistics.routes";
 import contpaqRoutes from "./contpaq/routes/contpaq.routes";
+import voiceRoutes from "./routes/voice.routes";
 
 const app = express();
 
@@ -218,6 +219,9 @@ app.use('/api/logistics', logisticsRoutes);
 
 // Rutas de Contpaq - Simple Green
 app.use('/api/contpaq', contpaqRoutes);
+
+// Rutas de Voice Calls (Desvío de llamadas con IA)
+app.use('/voice', voiceRoutes);
 
 // Ruta de prueba para ElevenLabs sin parámetros dinámicos
 app.get('/api/elevenlabs-test', (req, res) => {

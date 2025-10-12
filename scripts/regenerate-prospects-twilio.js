@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 require('dotenv').config({ path: '.env' });
 
 console.log('📱 OBTENIENDO NÚMEROS DE TELÉFONO DE TWILIO');
-console.log('📅 Del 21 de septiembre al 18 de octubre de 2025');
+console.log('📅 Del 22 de septiembre al 28 de octubre de 2025');
 console.log('');
 
 // Función para calcular similitud entre strings (Levenshtein Distance simplificado)
@@ -101,6 +101,102 @@ const dynamicRecordSchema = new mongoose.Schema({
   strict: false 
 });
 
+// Define QuickLearningChat Schema
+const quickLearningChatSchema = new mongoose.Schema({
+  phone: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    index: true
+  },
+  profileName: { type: String },
+  messages: [
+    {
+      direction: { 
+        type: String, 
+        enum: ["inbound", "outbound-api"], 
+        required: true 
+      },
+      body: { type: String, required: true },
+      dateCreated: { type: Date, default: Date.now },
+      respondedBy: { 
+        type: String, 
+        enum: ["bot", "human", "asesor"], 
+        required: true 
+      },
+      responseTime: { type: Number },
+      twilioSid: { type: String },
+      mediaUrl: [{ type: String }],
+      messageType: { 
+        type: String, 
+        enum: ["text", "image", "audio", "video", "location", "document", "sticker"], 
+        default: "text" 
+      },
+      metadata: {
+        lat: { type: Number },
+        lng: { type: Number },
+        type: mongoose.Schema.Types.Mixed
+      },
+      msgId: { type: String }
+    },
+  ],
+  linkedTable: {
+    refModel: { type: String, required: true },
+    refId: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      required: true, 
+      refPath: "linkedTable.refModel" 
+    },
+  },
+  advisor: {
+    id: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    name: { type: String },
+  },
+  conversationStart: { type: Date, default: Date.now },
+  lastMessage: {
+    body: { type: String },
+    date: { type: Date },
+    respondedBy: { type: String }
+  },
+  aiEnabled: { type: Boolean, default: true },
+  status: { 
+    type: String, 
+    enum: ["active", "inactive", "blocked"], 
+    default: "active" 
+  },
+  tags: [{ type: String }],
+  notes: { type: String },
+  customerInfo: {
+    name: { type: String },
+    email: { type: String },
+    city: { type: String },
+    interests: [{ type: String }],
+    stage: { 
+      type: String, 
+      enum: ["prospecto", "interesado", "inscrito", "no_prospecto"], 
+      default: "prospecto" 
+    }
+  },
+  tableSlug: { type: String },
+  conversationSummary: {
+    lastSummarizedIndex: { type: Number, default: 0 },
+    summary: { type: String, maxlength: 2000 },
+    extractedFacts: {
+      userName: { type: String, maxlength: 100 },
+      email: { type: String, maxlength: 200 },
+      phone: { type: String, maxlength: 50 },
+      decisions: [{ type: String, maxlength: 200 }],
+      preferences: [{ type: String, maxlength: 200 }]
+    },
+    conversationStage: { type: String, maxlength: 100, default: 'Inicio' },
+    tokensSaved: { type: Number, default: 0, min: 0 },
+    lastUpdated: { type: Date, default: Date.now }
+  }
+}, { 
+  timestamps: true,
+  collection: 'chats'
+});
+
 async function connectToMongoDB() {
   try {
     console.log('🔗 Conectando a MongoDB QuickLearning...');
@@ -112,9 +208,13 @@ async function connectToMongoDB() {
   }
 }
 
-async function updateProspectData(phoneNumber, medio, campana) {
+async function updateProspectData(phoneNumber, medio, campana, firstMessageDate) {
   try {
     const DynamicRecord = mongoose.model('DynamicRecord', dynamicRecordSchema);
+    
+    // Fechas del rango
+    const startDate = new Date('2025-09-22T00:00:00.000Z');
+    const endDate = new Date('2025-10-18T23:59:59.999Z');
     
     // Buscar el prospecto por número de teléfono
     const prospecto = await DynamicRecord.findOne({
@@ -123,24 +223,168 @@ async function updateProspectData(phoneNumber, medio, campana) {
     });
     
     if (prospecto) {
-      // Actualizar medio y campaña
-      prospecto.data.medio = medio;
-      prospecto.data.campana = campana;
+      // Verificar si está en el rango de fechas correcto
+      const prospectoDate = new Date(prospecto.createdAt);
+      const isInRange = prospectoDate >= startDate && prospectoDate <= endDate;
       
-      // ✅ CRITICAL: Mark 'data' as modified for Mongoose to detect changes in Mixed type
-      prospecto.markModified('data');
-      
-      // Registrar quién hizo la actualización (script automatizado)
-      prospecto.updatedBy = 'twilio-sync-script';
-      await prospecto.save();
-      
-      return { updated: true, prospecto };
+      if (isInRange) {
+        // Actualizar medio y campaña si está en el rango correcto
+        prospecto.data.medio = medio;
+        prospecto.data.campana = campana;
+        
+        // ✅ CRITICAL: Mark 'data' as modified for Mongoose to detect changes in Mixed type
+        prospecto.markModified('data');
+        
+        // Registrar quién hizo la actualización (script automatizado)
+        prospecto.updatedBy = 'twilio-sync-script';
+        await prospecto.save();
+        
+        return { updated: true, prospecto };
+      } else {
+        // Si existe pero está fuera del rango, marcar para crear uno nuevo
+        return { updated: false, reason: 'Fuera del rango de fechas' };
+      }
     } else {
       return { updated: false, reason: 'No encontrado' };
     }
   } catch (error) {
     console.error(`❌ Error actualizando prospecto ${phoneNumber}:`, error.message);
     return { updated: false, reason: error.message };
+  }
+}
+
+// Función para obtener TODOS los mensajes de un número específico
+async function getAllMessagesForNumber(clientPhoneNumber, startDate, endDate) {
+  try {
+    const allMessages = [];
+    let hasMore = true;
+    let nextPageToken = null;
+    let pageCount = 0;
+
+    while (hasMore) {
+      pageCount++;
+      console.log(`  📄 Obteniendo página ${pageCount} para ${clientPhoneNumber}...`);
+
+      const messages = await client.messages.list({
+        from: `whatsapp:${clientPhoneNumber}`,
+        to: `whatsapp:${phoneNumber}`,
+        dateSentAfter: startDate,
+        dateSentBefore: endDate,
+        pageSize: 1000,
+        pageToken: nextPageToken
+      });
+
+      // Filtrar solo mensajes entrantes (del cliente hacia nosotros)
+      const inboundMessages = messages.filter(msg => 
+        msg.direction === 'inbound' && 
+        msg.from === `whatsapp:${clientPhoneNumber}`
+      );
+
+      allMessages.push(...inboundMessages);
+      console.log(`  📊 Página ${pageCount}: ${inboundMessages.length} mensajes entrantes encontrados`);
+
+      // Verificar si hay más páginas
+      hasMore = messages.length === 1000;
+      if (hasMore && messages.length > 0) {
+        nextPageToken = messages[messages.length - 1].sid;
+      }
+
+      // Pausa pequeña para no sobrecargar la API
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    // Ordenar mensajes por fecha ascendente (más antiguos primero)
+    allMessages.sort((a, b) => new Date(a.dateSent) - new Date(b.dateSent));
+
+    return allMessages;
+  } catch (error) {
+    console.error(`❌ Error obteniendo mensajes para ${clientPhoneNumber}:`, error.message);
+    return [];
+  }
+}
+
+// Función para crear un nuevo prospecto
+async function createProspect(phoneNumber, medio, campana, firstMessage, firstMessageDate) {
+  try {
+    const DynamicRecord = mongoose.model('DynamicRecord', dynamicRecordSchema);
+    
+    // Crear nuevo prospecto
+    const newProspect = new DynamicRecord({
+      tableSlug: 'prospectos',
+      c_name: 'quicklearning', // Asumiendo que es para QuickLearning
+      data: {
+        number: phoneNumber,
+        name: '', // Se puede extraer del primer mensaje si es un nombre
+        ia: true,
+        medio: medio,
+        campana: campana,
+        lastmessage: firstMessage,
+        lastmessagedate: firstMessageDate,
+        createdBy: 'twilio-sync-script',
+        createdAt: new Date(firstMessageDate)
+      },
+      createdBy: 'twilio-sync-script',
+      createdAt: new Date(firstMessageDate)
+    });
+
+    await newProspect.save();
+    console.log(`✅ Nuevo prospecto creado: ${phoneNumber}`);
+    
+    return { success: true, prospect: newProspect };
+  } catch (error) {
+    console.error(`❌ Error creando prospecto ${phoneNumber}:`, error.message);
+    return { success: false, reason: error.message };
+  }
+}
+
+// Función para crear un chat con todos los mensajes
+async function createChat(phoneNumber, allMessages, prospectId) {
+  try {
+    const QuickLearningChat = mongoose.model('QuickLearningChat', quickLearningChatSchema);
+    
+    // Convertir mensajes de Twilio al formato del chat
+    const chatMessages = allMessages.map((msg, index) => ({
+      direction: 'inbound',
+      body: msg.body || '[Mensaje sin texto - multimedia]',
+      dateCreated: new Date(msg.dateSent),
+      respondedBy: 'bot', // Asumimos que fueron respondidos por bot
+      twilioSid: msg.sid,
+      messageType: 'text',
+      msgId: msg.sid
+    }));
+
+    // Crear el chat
+    const newChat = new QuickLearningChat({
+      phone: phoneNumber,
+      profileName: '', // Se puede extraer del primer mensaje
+      messages: chatMessages,
+      linkedTable: {
+        refModel: 'DynamicRecord',
+        refId: prospectId
+      },
+      conversationStart: allMessages.length > 0 ? new Date(allMessages[0].dateSent) : new Date(),
+      lastMessage: allMessages.length > 0 ? {
+        body: allMessages[allMessages.length - 1].body || '[Mensaje sin texto - multimedia]',
+        date: new Date(allMessages[allMessages.length - 1].dateSent),
+        respondedBy: 'bot'
+      } : undefined,
+      aiEnabled: true,
+      status: 'active',
+      customerInfo: {
+        stage: 'prospecto'
+      },
+      tableSlug: 'prospectos'
+    });
+
+    await newChat.save();
+    console.log(`✅ Chat creado con ${chatMessages.length} mensajes para ${phoneNumber}`);
+    
+    return { success: true, chat: newChat };
+  } catch (error) {
+    console.error(`❌ Error creando chat para ${phoneNumber}:`, error.message);
+    return { success: false, reason: error.message };
   }
 }
 
@@ -250,8 +494,8 @@ async function obtenerNumeros() {
     let pageCount = 0;
     
     // Fechas del rango
-    const startDate = new Date('2025-09-21T00:00:00.000Z');
-    const endDate = new Date('2025-10-18T23:59:59.999Z');
+    const startDate = new Date('2025-09-22T00:00:00.000Z');
+    const endDate = new Date('2025-10-28T23:59:59.999Z');
     
     console.log(`📅 Rango: ${startDate.toISOString()} - ${endDate.toISOString()}`);
     
@@ -342,16 +586,17 @@ async function obtenerNumeros() {
     let updatedCount = 0;
     let notFoundCount = 0;
     let errorCount = 0;
+    let createdCount = 0;
+    let chatCreatedCount = 0;
     
     // Tracking arrays for detailed reporting
     const notFoundNumbers = [];
     const errorNumbers = [];
+    const createdNumbers = [];
     const updatedByMedio = {};
     
     for (const data of sortedPhoneData) {
-      // Extraer solo el número sin el prefijo de whatsapp
-
-      const result = await updateProspectData(data.number, data.medio, data.campana);
+      const result = await updateProspectData(data.number, data.medio, data.campana, data.fecha);
 
       if (result.updated) {
         updatedCount++;
@@ -363,10 +608,10 @@ async function obtenerNumeros() {
           updatedByMedio[medioKey] = 0;
         }
         updatedByMedio[medioKey]++;
-      } else if (result.reason === 'No encontrado') {
+      } else if (result.reason === 'No encontrado' || result.reason === 'Fuera del rango de fechas') {
         notFoundCount++;
-        notFoundNumbers.push(data.number);
-        console.log(`⚠️  ${data.number} - No encontrado en prospectos`);
+        notFoundNumbers.push(data);
+        console.log(`⚠️  ${data.number} - ${result.reason}, se creará nuevo prospecto y chat`);
       } else {
         errorCount++;
         errorNumbers.push({ number: data.number, error: result.reason });
@@ -374,10 +619,85 @@ async function obtenerNumeros() {
       }
     }
     
+    // Procesar números no encontrados - crear prospectos y chats
+    if (notFoundNumbers.length > 0) {
+      console.log('\n🆕 CREANDO NUEVOS PROSPECTOS Y CHATS...');
+      console.log('='.repeat(80));
+      console.log(`📊 Números a procesar: ${notFoundNumbers.length}`);
+      
+      for (let i = 0; i < notFoundNumbers.length; i++) {
+        const data = notFoundNumbers[i];
+        console.log(`\n📞 Procesando ${i + 1}/${notFoundNumbers.length}: ${data.number}`);
+        
+        try {
+          // 1. Obtener TODOS los mensajes de este número
+          console.log(`  🔍 Obteniendo todos los mensajes para ${data.number}...`);
+          const allMessages = await getAllMessagesForNumber(data.number, startDate, endDate);
+          
+          if (allMessages.length === 0) {
+            console.log(`  ⚠️ No se encontraron mensajes para ${data.number}`);
+            continue;
+          }
+          
+          console.log(`  📊 Encontrados ${allMessages.length} mensajes para ${data.number}`);
+          
+          // 2. Crear prospecto
+          console.log(`  👤 Creando prospecto para ${data.number}...`);
+          const prospectResult = await createProspect(
+            data.number, 
+            data.medio, 
+            data.campana, 
+            data.mensaje, 
+            data.fecha
+          );
+          
+          if (!prospectResult.success) {
+            console.log(`  ❌ Error creando prospecto: ${prospectResult.reason}`);
+            continue;
+          }
+          
+          createdCount++;
+          console.log(`  ✅ Prospecto creado exitosamente`);
+          
+          // 3. Crear chat con todos los mensajes
+          console.log(`  💬 Creando chat con ${allMessages.length} mensajes...`);
+          const chatResult = await createChat(
+            data.number, 
+            allMessages, 
+            prospectResult.prospect._id
+          );
+          
+          if (!chatResult.success) {
+            console.log(`  ❌ Error creando chat: ${chatResult.reason}`);
+            continue;
+          }
+          
+          chatCreatedCount++;
+          createdNumbers.push({
+            number: data.number,
+            prospectId: prospectResult.prospect._id,
+            chatId: chatResult.chat._id,
+            messageCount: allMessages.length
+          });
+          console.log(`  ✅ Chat creado exitosamente con ${allMessages.length} mensajes`);
+          
+        } catch (error) {
+          console.log(`  ❌ Error procesando ${data.number}: ${error.message}`);
+          errorCount++;
+        }
+        
+        // Pausa pequeña entre procesamiento
+        if (i < notFoundNumbers.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    }
+    
     console.log('\n📊 RESUMEN DE ACTUALIZACIÓN:');
     console.log('='.repeat(80));
     console.log(`✅ Actualizados exitosamente: ${updatedCount} (${((updatedCount/sortedPhoneData.length)*100).toFixed(1)}%)`);
-    console.log(`⚠️  No encontrados en DB: ${notFoundCount} (${((notFoundCount/sortedPhoneData.length)*100).toFixed(1)}%)`);
+    console.log(`🆕 Nuevos prospectos creados: ${createdCount} (${((createdCount/sortedPhoneData.length)*100).toFixed(1)}%)`);
+    console.log(`💬 Chats creados: ${chatCreatedCount} (${((chatCreatedCount/sortedPhoneData.length)*100).toFixed(1)}%)`);
     console.log(`❌ Errores: ${errorCount} (${((errorCount/sortedPhoneData.length)*100).toFixed(1)}%)`);
     console.log(`📊 Total procesados: ${sortedPhoneData.length}`);
     
@@ -392,12 +712,12 @@ async function obtenerNumeros() {
         });
     }
     
-    // Show not found numbers if any
-    if (notFoundNumbers.length > 0) {
-      console.log('\n⚠️  NÚMEROS NO ENCONTRADOS EN BASE DE DATOS:');
+    // Show created numbers if any
+    if (createdNumbers.length > 0) {
+      console.log('\n🆕 NÚMEROS CREADOS CON CHATS:');
       console.log('='.repeat(80));
-      notFoundNumbers.forEach((num, idx) => {
-        console.log(`  ${idx + 1}. ${num}`);
+      createdNumbers.forEach((item, idx) => {
+        console.log(`  ${idx + 1}. ${item.number} - ${item.messageCount} mensajes (Prospecto: ${item.prospectId}, Chat: ${item.chatId})`);
       });
     }
     
@@ -485,7 +805,7 @@ ${sortedPhoneData.map((data, index) =>
     
   } catch (error) {
     if (error.message.includes('Timeout')) {
-      console.log('⚠️ No se encontraron mensajes en el rango de fechas 2025-09-21 al 2025-10-18');
+      console.log('⚠️ No se encontraron mensajes en el rango de fechas 2025-09-22 al 2025-10-28');
       console.log('💡 Sugerencia: Las fechas del 2025 aún no tienen mensajes. ¿Quieres buscar en 2024?');
     } else {
       console.error('❌ Error:', error.message);

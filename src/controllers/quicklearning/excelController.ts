@@ -35,10 +35,16 @@ export const downloadProspectosExcel = async (req: Request, res: Response): Prom
     if (startDate || endDate) {
       const dateFilter: any = {};
       if (startDate) {
-        dateFilter.$gte = new Date(startDate as string);
+        // Asegurar que sea desde el inicio del día
+        const start = new Date(startDate as string);
+        start.setUTCHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
       }
       if (endDate) {
-        dateFilter.$lte = new Date(endDate as string);
+        // Asegurar que sea hasta el final del día
+        const end = new Date(endDate as string);
+        end.setUTCHours(23, 59, 59, 999);
+        dateFilter.$lte = end;
       }
       filters.createdAt = dateFilter;
     }
@@ -152,10 +158,16 @@ export const getProspectosStats = async (req: Request, res: Response): Promise<v
     if (startDate || endDate) {
       const dateFilter: any = {};
       if (startDate) {
-        dateFilter.$gte = new Date(startDate as string);
+        // Asegurar que sea desde el inicio del día
+        const start = new Date(startDate as string);
+        start.setUTCHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
       }
       if (endDate) {
-        dateFilter.$lte = new Date(endDate as string);
+        // Asegurar que sea hasta el final del día
+        const end = new Date(endDate as string);
+        end.setUTCHours(23, 59, 59, 999);
+        dateFilter.$lte = end;
       }
       filters.createdAt = dateFilter;
     }

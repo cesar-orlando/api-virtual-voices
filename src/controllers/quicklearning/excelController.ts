@@ -1,19 +1,79 @@
 import { Request, Response } from "express";
-import { getConnectionByCompanySlug } from "../../config/connectionManager";
-import getRecordModel from "../../models/record.model";
 import * as XLSX from 'xlsx';
+import twilio from 'twilio';
+
+// Configuración de Twilio
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const phoneNumber = process.env.TWILIO_PHONE_NUMBER;
+
+if (!accountSid || !authToken || !phoneNumber) {
+  throw new Error('Twilio credentials not configured');
+}
+
+const client = twilio(accountSid, authToken);
+
+// Función para calcular similitud entre strings (Levenshtein Distance simplificado)
+function calculateSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  
+  // Si son iguales, similitud perfecta
+  if (s1 === s2) return 1;
+  
+  // Calcular coincidencias de palabras clave
+  const words1 = s1.split(/\s+/);
+  const words2 = s2.split(/\s+/);
+  
+  let matches = 0;
+  for (const word1 of words1) {
+    if (words2.some(word2 => word1.includes(word2) || word2.includes(word1))) {
+      matches++;
+    }
+  }
+  
+  // Calcular similitud basada en palabras coincidentes
+  const maxWords = Math.max(words1.length, words2.length);
+  return matches / maxWords;
+}
+
+// Función para encontrar el mejor match de mensaje
+function findBestMessageMatch(userMessage: string, predefinedMessages: any[]): any {
+  if (!userMessage || userMessage === '[Mensaje sin texto - multimedia]') {
+    return { medio: 'ORGANICO', campana: 'ORGANICO', similarity: 0 };
+  }
+  
+  let bestMatch = null;
+  let bestSimilarity = 0;
+  
+  for (const predefined of predefinedMessages) {
+    const similarity = calculateSimilarity(userMessage, predefined.message);
+    
+    if (similarity > bestSimilarity) {
+      bestSimilarity = similarity;
+      bestMatch = predefined;
+    }
+  }
+  
+  // Si la similitud es muy baja, marcar como desconocido
+  if (bestSimilarity < 0.6) {
+    return { medio: 'ORGANICO', campana: 'ORGANICO', similarity: bestSimilarity };
+  }
+  
+  return { 
+    medio: bestMatch.medio, 
+    campana: bestMatch.campana, 
+    similarity: bestSimilarity 
+  };
+}
 
 /**
- * Descargar Excel con datos de prospectos de QuickLearning
+ * Descargar Excel con datos de prospectos de QuickLearning desde Twilio
  * GET /api/quicklearning/excel/prospectos
  */
 export const downloadProspectosExcel = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log('📊 Generando Excel de prospectos...');
-    
-    // Obtener conexión a la base de datos de QuickLearning
-    const companyConn = await getConnectionByCompanySlug('quicklearning');
-    const Record = getRecordModel(companyConn);
+    console.log('📊 Generando Excel de prospectos desde Twilio...');
     
     // Obtener parámetros de consulta
     const { 
@@ -24,60 +84,213 @@ export const downloadProspectosExcel = async (req: Request, res: Response): Prom
       limit = 10000 
     } = req.query;
     
-    // Construir filtros
-    const filters: any = {
-      tableSlug: 'prospectos',
-      c_name: 'quicklearning',
-      'data.number': { $exists: true, $nin: [null, ''] }
-    };
+    // Fechas del rango (usar las mismas del script)
+    const start = startDate ? new Date(startDate as string) : new Date('2025-09-22T00:00:00.000Z');
+    const end = endDate ? new Date(endDate as string) : new Date('2025-10-28T23:59:59.999Z');
     
-    // Agregar filtro de fechas si se proporciona
-    if (startDate || endDate) {
-      const dateFilter: any = {};
-      if (startDate) {
-        // Asegurar que sea desde el inicio del día
-        const start = new Date(startDate as string);
-        start.setUTCHours(0, 0, 0, 0);
-        dateFilter.$gte = start;
+    // Asegurar que las fechas incluyan todo el día
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(23, 59, 59, 999);
+    
+    console.log(`📅 Rango: ${start.toISOString()} - ${end.toISOString()}`);
+    
+    // Mensajes predefinidos (mismos del script)
+    const predefinedMessages = [
+      {
+        message: "Hola. Quiero info sobre el inicio de curso.",
+        medio: "META",
+        campana: "Inicio de Curso"
+      },
+      {
+        message: "Hola, quiero info sobre los cursos de inglés (u).",
+        medio: "META",
+        campana: "USA"
+      },
+      {
+        message: "Hola, quiero info sobre los cursos de inglés (c).",
+        medio: "META",
+        campana: "Can"
+      },
+      {
+        message: "Hola, quiero más información sobre los cursos de inglés de Quick Learning. Los busque en Google.",
+        medio: "GOOGLE",
+        campana: "Google"
+      },
+      {
+        message: "Hola, me encantaría recibir información de sus cursos.",
+        medio: "GOOGLE",
+        campana: "Google"
+      },
+      {
+        message: "Hola, quiero más info sobre los cursos presenciales.",
+        medio: "META",
+        campana: "Presencial"
+      },
+      {
+        message: "Hola, quiero más info sobre los cursos virtuales.",
+        medio: "META",
+        campana: "Virtual"
+      },
+      {
+        message: "Hola, quiero info sobre la promo virtual.",
+        medio: "META",
+        campana: "Virtual Promos"
+      },
+      {
+        message: "Hola, quiero más info sobre los cursos online.",
+        medio: "META",
+        campana: "Online"
+      },
+      {
+        message: "Hola, quiero info sobre la promo online.",
+        medio: "META",
+        campana: "online"
+      },
+      {
+        message: "Hola, quiero info sobre los cursos de inglés.",
+        medio: "META",
+        campana: "General"
+      },
+      {
+        message: "Hola. Quiero info sobre los cursos de inglés",
+        medio: "META",
+        campana: "General"
+      },
+      {
+        message: "Hola. Quiero más info sobre los cursos de inglés en línea.",
+        medio: "META",
+        campana: "General"
+      },
+      {
+        message: "Hola, quiero info sobre los cursos de inglés (r).",
+        medio: "META",
+        campana: "RMKT"
+      },
+      {
+        message: "Medio: Meta Campana: RMKT",
+        medio: "META",
+        campana: "RMKT"
+      },
+      {
+        message: "Hola, quiero más info sobre el curso SMART.",
+        medio: "META",
+        campana: "SMART"
+      },
+      {
+        message: "Más info de los cursos, los vi en tik tok.",
+        medio: "TIKTOK",
+        campana: "TIKTOK"
+      },
+      {
+        message: "Hola. Quiero información sobre la flash sale del 30% en virtual.",
+        medio: "META",
+        campana: "FlashV 30%"
       }
-      if (endDate) {
-        // Asegurar que sea hasta el final del día
-        const end = new Date(endDate as string);
-        end.setUTCHours(23, 59, 59, 999);
-        dateFilter.$lte = end;
+    ];
+    
+    // Obtener datos de Twilio
+    const phoneData = new Map();
+    let totalMessages = 0;
+    let pageCount = 0;
+    let hasMore = true;
+    let nextPageToken = null;
+    
+    while (hasMore) {
+      pageCount++;
+      console.log(`📄 Procesando página ${pageCount}...`);
+      
+      // Obtener mensajes de esta página
+      const messages = await client.messages.list({
+        to: `whatsapp:${phoneNumber}`,
+        dateSentAfter: start,
+        dateSentBefore: end,
+        pageSize: 1000,
+        ...(nextPageToken && { pageToken: nextPageToken })
+      });
+      
+      // Ordenar mensajes por fecha ascendente (más antiguos primero)
+      messages.sort((a, b) => new Date(a.dateSent).getTime() - new Date(b.dateSent).getTime());
+      
+      console.log(`📊 Página ${pageCount}: ${messages.length} mensajes encontrados`);
+      
+      // Si no hay mensajes, salir del bucle
+      if (messages.length === 0) {
+        console.log('⚠️ No se encontraron mensajes en este rango de fechas');
+        break;
       }
-      filters.createdAt = dateFilter;
+      
+      // Procesar mensajes de esta página
+      for (const message of messages) {
+        totalMessages++;
+        
+        let phone = message.from;
+        if (phone.startsWith('whatsapp:')) {
+          phone = phone.replace('whatsapp:', '');
+        }
+        
+        // Si es la primera vez que vemos este número, guardar el mensaje
+        if (!phoneData.has(phone)) {
+          const userMessage = message.body || '[Mensaje sin texto - multimedia]';
+          
+          // Encontrar el mejor match con los mensajes predefinidos
+          const match = findBestMessageMatch(userMessage, predefinedMessages);
+          
+          phoneData.set(phone, {
+            number: phone,
+            mensaje: userMessage,
+            fecha: message.dateSent,
+            medio: match.medio,
+            campana: match.campana,
+            similarity: match.similarity
+          });
+        }
+      }
+      
+      // Verificar si hay más páginas
+      hasMore = messages.length === 1000;
+      if (hasMore && messages.length > 0) {
+        nextPageToken = messages[messages.length - 1].sid;
+      }
+      
+      // Pausa pequeña para no sobrecargar la API
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
     
-    // Agregar filtro de medio si se proporciona
+    console.log(`📊 Total de mensajes procesados: ${totalMessages}`);
+    console.log(`📞 Números únicos que enviaron mensajes: ${phoneData.size}`);
+    
+    // Convertir a array y ordenar por número
+    const sortedPhoneData = Array.from(phoneData.values()).sort((a, b) => a.number.localeCompare(b.number));
+    
+    // Aplicar filtros adicionales si se proporcionan
+    let filteredData = sortedPhoneData;
+    
     if (medio) {
-      filters['data.medio'] = medio;
+      filteredData = filteredData.filter(item => item.medio === medio);
     }
     
-    // Agregar filtro de campaña si se proporciona
     if (campana) {
-      filters['data.campana'] = campana;
+      filteredData = filteredData.filter(item => item.campana === campana);
     }
     
-    console.log('🔍 Filtros aplicados:', JSON.stringify(filters, null, 2));
+    // Aplicar límite
+    if (limit) {
+      filteredData = filteredData.slice(0, parseInt(limit as string));
+    }
     
-    // Obtener prospectos
-    const prospectos = await Record.find(filters)
-      .select('data.number data.medio data.campana data.nombre createdAt updatedAt')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit as string))
-      .lean();
-    
-    console.log(`📊 Total de prospectos encontrados: ${prospectos.length}`);
+    console.log(`📊 Total de prospectos para Excel: ${filteredData.length}`);
     
     // Preparar datos para Excel
-    const excelData = prospectos.map((prospecto: any) => ({
-      'Número': prospecto.data?.number || 'Sin número',
-      'Medio': prospecto.data?.medio || 'No especificado',
-      'Campaña': prospecto.data?.campana || 'No especificado',
-      'Nombre': prospecto.data?.nombre || 'Sin nombre',
-      'Fecha Creación': prospecto.createdAt ? new Date(prospecto.createdAt).toLocaleDateString('es-MX') : 'Sin fecha',
-      'Fecha Actualización': prospecto.updatedAt ? new Date(prospecto.updatedAt).toLocaleDateString('es-MX') : 'Sin actualización'
+    const excelData = filteredData.map((item, index) => ({
+      'Número': item.number,
+      'Medio': item.medio,
+      'Campaña': item.campana,
+      'Mensaje': item.mensaje,
+      'Fecha': new Date(item.fecha).toLocaleDateString('es-MX'),
+      'Hora': new Date(item.fecha).toLocaleTimeString('es-MX'),
+      'Similitud': `${(item.similarity * 100).toFixed(0)}%`
     }));
     
     // Crear libro de trabajo
@@ -91,14 +304,15 @@ export const downloadProspectosExcel = async (req: Request, res: Response): Prom
       { wch: 20 }, // Número
       { wch: 15 }, // Medio
       { wch: 20 }, // Campaña
-      { wch: 25 }, // Nombre
-      { wch: 15 }, // Fecha Creación
-      { wch: 15 }  // Fecha Actualización
+      { wch: 50 }, // Mensaje
+      { wch: 15 }, // Fecha
+      { wch: 10 }, // Hora
+      { wch: 10 }  // Similitud
     ];
     worksheet['!cols'] = columnWidths;
     
     // Agregar hoja al libro
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Prospectos');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Prospectos Twilio');
     
     // Generar buffer del archivo Excel
     const excelBuffer = XLSX.write(workbook, { 
@@ -108,7 +322,7 @@ export const downloadProspectosExcel = async (req: Request, res: Response): Prom
     });
     
     // Configurar headers para descarga
-    const filename = `prospectos-quicklearning-${new Date().toISOString().split('T')[0]}.xlsx`;
+    const filename = `prospectos-twilio-${new Date().toISOString().split('T')[0]}.xlsx`;
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -117,29 +331,25 @@ export const downloadProspectosExcel = async (req: Request, res: Response): Prom
     // Enviar archivo
     res.send(excelBuffer);
     
-    console.log(`✅ Excel generado exitosamente: ${filename} (${prospectos.length} registros)`);
+    console.log(`✅ Excel generado exitosamente: ${filename} (${filteredData.length} registros)`);
     
   } catch (error) {
     console.error('❌ Error generando Excel:', error);
     res.status(500).json({
       success: false,
-      message: 'Error generando archivo Excel',
+      message: 'Error generando archivo Excel desde Twilio',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }
 };
 
 /**
- * Obtener estadísticas de prospectos para dashboard
+ * Obtener estadísticas de prospectos desde Twilio
  * GET /api/quicklearning/excel/stats
  */
 export const getProspectosStats = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log('📊 Obteniendo estadísticas de prospectos...');
-    
-    // Obtener conexión a la base de datos de QuickLearning
-    const companyConn = await getConnectionByCompanySlug('quicklearning');
-    const Record = getRecordModel(companyConn);
+    console.log('📊 Obteniendo estadísticas de prospectos desde Twilio...');
     
     // Obtener parámetros de consulta
     const { 
@@ -147,48 +357,101 @@ export const getProspectosStats = async (req: Request, res: Response): Promise<v
       endDate 
     } = req.query;
     
-    // Construir filtros
-    const filters: any = {
-      tableSlug: 'prospectos',
-      c_name: 'quicklearning',
-      'data.number': { $exists: true, $nin: [null, ''] }
-    };
+    // Fechas del rango
+    const start = startDate ? new Date(startDate as string) : new Date('2025-09-22T00:00:00.000Z');
+    const end = endDate ? new Date(endDate as string) : new Date('2025-10-28T23:59:59.999Z');
     
-    // Agregar filtro de fechas si se proporciona
-    if (startDate || endDate) {
-      const dateFilter: any = {};
-      if (startDate) {
-        // Asegurar que sea desde el inicio del día
-        const start = new Date(startDate as string);
-        start.setUTCHours(0, 0, 0, 0);
-        dateFilter.$gte = start;
+    // Asegurar que las fechas incluyan todo el día
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(23, 59, 59, 999);
+    
+    // Obtener datos de Twilio (misma lógica que downloadProspectosExcel)
+    const phoneData = new Map();
+    let totalMessages = 0;
+    let pageCount = 0;
+    let hasMore = true;
+    let nextPageToken = null;
+    
+    // Mensajes predefinidos (mismos del script)
+    const predefinedMessages = [
+      { message: "Hola. Quiero info sobre el inicio de curso.", medio: "META", campana: "Inicio de Curso" },
+      { message: "Hola, quiero info sobre los cursos de inglés (u).", medio: "META", campana: "USA" },
+      { message: "Hola, quiero info sobre los cursos de inglés (c).", medio: "META", campana: "Can" },
+      { message: "Hola, quiero más información sobre los cursos de inglés de Quick Learning. Los busque en Google.", medio: "GOOGLE", campana: "Google" },
+      { message: "Hola, me encantaría recibir información de sus cursos.", medio: "GOOGLE", campana: "Google" },
+      { message: "Hola, quiero más info sobre los cursos presenciales.", medio: "META", campana: "Presencial" },
+      { message: "Hola, quiero más info sobre los cursos virtuales.", medio: "META", campana: "Virtual" },
+      { message: "Hola, quiero info sobre la promo virtual.", medio: "META", campana: "Virtual Promos" },
+      { message: "Hola, quiero más info sobre los cursos online.", medio: "META", campana: "Online" },
+      { message: "Hola, quiero info sobre la promo online.", medio: "META", campana: "online" },
+      { message: "Hola, quiero info sobre los cursos de inglés.", medio: "META", campana: "General" },
+      { message: "Hola. Quiero info sobre los cursos de inglés", medio: "META", campana: "General" },
+      { message: "Hola. Quiero más info sobre los cursos de inglés en línea.", medio: "META", campana: "General" },
+      { message: "Hola, quiero info sobre los cursos de inglés (r).", medio: "META", campana: "RMKT" },
+      { message: "Medio: Meta Campana: RMKT", medio: "META", campana: "RMKT" },
+      { message: "Hola, quiero más info sobre el curso SMART.", medio: "META", campana: "SMART" },
+      { message: "Más info de los cursos, los vi en tik tok.", medio: "TIKTOK", campana: "TIKTOK" },
+      { message: "Hola. Quiero información sobre la flash sale del 30% en virtual.", medio: "META", campana: "FlashV 30%" }
+    ];
+    
+    while (hasMore) {
+      pageCount++;
+      
+      const messages = await client.messages.list({
+        to: `whatsapp:${phoneNumber}`,
+        dateSentAfter: start,
+        dateSentBefore: end,
+        pageSize: 1000,
+        ...(nextPageToken && { pageToken: nextPageToken })
+      });
+      
+      messages.sort((a, b) => new Date(a.dateSent).getTime() - new Date(b.dateSent).getTime());
+      
+      if (messages.length === 0) break;
+      
+      for (const message of messages) {
+        totalMessages++;
+        
+        let phone = message.from;
+        if (phone.startsWith('whatsapp:')) {
+          phone = phone.replace('whatsapp:', '');
+        }
+        
+        if (!phoneData.has(phone)) {
+          const userMessage = message.body || '[Mensaje sin texto - multimedia]';
+          const match = findBestMessageMatch(userMessage, predefinedMessages);
+          
+          phoneData.set(phone, {
+            number: phone,
+            mensaje: userMessage,
+            fecha: message.dateSent,
+            medio: match.medio,
+            campana: match.campana,
+            similarity: match.similarity
+          });
+        }
       }
-      if (endDate) {
-        // Asegurar que sea hasta el final del día
-        const end = new Date(endDate as string);
-        end.setUTCHours(23, 59, 59, 999);
-        dateFilter.$lte = end;
+      
+      hasMore = messages.length === 1000;
+      if (hasMore && messages.length > 0) {
+        nextPageToken = messages[messages.length - 1].sid;
       }
-      filters.createdAt = dateFilter;
+      
+      if (hasMore) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
     
-    // Obtener prospectos
-    const prospectos = await Record.find(filters)
-      .select('data.medio data.campana createdAt')
-      .lean();
-    
     // Calcular estadísticas
-    const totalProspectos = prospectos.length;
-    
-    // Estadísticas por medio
+    const totalProspectos = phoneData.size;
     const statsByMedio: { [key: string]: number } = {};
     const statsByCampana: { [key: string]: number } = {};
     const statsByMes: { [key: string]: number } = {};
     
-    prospectos.forEach((prospecto: any) => {
-      const medio = prospecto.data?.medio || 'No especificado';
-      const campana = prospecto.data?.campana || 'No especificado';
-      const mes = new Date(prospecto.createdAt).toLocaleDateString('es-MX', { 
+    phoneData.forEach((item) => {
+      const medio = item.medio || 'No especificado';
+      const campana = item.campana || 'No especificado';
+      const mes = new Date(item.fecha).toLocaleDateString('es-MX', { 
         year: 'numeric', 
         month: 'long' 
       });
@@ -215,20 +478,22 @@ export const getProspectosStats = async (req: Request, res: Response): Promise<v
       success: true,
       data: {
         totalProspectos,
+        totalMensajes: totalMessages,
         porMedio: sortedStatsByMedio,
         porCampana: sortedStatsByCampana,
         porMes: sortedStatsByMes,
-        fechaGeneracion: new Date().toISOString()
+        fechaGeneracion: new Date().toISOString(),
+        fuente: 'Twilio API'
       }
     });
     
-    console.log(`✅ Estadísticas generadas: ${totalProspectos} prospectos`);
+    console.log(`✅ Estadísticas generadas desde Twilio: ${totalProspectos} prospectos`);
     
   } catch (error) {
     console.error('❌ Error obteniendo estadísticas:', error);
     res.status(500).json({
       success: false,
-      message: 'Error obteniendo estadísticas',
+      message: 'Error obteniendo estadísticas desde Twilio',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }

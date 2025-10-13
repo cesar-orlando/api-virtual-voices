@@ -24,6 +24,7 @@ import quickLearningTwilioRoutes from "./routes/quicklearning/twilioRoutes";
 import twilioTestRoutes from "./routes/quicklearning/twilioTestRoutes";
 import twilioWebhookRoutes from "./routes/quicklearning/twilioWebhookRoutes";
 import quickLearningMetricsRoutes from "./routes/quicklearning/metricsRoutes";
+import quickLearningExcelRoutes from "./routes/quicklearning/excel.routes";
 import emailRoutes from "./routes/email.routes";
 import emailVerificationRoutes from "./routes/emailVerification.routes";
 import globalSMTPRoutes from "./routes/globalSMTP.routes";
@@ -192,6 +193,9 @@ app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
 
 // Rutas de métricas para Quick Learning (mantener para compatibilidad)
 app.use('/api/quicklearning', quickLearningMetricsRoutes);
+
+// Rutas de Excel para Quick Learning
+app.use('/api/quicklearning/excel', quickLearningExcelRoutes);
 
 // Rutas de prueba para el nuevo sistema de agentes
 app.use('/api/test', twilioTestRoutes);

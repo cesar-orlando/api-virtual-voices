@@ -18,6 +18,9 @@ router.get('/product-analysis/:codigo', (req, res) => contpaqController.getProdu
 router.get('/product-history/:codigo', (req, res) => contpaqController.getProductHistory(req, res));
 router.get('/sales/date-range', (req, res) => contpaqController.getSalesByDateRange(req, res));
 
+// Reporte de cobranza
+router.get('/cobranza', (req, res) => contpaqController.getCobranza(req, res));
+
 // Ruta de información
 router.get('/', (req, res) => {
   res.json({
@@ -33,7 +36,8 @@ router.get('/', (req, res) => {
       inventoryAnalysis: 'GET /api/contpaq/inventory-analysis',
       productAnalysis: 'GET /api/contpaq/product-analysis/:codigo',
       productHistory: 'GET /api/contpaq/product-history/:codigo',
-      salesByDateRange: 'GET /api/contpaq/sales/date-range?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&codigoProducto=CODIGO'
+      salesByDateRange: 'GET /api/contpaq/sales/date-range?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&codigoProducto=CODIGO',
+      cobranza: 'GET /api/contpaq/cobranza?asesor=ASESOR&estado=ESTADO&cliente=CLIENTE&fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD'
     }
   });
 });

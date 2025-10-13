@@ -9,6 +9,7 @@ import { cleanupInactiveConnections, getConnectionByCompanySlug } from "./config
 import { startAttachmentCleanupScheduler } from "./controllers/email.controller";
 import { CompanySummaryService } from "./services/internal/companySummaryService";
 import { MessageSchedulerService } from "./services/internal/messageSchedulerService";
+import { startBotReactivationScheduler } from './services/internal/botReactivation.scheduler';
 import EmailAutoStartService from "./services/emailAutoStart.service";
 import fs from 'fs';
 import path from 'path';
@@ -130,6 +131,16 @@ async function main() {
       console.log(`🌍 Entorno: ${config.name.toUpperCase()}`);
     });
 
+    // ✅ Start bot auto-reactivation scheduler EARLY (before WhatsApp)
+    if (process.env.BOT_REACTIVATION_ENABLED !== 'false') {
+      try {
+        startBotReactivationScheduler();
+        console.log('✅ Bot auto-reactivation scheduler started');
+      } catch (error) {
+        console.error('❌ Error starting bot reactivation scheduler:', error);
+      }
+    }
+
     const fbConfigs = await getAllFacebookConfigsFromAllDatabases();
 
     for (const config of fbConfigs) {
@@ -153,6 +164,23 @@ async function main() {
     // Wait for all WhatsApp sessions to finish initialization (success or failure)
     await Promise.allSettled(whatsappPromises);
     
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('✅ WhatsApp initialization complete');
+    console.log('🔧 Starting additional services...');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    
+    // ✅ Start bot auto-reactivation scheduler
+    if (process.env.BOT_REACTIVATION_ENABLED !== 'false') {
+      try {
+        startBotReactivationScheduler();
+        console.log('✅ Bot auto-reactivation scheduler started');
+      } catch (error) {
+        console.error('❌ Error starting bot reactivation scheduler:', error);
+      }
+    } else {
+      console.log('⏭️  Bot auto-reactivation scheduler disabled (BOT_REACTIVATION_ENABLED=false)');
+    }
+    
     // 📅 Now initialize message schedulers after WhatsApp clients are ready
     //await initializeMessageSchedulers();
     
@@ -160,6 +188,10 @@ async function main() {
     setInterval(() => {
       cleanupInactiveConnections();
     }, 5 * 60 * 1000);
+    
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🎉 SERVER FULLY INITIALIZED AND READY');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     
   } catch (error) {
     console.error('❌ Error starting server:', error);

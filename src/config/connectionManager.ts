@@ -112,7 +112,6 @@ class ConnectionManager {
       
       if (conn.readyState !== 1 || 
           (stats && (now - stats.lastUsed) > inactiveThreshold)) {
-        console.log(`🧹 Cleaning up inactive connection: ${key}`);
         try {
           // ✅ FIX: Remove event listeners before closing to prevent memory leak
           const cleaner = connectionEventCleaners.get(key);
@@ -155,7 +154,7 @@ export const buildMongoConnectionOptions = () => ({
   w: 'majority' as const,
   heartbeatFrequencyMS: 15000,
   maxIdleTimeMS: 180000,
-  waitQueueTimeoutMS: 10000,
+  waitQueueTimeoutMS: 60000, // ✅ Increased to 60s (from 30s) for bulk operations with retry logic
   maxConnecting: 5,
 });
 
@@ -165,13 +164,8 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
     throw new Error(`Invalid database name: "${dbName}". Database names can only contain letters, numbers, underscores, and hyphens.`);
   }
 
-  console.log(`🔍 getDbConnection called for: "${dbName}"`);
-  console.log(`📊 Current connections keys: [${Object.keys(connections).join(', ')}]`);
-  console.log(`🔍 Checking: connections["${dbName}"] exists? ${!!connections[dbName]}, readyState: ${connections[dbName]?.readyState}`);
-  
   // ✅ Verificar si ya existe una conexión activa
   if (connections[dbName] && connections[dbName].readyState === 1) {
-    console.log(`✅ Reusing existing connection for ${dbName}`);
     const currentStats = connectionManager['connectionStats'].get(dbName);
     if (currentStats) {
       connectionManager['connectionStats'].set(dbName, {
@@ -185,7 +179,6 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
   // ✅ FIX: Mutex to prevent race condition - if another request is creating connection, wait for it
   const existingLock = connectionCreationLocks.get(dbName);
   if (existingLock) {
-    console.log(`⏳ Waiting for existing connection creation for ${dbName}...`);
     try {
       const conn = await existingLock;
       // Double-check connection is still valid
@@ -193,16 +186,13 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
         return conn;
       }
       // If connection failed, continue to create a new one
-      console.warn(`⚠️ Locked connection became invalid for ${dbName}, creating new one...`);
     } catch (error) {
-      console.warn(`⚠️ Existing connection creation failed for ${dbName}, creating new one...`);
+      // Existing connection creation failed, will create new one
     } finally {
       // Clean up the lock if it failed
       connectionCreationLocks.delete(dbName);
     }
   }
-  
-  console.log(`⚠️ No existing connection found for ${dbName}, creating new one...`);
 
   // ✅ FIX: Create promise for mutex lock BEFORE checking limits
   const connectionPromise = (async (): Promise<Connection> => {
@@ -246,9 +236,6 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
       connections[dbName] = conn;
       connectionManager.registerConnection(dbName);
       
-      console.log(`✅ New connection created for ${dbName}. Total connections: ${Object.keys(connections).length}`);
-      console.log(`📊 Active databases: ${Object.keys(connections).join(', ')}`);
-      
       // ✅ FIX: Setup event listeners with cleanup function to prevent memory leaks
       const errorHandler = async (error: Error) => {
         console.error(`❌ Database error for ${dbName}:`, error);
@@ -262,8 +249,6 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
 
         const attempts = connectionManager.incrementReconnectAttempts(dbName);
         const retryDelay = Math.min(30000, 5000 * Math.pow(2, attempts - 1));
-        
-        console.log(`⏳ Will attempt reconnection ${attempts}/${connectionManager['MAX_RECONNECT_ATTEMPTS']} for ${dbName} in ${retryDelay}ms...`);
         
         setTimeout(async () => {
           try {
@@ -288,7 +273,6 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
         }
 
         const attempts = connectionManager.incrementReconnectAttempts(dbName);
-        console.log(`⏳ Will attempt reconnection ${attempts}/${connectionManager['MAX_RECONNECT_ATTEMPTS']} for ${dbName}...`);
         
         setTimeout(async () => {
           try {
@@ -301,13 +285,11 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
       };
       
       const reconnectedHandler = () => {
-        console.log(`✅ Database reconnected for ${dbName}`);
         connectionManager.registerConnection(dbName);
         connectionManager.resetReconnectAttempts(dbName);
       };
       
       const closeHandler = () => {
-        console.log(`🔌 Database connection closed for ${dbName}`);
         connectionManager.unregisterConnection(dbName);
         delete connections[dbName];
         
@@ -356,11 +338,8 @@ export async function getDbConnection(dbName: string): Promise<Connection> {
 export async function getQuickLearningConnection(): Promise<Connection> {
   const connectionKey = 'quicklearning_enterprise';
   
-  console.log(`🔍 getQuickLearningConnection called, checking for existing connection: ${connectionKey}`);
-  
   // Verificar si ya existe una conexión activa
   if (connections[connectionKey] && connections[connectionKey].readyState === 1) {
-    console.log(`✅ Reusing existing connection for ${connectionKey}`);
     const currentStats = connectionManager['connectionStats'].get(connectionKey);
     if (currentStats) {
       connectionManager['connectionStats'].set(connectionKey, {
@@ -374,14 +353,13 @@ export async function getQuickLearningConnection(): Promise<Connection> {
   // ✅ FIX: Apply mutex to QuickLearning too
   const existingLock = connectionCreationLocks.get(connectionKey);
   if (existingLock) {
-    console.log(`⏳ Waiting for existing QuickLearning connection creation...`);
     try {
       const conn = await existingLock;
       if (conn.readyState === 1) {
         return conn;
       }
     } catch (error) {
-      console.warn(`⚠️ Existing QuickLearning connection creation failed, creating new one...`);
+      // Existing QuickLearning connection creation failed, will create new one
     } finally {
       connectionCreationLocks.delete(connectionKey);
     }
@@ -418,9 +396,6 @@ export async function getQuickLearningConnection(): Promise<Connection> {
       const conn = await mongoose.createConnection(quicklearningUri, buildMongoConnectionOptions()).asPromise();
       connections[connectionKey] = conn;
       connectionManager.registerConnection(connectionKey);
-      
-      console.log(`✅ New QuickLearning connection created: ${connectionKey}. Total connections: ${Object.keys(connections).length}`);
-      console.log(`📊 Active databases: ${Object.keys(connections).join(', ')}`);
       
       // ✅ FIX: Setup event listeners with cleanup
       const errorHandler = async (error: Error) => {
@@ -465,12 +440,10 @@ export async function getQuickLearningConnection(): Promise<Connection> {
       };
       
       const reconnectedHandler = () => {
-        console.log('✅ QuickLearning database reconnected');
         connectionManager.resetReconnectAttempts(connectionKey);
       };
       
       const closeHandler = () => {
-        console.log('🔌 QuickLearning database connection closed');
         delete connections[connectionKey];
         
         const cleaner = connectionEventCleaners.get(connectionKey);
@@ -509,17 +482,13 @@ export async function getQuickLearningConnection(): Promise<Connection> {
 
 // Función principal para obtener conexión por empresa
 export async function getConnectionByCompanySlug(companySlug?: string): Promise<Connection> {
-  console.log(`🔍 getConnectionByCompanySlug called with: "${companySlug}"`);
-  
   // Si es Quick Learning, usar su base de datos enterprise externa
   if (companySlug === "quicklearning") {
-    console.log(`🔀 Routing to getQuickLearningConnection()`);
     return getQuickLearningConnection();
   }
   
   // Para otras empresas, usar base de datos local
   const dbName = companySlug || "test";
-  console.log(`🔀 Routing to getDbConnection("${dbName}")`);
   return getDbConnection(dbName);
 }
 
@@ -582,19 +551,11 @@ export function getConnectionStats(): Record<string, any> {
 
 // ✅ Función para limpiar conexiones inactivas (ahora usa el manager)
 export function cleanupInactiveConnections(): void {
-  const beforeCount = Object.keys(connections).length;
   connectionManager.cleanupInactiveConnections();
-  const afterCount = Object.keys(connections).length;
-  
-  if (beforeCount !== afterCount) {
-    console.log(`🧹 Cleaned up ${beforeCount - afterCount} inactive connections`);
-  }
 }
 
 // ✅ FIX: Graceful shutdown - close all connections properly
 export async function closeAllConnections(): Promise<void> {
-  console.log('🛑 Closing all database connections...');
-  
   const closePromises = Object.keys(connections).map(async (key) => {
     try {
       const conn = connections[key];
@@ -622,19 +583,15 @@ export async function closeAllConnections(): Promise<void> {
   // Clear all locks and cleaners
   connectionCreationLocks.clear();
   connectionEventCleaners.clear();
-  
-  console.log('✅ All database connections closed');
 }
 
 // ✅ FIX: Setup graceful shutdown handlers
 process.on('SIGTERM', async () => {
-  console.log('📡 SIGTERM signal received');
   await closeAllConnections();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('📡 SIGINT signal received');
   await closeAllConnections();
   process.exit(0);
 });
@@ -682,7 +639,6 @@ export async function executeWithReconnection<T>(
       if (attempt < maxRetries) {
         // Esperar antes del siguiente intento (tiempo exponencial)
         const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         
         // Limpiar la conexión fallida para forzar una nueva
@@ -734,7 +690,6 @@ export async function executeQuickLearningWithReconnection<T>(
       if (attempt < maxRetries) {
         // Esperar antes del siguiente intento
         const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-        console.log(`⏳ Waiting ${waitTime}ms before QuickLearning retry...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         
         // Limpiar la conexión fallida

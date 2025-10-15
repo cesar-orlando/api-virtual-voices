@@ -8,6 +8,7 @@ import getUserModel from "../core/users/user.model";
 import getAuditLogModel from "../models/auditLog.model";
 import { attachHistoryToData } from "../plugins/auditTrail";
 import { getWhatsappChatModel } from "../models/whatsappChat.model";
+import { trackBotDeactivation } from "../services/internal/botAutoReactivation.service";
 
 // Helper function to get phone fields based on company
 function getPhoneFieldsForCompany(c_name: string): string[] {
@@ -876,6 +877,22 @@ export const updateDynamicRecord = async (req: Request, res: Response) => {
     if (!existingRecord) {
       res.status(404).json({ message: "Record not found" });
       return;
+    }
+
+    if (data.ia == false && existingRecord.tableSlug == 'prospectos') {
+      try {
+        
+        await trackBotDeactivation(
+          existingRecord._id.toString(),
+          c_name,
+          {
+            inactivityThreshold: Number(process.env.BOT_REACTIVATION_TIMEOUT) || 60, // Minutes before reactivation
+            autoReactivationEnabled: true
+          }
+        );
+      } catch (err) {
+        console.error('⚠️ Failed to track bot deactivation:', err);
+      }
     }
 
     // Extraer tableSlug de los datos si está presente

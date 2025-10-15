@@ -28,6 +28,7 @@ import quickLearningExcelRoutes from "./routes/quicklearning/excel.routes";
 import emailRoutes from "./routes/email.routes";
 import emailVerificationRoutes from "./routes/emailVerification.routes";
 import globalSMTPRoutes from "./routes/globalSMTP.routes";
+import botReactivationRoutes from "./routes/botReactivation.routes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -223,6 +224,9 @@ app.use('/api/logistics', logisticsRoutes);
 
 // Rutas de Contpaq - Simple Green
 app.use('/api/contpaq', contpaqRoutes);
+
+// Rutas de Bot Auto-Reactivation
+app.use('/api/bot-reactivation', botReactivationRoutes);
 
 // Rutas de Voice Calls (Desvío de llamadas con IA)
 app.use('/voice', voiceRoutes);

@@ -15,11 +15,37 @@ export const createElevenLabsAgent = async (req: Request, res: Response) => {
     if (agentData.agentId) {
       console.log('🔄 Importando agente existente de ElevenLabs:', agentData.agentId);
       
-      // 1. Verificar que el agente existe en ElevenLabs
+      // 1. Verificar si ya existe localmente
+      const existingAgent = await ElevenLabsAgent.findOne({ 
+        agentId: agentData.agentId, 
+        companySlug: agentData.companySlug 
+      });
+      
+      if (existingAgent) {
+        console.log('⚠️ Agente ya existe localmente:', existingAgent._id);
+        
+        // 2. Obtener datos actualizados de ElevenLabs
+        const elevenLabsData = await service.getAgent(agentData.agentId);
+        console.log('📥 Datos actualizados de ElevenLabs:', elevenLabsData.name);
+        
+        return res.status(200).json({
+          message: 'Agent already exists locally',
+          agent: {
+            _id: existingAgent._id,
+            agentId: existingAgent.agentId,
+            companySlug: existingAgent.companySlug,
+            createdAt: existingAgent.createdAt
+          },
+          elevenLabsData: elevenLabsData,
+          alreadyExists: true
+        });
+      }
+      
+      // 3. Verificar que el agente existe en ElevenLabs
       const elevenLabsData = await service.getAgent(agentData.agentId);
       console.log('📥 Agente verificado en ElevenLabs:', elevenLabsData.name);
       
-      // 2. Crear solo referencia local (sin duplicar datos)
+      // 4. Crear solo referencia local (sin duplicar datos)
       const localAgent = new ElevenLabsAgent({
         agentId: agentData.agentId,
         companySlug: agentData.companySlug

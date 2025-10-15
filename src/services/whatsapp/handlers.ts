@@ -9,6 +9,7 @@ import getTableModel from '../../models/table.model';
 import getRecordModel from '../../models/record.model';
 import getIaConfigModel from '../../models/iaConfig.model';
 import { MessagingAgentService } from '../agents/MessagingAgentService';
+import { trackBotDeactivation } from '../internal/botAutoReactivation.service';
 import * as fs from 'node:fs';
 
 // Track messages sent by our bot so we don't misclassify them as human outbound
@@ -197,6 +198,21 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       }
       await prospecto?.updateOne({ $set: { 'data.ia': false } }).setOptions({ context: 'query', auditContext, $locals: { auditContext } } as any);
       
+      if (prospecto && prospecto._id) {
+        try {
+          
+          await trackBotDeactivation(
+            prospecto._id.toString(),
+            company,
+            {
+              inactivityThreshold: Number(process.env.BOT_REACTIVATION_TIMEOUT) || 60, // Minutes before reactivation
+              autoReactivationEnabled: true
+            }
+          );
+        } catch (err) {
+          console.error('⚠️ Failed to track bot deactivation:', err);
+        }
+      }
       
       return;
     }

@@ -24,9 +24,11 @@ import quickLearningTwilioRoutes from "./routes/quicklearning/twilioRoutes";
 import twilioTestRoutes from "./routes/quicklearning/twilioTestRoutes";
 import twilioWebhookRoutes from "./routes/quicklearning/twilioWebhookRoutes";
 import quickLearningMetricsRoutes from "./routes/quicklearning/metricsRoutes";
+import quickLearningExcelRoutes from "./routes/quicklearning/excel.routes";
 import emailRoutes from "./routes/email.routes";
 import emailVerificationRoutes from "./routes/emailVerification.routes";
 import globalSMTPRoutes from "./routes/globalSMTP.routes";
+import botReactivationRoutes from "./routes/botReactivation.routes";
 
 // Swagger configuration
 import { swaggerUi, specs } from "./config/swagger";
@@ -38,6 +40,7 @@ import { detectCompanyFromToken } from "./core/auth/companyMiddleware";
 import elevenLabsRoutes from "./routes/elevenLabs.routes";
 import logisticsRoutes from "./routes/logistics.routes";
 import contpaqRoutes from "./contpaq/routes/contpaq.routes";
+import voiceRoutes from "./routes/voice.routes";
 
 const app = express();
 
@@ -192,6 +195,9 @@ app.use('/api/quicklearning/twilio', quickLearningTwilioRoutes);
 // Rutas de métricas para Quick Learning (mantener para compatibilidad)
 app.use('/api/quicklearning', quickLearningMetricsRoutes);
 
+// Rutas de Excel para Quick Learning
+app.use('/api/quicklearning/excel', quickLearningExcelRoutes);
+
 // Rutas de prueba para el nuevo sistema de agentes
 app.use('/api/test', twilioTestRoutes);
 
@@ -218,6 +224,12 @@ app.use('/api/logistics', logisticsRoutes);
 
 // Rutas de Contpaq - Simple Green
 app.use('/api/contpaq', contpaqRoutes);
+
+// Rutas de Bot Auto-Reactivation
+app.use('/api/bot-reactivation', botReactivationRoutes);
+
+// Rutas de Voice Calls (Desvío de llamadas con IA)
+app.use('/voice', voiceRoutes);
 
 // Ruta de prueba para ElevenLabs sin parámetros dinámicos
 app.get('/api/elevenlabs-test', (req, res) => {

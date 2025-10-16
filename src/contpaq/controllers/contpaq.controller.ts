@@ -291,4 +291,144 @@ export class ContpaqController {
       });
     }
   }
+
+  /**
+   * Obtener reporte de ventas por vendedor
+   */
+  async getSalesReport(req: Request, res: Response): Promise<void> {
+    try {
+      const { fechaInicio, fechaFin, vendedor, incluirConversiones } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/sales-report?`;
+      const params = new URLSearchParams();
+      
+      if (fechaInicio) params.append('fechaInicio', fechaInicio as string);
+      if (fechaFin) params.append('fechaFin', fechaFin as string);
+      if (vendedor) params.append('vendedor', vendedor as string);
+      if (incluirConversiones) params.append('incluirConversiones', incluirConversiones as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo reporte de ventas desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
+
+  /**
+   * Obtener métricas comparativas de ventas (2024 vs 2025)
+   */
+  async getSalesMetrics(req: Request, res: Response): Promise<void> {
+    try {
+      const { incluirConversiones } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/sales-metrics?`;
+      const params = new URLSearchParams();
+      
+      if (incluirConversiones) params.append('incluirConversiones', incluirConversiones as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo métricas de ventas desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
+
+  /**
+   * Obtener top clientes por período
+   */
+  async getTopClients(req: Request, res: Response): Promise<void> {
+    try {
+      const { fechaInicio, fechaFin, limit, incluirConversiones } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/top-clients?`;
+      const params = new URLSearchParams();
+      
+      if (fechaInicio) params.append('fechaInicio', fechaInicio as string);
+      if (fechaFin) params.append('fechaFin', fechaFin as string);
+      if (limit) params.append('limit', limit as string);
+      if (incluirConversiones) params.append('incluirConversiones', incluirConversiones as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo top clientes desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
+
+  /**
+   * Obtener top productos por período
+   */
+  async getTopProducts(req: Request, res: Response): Promise<void> {
+    try {
+      const { fechaInicio, fechaFin, limit, incluirConversiones } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/top-products?`;
+      const params = new URLSearchParams();
+      
+      if (fechaInicio) params.append('fechaInicio', fechaInicio as string);
+      if (fechaFin) params.append('fechaFin', fechaFin as string);
+      if (limit) params.append('limit', limit as string);
+      if (incluirConversiones) params.append('incluirConversiones', incluirConversiones as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo top productos desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
+
+  /**
+   * Obtener comparativas mensuales de ventas
+   */
+  async getSalesComparison(req: Request, res: Response): Promise<void> {
+    try {
+      const { año, incluirConversiones } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/sales-comparison?`;
+      const params = new URLSearchParams();
+      
+      if (año) params.append('año', año as string);
+      if (incluirConversiones) params.append('incluirConversiones', incluirConversiones as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo comparativas de ventas desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
 }

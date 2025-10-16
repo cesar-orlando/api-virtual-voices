@@ -21,6 +21,13 @@ router.get('/sales/date-range', (req, res) => contpaqController.getSalesByDateRa
 // Reporte de cobranza
 router.get('/cobranza', (req, res) => contpaqController.getCobranza(req, res));
 
+// Reportes de ventas
+router.get('/sales-report', (req, res) => contpaqController.getSalesReport(req, res));
+router.get('/sales-metrics', (req, res) => contpaqController.getSalesMetrics(req, res));
+router.get('/top-clients', (req, res) => contpaqController.getTopClients(req, res));
+router.get('/top-products', (req, res) => contpaqController.getTopProducts(req, res));
+router.get('/sales-comparison', (req, res) => contpaqController.getSalesComparison(req, res));
+
 // Ruta de información
 router.get('/', (req, res) => {
   res.json({
@@ -37,7 +44,12 @@ router.get('/', (req, res) => {
       productAnalysis: 'GET /api/contpaq/product-analysis/:codigo',
       productHistory: 'GET /api/contpaq/product-history/:codigo',
       salesByDateRange: 'GET /api/contpaq/sales/date-range?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&codigoProducto=CODIGO',
-      cobranza: 'GET /api/contpaq/cobranza?asesor=ASESOR&estado=ESTADO&cliente=CLIENTE&fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD'
+      cobranza: 'GET /api/contpaq/cobranza?asesor=ASESOR&estado=ESTADO&cliente=CLIENTE&fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&incluirConversiones=true',
+      salesReport: 'GET /api/contpaq/sales-report?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&vendedor=ID&incluirConversiones=true',
+      salesMetrics: 'GET /api/contpaq/sales-metrics?incluirConversiones=true',
+      topClients: 'GET /api/contpaq/top-clients?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&limit=10&incluirConversiones=true',
+      topProducts: 'GET /api/contpaq/top-products?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&limit=10&incluirConversiones=true',
+      salesComparison: 'GET /api/contpaq/sales-comparison?año=2025&incluirConversiones=true'
     }
   });
 });

@@ -1555,10 +1555,252 @@ Los datos se actualizan automáticamente desde Contpaq cada vez que se hace una 
 
 ---
 
+## **📊 ENDPOINTS DE REPORTES DE VENTAS**
+
+### **1. Reporte de Ventas por Vendedor**
+**Endpoint:** `GET /api/contpaq/sales-report`
+
+**Parámetros:**
+- `fechaInicio` (opcional): Fecha de inicio en formato YYYY-MM-DD
+- `fechaFin` (opcional): Fecha de fin en formato YYYY-MM-DD
+- `vendedor` (opcional): ID del vendedor específico
+- `incluirConversiones` (opcional): true/false para incluir conversiones de moneda
+
+**Ejemplo de uso:**
+```javascript
+const response = await fetch('/api/contpaq/sales-report?fechaInicio=2025-01-01&fechaFin=2025-12-31&incluirConversiones=true');
+const data = await response.json();
+```
+
+**Respuesta:**
+```json
+{
+  "success": true,
+  "data": {
+    "vendedores": [
+      {
+        "idVendedor": 42,
+        "nombreVendedor": "Gerson Briceño T",
+        "totalFacturas": 51,
+        "totalVentas": 723351,
+        "ventasPesos": 671393.62,
+        "ventasUSD": 51957.38,
+        "promedioVenta": 14183.35,
+        "primeraVenta": "2025-01-07T00:00:00.000Z",
+        "ultimaVenta": "2025-10-10T00:00:00.000Z",
+        "ventasUSDEnPesos": 1009596.20,
+        "totalEnPesos": 1680989.82,
+        "tipoCambioUsado": 19.43
+      }
+    ],
+    "resumen": {
+      "totalVendedores": 8,
+      "totalFacturas": 134,
+      "totalVentas": 1578718.06,
+      "totalVentasPesos": 1511258.02,
+      "totalVentasUSD": 67460.04,
+      "totalEnPesos": 2822090.09
+    }
+  }
+}
+```
+
+### **2. Métricas Comparativas de Ventas (2024 vs 2025)**
+**Endpoint:** `GET /api/contpaq/sales-metrics`
+
+**Parámetros:**
+- `incluirConversiones` (opcional): true/false para incluir conversiones de moneda
+
+**Ejemplo de uso:**
+```javascript
+const response = await fetch('/api/contpaq/sales-metrics?incluirConversiones=true');
+const data = await response.json();
+```
+
+**Respuesta:**
+```json
+{
+  "success": true,
+  "data": {
+    "metricas": [
+      {
+        "año": 2024,
+        "totalFacturas": 219,
+        "totalVentas": 2956760.63,
+        "ventasPesos": 2846585.95,
+        "ventasUSD": 110174.68,
+        "promedioVenta": 13501.19,
+        "clientesUnicos": 84,
+        "vendedoresActivos": 8,
+        "ventasUSDEnPesos": 2016111.37,
+        "totalEnPesos": 4862697.32,
+        "tipoCambioPromedio": 18.30
+      },
+      {
+        "año": 2025,
+        "totalFacturas": 134,
+        "totalVentas": 1578718.06,
+        "ventasPesos": 1511258.02,
+        "ventasUSD": 67460.04,
+        "promedioVenta": 11781.48,
+        "clientesUnicos": 71,
+        "vendedoresActivos": 8,
+        "ventasUSDEnPesos": 1310832.07,
+        "totalEnPesos": 2822090.09,
+        "tipoCambioPromedio": 19.43
+      }
+    ],
+    "crecimiento": {
+      "porcentaje": -41.96,
+      "diferencia": -2040607.23
+    }
+  }
+}
+```
+
+### **3. Top Clientes por Período**
+**Endpoint:** `GET /api/contpaq/top-clients`
+
+**Parámetros:**
+- `fechaInicio` (opcional): Fecha de inicio en formato YYYY-MM-DD
+- `fechaFin` (opcional): Fecha de fin en formato YYYY-MM-DD
+- `limit` (opcional): Número de clientes a retornar (default: 10)
+- `incluirConversiones` (opcional): true/false para incluir conversiones de moneda
+
+**Ejemplo de uso:**
+```javascript
+const response = await fetch('/api/contpaq/top-clients?fechaInicio=2025-01-01&fechaFin=2025-12-31&limit=5&incluirConversiones=true');
+const data = await response.json();
+```
+
+**Respuesta:**
+```json
+{
+  "success": true,
+  "data": {
+    "clientes": [
+      {
+        "codigoCliente": "PRO450",
+        "nombreCliente": "MAQUILADORA Y PROCESOS CESARE SA DE C.V",
+        "rfc": "MPC201222349",
+        "totalPedidos": 0,
+        "totalFacturas": 0,
+        "montoTotal": 2302277.49,
+        "montoFacturas": 0,
+        "montoPedidos": 0,
+        "ultimaCompra": "2025-10-10T00:00:00.000Z",
+        "asesor": "(Ninguno)",
+        "ticketPromedio": 143892.34
+      }
+    ],
+    "total": 847,
+    "filtros": {
+      "fechaInicio": "2025-01-01",
+      "fechaFin": "2025-12-31"
+    }
+  }
+}
+```
+
+### **4. Top Productos por Período**
+**Endpoint:** `GET /api/contpaq/top-products`
+
+**Parámetros:**
+- `fechaInicio` (opcional): Fecha de inicio en formato YYYY-MM-DD
+- `fechaFin` (opcional): Fecha de fin en formato YYYY-MM-DD
+- `limit` (opcional): Número de productos a retornar (default: 10)
+- `incluirConversiones` (opcional): true/false para incluir conversiones de moneda
+
+**Ejemplo de uso:**
+```javascript
+const response = await fetch('/api/contpaq/top-products?fechaInicio=2025-01-01&fechaFin=2025-12-31&limit=5&incluirConversiones=true');
+const data = await response.json();
+```
+
+**Respuesta:**
+```json
+{
+  "success": true,
+  "data": {
+    "productos": [
+      {
+        "codigoProducto": "0600000119055",
+        "nombreProducto": "SIMPLE GREEN CRYSTAL, Tambor de 208 Litros",
+        "totalPiezas": 84,
+        "totalVentas": 642949.72,
+        "ventasPesos": 615023.88,
+        "ventasUSD": 27925.84,
+        "porcentaje": 52.92,
+        "porcentajeUSD": 70.47,
+        "precioPromedio": 13118.48,
+        "clientesUnicos": 17,
+        "ventasUSDEnPesos": 542633.63,
+        "totalEnPesos": 1157657.51,
+        "tipoCambioUsado": 19.43
+      }
+    ],
+    "resumen": {
+      "totalProductos": 5,
+      "totalVendido": 374,
+      "totalVentas": 1214888.18,
+      "totalVentasUSD": 39625.62,
+      "totalEnPesos": 1945237.40
+    }
+  }
+}
+```
+
+### **5. Comparativas Mensuales de Ventas**
+**Endpoint:** `GET /api/contpaq/sales-comparison`
+
+**Parámetros:**
+- `año` (opcional): Año a analizar (default: 2025)
+- `incluirConversiones` (opcional): true/false para incluir conversiones de moneda
+
+**Ejemplo de uso:**
+```javascript
+const response = await fetch('/api/contpaq/sales-comparison?año=2025&incluirConversiones=true');
+const data = await response.json();
+```
+
+**Respuesta:**
+```json
+{
+  "success": true,
+  "data": {
+    "meses": [
+      {
+        "mes": 1,
+        "nombreMes": "January",
+        "totalFacturas": 15,
+        "totalVentas": 180000,
+        "ventasPesos": 150000,
+        "ventasUSD": 30000,
+        "promedioVenta": 12000,
+        "clientesUnicos": 12,
+        "ventasUSDEnPesos": 582000,
+        "totalEnPesos": 732000,
+        "tipoCambioPromedio": 19.40
+      }
+    ],
+    "totalesAnuales": {
+      "totalFacturas": 134,
+      "totalVentas": 1578718.06,
+      "totalVentasPesos": 1511258.02,
+      "totalVentasUSD": 67460.04,
+      "totalEnPesos": 2822090.09
+    },
+    "año": 2025
+  }
+}
+```
+
+---
+
 ## 📞 **SOPORTE**
 
 Para cualquier duda o problema con la API, contactar al equipo de desarrollo.
 
-**Versión:** 5.0.0  
-**Última actualización:** Octubre 2025  
+**Versión:** 6.0.0  
+**Última actualización:** Diciembre 2025  
 **Estado:** ✅ Producción

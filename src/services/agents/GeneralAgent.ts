@@ -38,7 +38,6 @@ export class GeneralAgent extends BaseAgent {
         instructions: this.getSystemInstructions(),
         tools: dynamicTools
       });
-      console.log(`✅ GeneralAgent initialized for ${this.company} with ${dynamicTools.length} tools`);
     } catch (error) {
       console.error(`❌ Error initializing GeneralAgent for ${this.company}:`, error);
       throw error;
@@ -47,7 +46,6 @@ export class GeneralAgent extends BaseAgent {
 
   private async loadCustomPrompt(): Promise<void> {
     try {
-      console.log(`🔧 Loading custom prompt for ${this.company}`);
       const conn = await this.getConnection();
       const IaConfig = getIaConfigModel(conn);
       const Company = getCompanyModel(conn);
@@ -71,7 +69,6 @@ export class GeneralAgent extends BaseAgent {
         this.agentContext.timezone = config.timezone;
         this.agentContext.type = config.type;
       } else {
-        console.log(`⚠️ No custom prompt found for ${this.company}, using fallback`);
         this.customPrompt = null;
         this.agentContext.timezone = 'America/Mexico_City';
         this.agentContext.type = null;
@@ -96,9 +93,6 @@ export class GeneralAgent extends BaseAgent {
       // Convertir a ITool[]
       this.companyTools = tools as unknown as ITool[];
       
-      this.companyTools.forEach(tool => {
-        console.log(`  - ${tool.name}: ${tool.description}`);
-      });
     } catch (error) {
       console.error(`❌ Error loading tools for ${this.company}:`, error);
       this.companyTools = [];
@@ -726,9 +720,7 @@ Tienes acceso a herramientas para programar seguimientos automáticos:
       
       return this.customPrompt + this.getSchedulingInstructions();
     }
-    
-    console.log(`🔧 Using fallback prompt for ${this.company}`);
-    
+        
     // Prompt genérico para otras empresas
     return `Eres un asistente virtual que ayuda a los clientes con sus consultas. Proporciona respuestas claras y útiles. Si no sabes la respuesta, di que no lo sabes y que lo vas a redirigir a un asesor. Usa las herramientas disponibles para obtener información adicional si es necesario.` + this.getSchedulingInstructions();
   }

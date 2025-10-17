@@ -211,12 +211,6 @@ async function cleanupOldAttachments(): Promise<void> {
         }
       }
     }
-
-    if (deletedFiles > 0 || deletedFolders > 0) {
-      console.log(`✅ Cleanup completed: ${deletedFiles} files and ${deletedFolders} folders removed`);
-    } else {
-      console.log('✅ Cleanup completed: No old files found to delete');
-    }
   } catch (error) {
     console.error(`❌ Error during cleanup: ${error}`);
   }

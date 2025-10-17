@@ -41,6 +41,7 @@ import elevenLabsRoutes from "./routes/elevenLabs.routes";
 import logisticsRoutes from "./routes/logistics.routes";
 import contpaqRoutes from "./contpaq/routes/contpaq.routes";
 import voiceRoutes from "./routes/voice.routes";
+import elevenLabsToolsRoutes from "./routes/elevenLabsTools.routes";
 
 const app = express();
 
@@ -230,6 +231,9 @@ app.use('/api/bot-reactivation', botReactivationRoutes);
 
 // Rutas de Voice Calls (Desvío de llamadas con IA)
 app.use('/voice', voiceRoutes);
+
+// ElevenLabs Tools webhooks
+app.use('/api/elevenlabs-tools', elevenLabsToolsRoutes);
 
 // Ruta de prueba para ElevenLabs sin parámetros dinámicos
 app.get('/api/elevenlabs-test', (req, res) => {

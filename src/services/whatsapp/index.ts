@@ -63,7 +63,6 @@ const getAuthDir = () => {
   // En local, siempre usar la ruta local
   if (process.env.NODE_ENV === 'development' || !process.env.RENDER) {
     const localPath = path.join(process.cwd(), '.wwebjs_auth');
-    console.log(`🏠 Entorno local, usando ruta: ${localPath}`);
     return localPath;
   }
   
@@ -148,7 +147,6 @@ export const startWhatsappBot = (sessionName: string, company: string, user_id: 
   return new Promise<Client>((resolve, reject) => {
 
     async function cleanUpResources(reason: string) {
-      console.log(`🧹 Limpiando recursos para ${clientKey} por: ${reason}`);
       if (clients[clientKey]) {
         try {
           await clients[clientKey].destroy();

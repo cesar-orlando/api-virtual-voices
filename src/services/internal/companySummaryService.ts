@@ -12,7 +12,6 @@ export class CompanySummaryService {
     let agent: GeneralAgent | null = null;
     
     try {
-      console.log(`🕒 Updating summary for company: ${companyName}`);
 
       const agentContext = { sessionId: 'company_summary_update', phoneUser: null };
 
@@ -22,7 +21,6 @@ export class CompanySummaryService {
 
       await agent.updateCompanySummary();
 
-      console.log(`✅ Company summary update completed for: ${companyName}`);
       return true;
     } catch (error) {
       console.error(`❌ Error updating company summary for ${companyName}:`, error);
@@ -55,7 +53,6 @@ export class CompanySummaryService {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
-      console.log(`✅ Company analysis batch complete. Success: ${results.success.length}, Failed: ${results.failed.length}`);
     } catch (error) {
       console.error(`❌ Error updating all company summaries:`, error);
     }
@@ -73,12 +70,9 @@ export class CompanySummaryService {
     await this.updateAllCompanySummaries();
     
     setInterval(async () => {
-      console.log('🕒 Starting scheduled company analysis...');
       const result = await this.updateAllCompanySummaries();
-      console.log(`✅ Scheduled company analysis complete. Success: ${result.success.length}, Failed: ${result.failed.length}`);
     }, updateInterval);
 
-    console.log('📅 Scheduled company analysis every 6 hours');
   }
 
   /**

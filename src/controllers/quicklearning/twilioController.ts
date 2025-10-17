@@ -908,6 +908,11 @@ function detectPredefinedMessage(message: string | undefined): { medio: string; 
       message: "Más info de los cursos, los vi en tik tok.",
       medio: "TIKTOK",
       campana: "TIKTOK"
+    },
+    {
+      message: "¡Hola! Tengo un folleto y me gustaría saber más sobre los cursos.",
+      medio: "META",
+      campana: "SMART"
     }
   ];
 

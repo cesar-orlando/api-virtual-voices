@@ -558,7 +558,6 @@ IMPORTANTE:
    */
   public async updateCompanySummary(): Promise<void> {
     try {
-      console.log(`🔄 Updating company-wide summary for ${this.company}...`);
       
       const conn = await this.getConnection();
       
@@ -567,7 +566,6 @@ IMPORTANTE:
       
       const companyDoc = await CompanyModel.findOne();
       if (!companyDoc) {
-        console.warn(`⚠️  Company ${this.company} not found, skipping company summary`);
         return;
       }
 
@@ -583,7 +581,6 @@ IMPORTANTE:
       .limit(50); // Process up to 50 recent chats
 
       if (recentChats.length === 0) {
-        console.log('No new chats to process for company summary');
         return;
       }
 
@@ -643,7 +640,6 @@ IMPORTANTE:
       companyDoc.conversationSummary.lastUpdated = new Date();
 
       await companyDoc.save();
-      console.log(`✅ Company summary updated for ${this.company}`);
 
     } catch (error) {
       console.error(`❌ Error updating company summary for ${this.company}:`, error);

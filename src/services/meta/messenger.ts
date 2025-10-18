@@ -103,7 +103,6 @@ async function processMessengerEntry(entry: any, res: any) {
 
   if (webhookEvent.message.is_echo) {
     // Mensaje enviado por la página (outbound)
-    console.log(`Mensaje ENVIADO por la página (${pageId}): ${messageText}`);
     res.status(200).send('EVENT_RECEIVED');
     return;
   }

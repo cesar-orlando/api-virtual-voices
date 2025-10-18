@@ -187,10 +187,8 @@ export async function handleIncomingMessage(message: Message, client: Client, co
       // Aquí podrías emitir un evento para el agente humano si lo deseas
       return;
     } else if (!latestMessage) {
-      console.log(`📤 Mensaje enviado por el bot, no se requiere respuesta`);
       return;
     } else if (latestMessage.direction === "outbound") {
-      console.log(`📤 Mensaje enviado por empleado, apagando IA`);
       auditContext = {
         _updatedByUser: { id: 'Bot', name: session?.IA.name },
         _updatedBy: session?.IA.name,
@@ -234,7 +232,7 @@ async function handleDelayedResponse(
   existingRecord: any,
   conn: Connection
 ) {
-  const DELAY_MS = 15000; // 15 segundos para mejor responsividad
+  const DELAY_MS = 10000; // 10 segundos para mejor responsividad
 
   // Get the chat to send typing indicator
   const chat = await message.getChat();

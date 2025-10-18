@@ -190,17 +190,17 @@ export class ElevenLabsToolsController {
   private getTransferConfig() {
     return {
       // Número por defecto
-      default: '+523131068685',
+      default: '+523311970304',
       
       // Mapeo de motivos/intenciones a números específicos
       motivos: {
         'visita': {
-          phone: '+523131068685',
+          phone: '+523311970304',
           description: 'Asesor tapatío especializado en visitas',
           message: 'Con mucho gusto, coordino su visita con un asesor tapatío especializado.'
         },
         'foto': {
-          phone: '+523131068685',
+          phone: '+523311970304',
           description: 'Asesor tapatío especializado en visitas',
           message: 'Con mucho gusto, coordino su visita con un asesor tapatío especializado.'
         },
@@ -225,22 +225,22 @@ export class ElevenLabsToolsController {
           message: 'Con gusto le transfiero al área de recursos humanos.'
         },
         'queja': {
-          phone: '+523131068685',
+          phone: '+523311970304',
           description: 'Asesor especializado',
           message: 'Para darle la mejor atención, le conecto con un asesor especializado.'
         },
         'duda': {
-          phone: '+523131068685',
+          phone: '+523311970304',
           description: 'Asesor especializado',
           message: 'Para darle la mejor atención, le conecto con un asesor especializado.'
         },
         'general': {
-          phone: '+523131068685',
+          phone: '+523311970304',
           description: 'Asesor general',
           message: 'Con mucho gusto le conecto con un asesor.'
         },
         'marcos': {
-          phone: '+523359800808',
+          phone: '+523311970304',
           description: 'Asesor general',
           message: 'Con mucho gusto le conecto con un asesor.'
         }

@@ -238,7 +238,6 @@ export class MessagingAgentService {
       if (typeof sessionId === 'string' && isValidObjectId(sessionId) && company && company !== 'quicklearning') {
         chatHistory = await WhatsappChat.findOne({ phone: phoneUser, 'session.id': sessionId });
       } else if (sessionId) {
-        console.log(`ℹ️ WhatsApp chat history fallback used for ${phoneUser} (sessionId not found)`);
         chatHistory = await WhatsappChat.findOne({ phone: phoneUser }).sort({ updatedAt: -1 });
       }
 

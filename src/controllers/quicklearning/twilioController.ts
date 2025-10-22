@@ -1128,7 +1128,7 @@ async function transcribeAudio(audioUrl: string): Promise<string> {
  */
 export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { phone, message } = req.body;
+    const { phone, message, mediaUrl } = req.body;
 
     if (!phone || !message) {
       res.status(400).json({ error: "Phone and message are required" });
@@ -1138,6 +1138,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const result = await twilioService.sendMessage({
       to: phone,
       body: message,
+      mediaUrl: mediaUrl || undefined, // Array de URLs de imágenes/videos/documentos
     });
 
     if (result.success) {
@@ -1184,7 +1185,8 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
         body: message,
         respondedBy: "asesor" as const,
         twilioSid: result.messageId,
-        messageType: "text" as const,
+        messageType: (mediaUrl && mediaUrl.length > 0) ? "image" as const : "text" as const, // Detectar tipo según si tiene media
+        mediaUrl: mediaUrl || [], // Incluir URLs de media
         msgId: result.messageId
       };
       
@@ -1221,6 +1223,237 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     }
   } catch (error) {
     console.error("❌ Error enviando mensaje:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/**
+ * Enviar imagen o media (específico para WhatsApp)
+ */
+export const sendMediaMessage = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { phone, message, mediaUrl, mediaType = "image" } = req.body;
+
+    if (!phone || !mediaUrl) {
+      res.status(400).json({ error: "Phone and mediaUrl are required" });
+      return;
+    }
+
+    // mediaUrl debe ser un array
+    const mediaUrls = Array.isArray(mediaUrl) ? mediaUrl : [mediaUrl];
+
+    const result = await twilioService.sendMessage({
+      to: phone,
+      body: message || "", // El mensaje puede ser vacío si solo quieres enviar la imagen
+      mediaUrl: mediaUrls,
+    });
+
+    if (result.success) {
+      // Actualizar el registro del cliente en la tabla dinámica
+      const conn = await getConnectionByCompanySlug("quicklearning");
+      const RecordModel = getRecordModel(conn);
+      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
+      const mediaMessage = message || `[${mediaType.toUpperCase()}]`;
+      let updated = false;
+      for (const tableSlug of tableSlugs) {
+        const updateResult = await RecordModel.updateOne(
+          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
+          { $set: { "data.ultimo_mensaje": mediaMessage, "data.lastMessageDate": new Date() } }
+        );
+        if (updateResult.modifiedCount > 0) {
+          updated = true;
+          break;
+        }
+      }
+
+      // Guardar el mensaje en la colección de chats
+      const QuickLearningChat = getQuickLearningChatModel(conn);
+      let chat = await QuickLearningChat.findOneAndUpdate(
+        { phone },
+        {
+          $setOnInsert: {
+            phone,
+            profileName: "Sistema",
+            conversationStart: new Date(),
+            aiEnabled: false,
+            messages: [],
+            tableSlug: 'prospectos',
+            status: 'active'
+          }
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true
+        }
+      );
+      
+      const currentDate = new Date();
+      const mediaAsesorMessage = {
+        direction: "outbound-api" as const,
+        body: mediaMessage,
+        respondedBy: "asesor" as const,
+        twilioSid: result.messageId,
+        messageType: mediaType as "text" | "image" | "audio" | "video" | "location" | "document" | "sticker",
+        mediaUrl: mediaUrls,
+        msgId: result.messageId
+      };
+      
+      // Add media message and update lastMessage atomically to prevent version conflicts
+      const updatedChat = await QuickLearningChat.findByIdAndUpdate(
+        chat._id,
+        {
+          $push: { messages: mediaAsesorMessage },
+          $set: {
+            'lastMessage.body': mediaMessage,
+            'lastMessage.date': currentDate,
+            'lastMessage.respondedBy': "asesor"
+          }
+        },
+        { new: true }
+      );
+      
+      // Emitir evento genérico de actualización de chat
+      try {
+        io.emit(`whatsapp-message-quicklearning`, updatedChat);
+      } catch (e) {
+        console.error("❌ Error emitting socket event:", e);
+      }
+
+      res.status(200).json({
+        success: true,
+        messageId: result.messageId,
+        message: "Media message sent successfully",
+        mediaUrls: mediaUrls,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error enviando media:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/**
+ * Enviar imagen/media subiendo el archivo directamente (todo-en-uno)
+ * El archivo se sube a S3 y luego se envía por WhatsApp
+ */
+export const uploadAndSendMedia = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { phone, message, mediaType = "image" } = req.body;
+    const file = req.file as Express.Multer.File & { location: string; key: string };
+
+    if (!phone) {
+      res.status(400).json({ error: "Phone is required" });
+      return;
+    }
+
+    if (!file || !file.location) {
+      res.status(400).json({ error: "File is required" });
+      return;
+    }
+
+    // La URL pública ya está disponible gracias a multer-s3
+    const publicMediaUrl = file.location;
+    console.log(`📤 Archivo subido a S3: ${publicMediaUrl}`);
+
+    // Enviar por WhatsApp
+    const result = await twilioService.sendMessage({
+      to: phone,
+      body: message || "",
+      mediaUrl: [publicMediaUrl],
+    });
+
+    if (result.success) {
+      // Actualizar el registro del cliente en la tabla dinámica
+      const conn = await getConnectionByCompanySlug("quicklearning");
+      const RecordModel = getRecordModel(conn);
+      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
+      const mediaMessage = message || `[${mediaType.toUpperCase()}]`;
+      let updated = false;
+      for (const tableSlug of tableSlugs) {
+        const updateResult = await RecordModel.updateOne(
+          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
+          { $set: { "data.ultimo_mensaje": mediaMessage, "data.lastMessageDate": new Date() } }
+        );
+        if (updateResult.modifiedCount > 0) {
+          updated = true;
+          break;
+        }
+      }
+
+      // Guardar el mensaje en la colección de chats
+      const QuickLearningChat = getQuickLearningChatModel(conn);
+      let chat = await QuickLearningChat.findOneAndUpdate(
+        { phone },
+        {
+          $setOnInsert: {
+            phone,
+            profileName: "Sistema",
+            conversationStart: new Date(),
+            aiEnabled: false,
+            messages: [],
+            tableSlug: 'prospectos',
+            status: 'active'
+          }
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true
+        }
+      );
+      
+      const currentDate = new Date();
+      const mediaAsesorMessage = {
+        direction: "outbound-api" as const,
+        body: mediaMessage,
+        respondedBy: "asesor" as const,
+        twilioSid: result.messageId,
+        messageType: mediaType as "text" | "image" | "audio" | "video" | "location" | "document" | "sticker",
+        mediaUrl: [publicMediaUrl],
+        msgId: result.messageId
+      };
+      
+      const updatedChat = await QuickLearningChat.findByIdAndUpdate(
+        chat._id,
+        {
+          $push: { messages: mediaAsesorMessage },
+          $set: {
+            'lastMessage.body': mediaMessage,
+            'lastMessage.date': currentDate,
+            'lastMessage.respondedBy': "asesor"
+          }
+        },
+        { new: true }
+      );
+      
+      // Emitir evento genérico de actualización de chat
+      try {
+        io.emit(`whatsapp-message-quicklearning`, updatedChat);
+      } catch (e) {
+        console.error("❌ Error emitting socket event:", e);
+      }
+
+      res.status(200).json({
+        success: true,
+        messageId: result.messageId,
+        message: "Media uploaded and sent successfully",
+        mediaUrl: publicMediaUrl,
+        s3Key: file.key,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error subiendo y enviando media:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };

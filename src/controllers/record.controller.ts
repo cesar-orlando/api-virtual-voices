@@ -998,13 +998,13 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       queryFilter.$and = andGroup;
     }
 
-    // Configurar paginación y ordenamiento
-    const skip = (Number(page) - 1) * Number(limit);
+    // Configurar paginación y ordenamiento con límite de memoria optimizado
+    const maxLimit = Math.min(Number(limit), 100); // Limitar a máximo 100 resultados
+    const skip = (Number(page) - 1) * maxLimit; // Usar maxLimit para skip también
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Obtener registros con límite de memoria optimizado
-    const maxLimit = Math.min(Number(limit), 100); // Limitar a máximo 100 resultados
+    // Obtener registros
     const records = await Record.find(queryFilter)
       .sort(sort)
       .skip(skip)
@@ -1141,9 +1141,9 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       records: finalRecords,
       pagination: {
         page: Number(page),
-        limit: Number(limit),
+        limit: maxLimit, // Usar maxLimit en la respuesta
         total,
-        pages: Math.ceil(total / Number(limit))
+        pages: Math.ceil(total / maxLimit) // Usar maxLimit para calcular páginas
       }
     });
   } catch (error) {
@@ -2419,8 +2419,11 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const Table = getTableModel(conn);
     const Chats = getWhatsappChatModel(conn);
 
-    // Get table definition for filter processing
-    const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
+    // OPTIMIZACIÓN: Para QuickLearning con prospectos, saltarse validación de tabla
+    let table = null;
+    if (c_name !== 'quicklearning' || tableSlug !== 'prospectos') {
+      table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
+    }
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
@@ -2501,10 +2504,10 @@ export async function getRecordByPhone(req: Request, res: Response) {
           // Get phone fields based on company
           const phoneFields = getPhoneFieldsForCompany(c_name);
           
-          // Get text fields
+          // Get text fields - OPTIMIZACIÓN: Para QuickLearning usar campos conocidos
           const textFields = table
             ? table.fields.filter(field => ['text', 'email'].includes(field.type)).map(field => field.name)
-            : ['nombre', 'name', 'email'];
+            : ['nombre', 'name', 'email', 'telefono', 'phone', 'whatsapp']; // Campos conocidos para QuickLearning
           
           // Create search conditions for both phone and text fields
           const searchConditions: any[] = [];
@@ -2562,21 +2565,36 @@ export async function getRecordByPhone(req: Request, res: Response) {
       ...dynamicMatchFilters
     };
 
-    // Get total count
-    const totalCount = await Record.countDocuments(baseQuery);
-
-    // Get records with pagination
+    // OPTIMIZACIÓN: Ejecutar consultas en paralelo para mejor rendimiento
     const skip = (Number(page) - 1) * Number(limit);
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    const records = await Record.find(baseQuery)
-      .sort(sort)
-      .skip(skip)
-      .limit(Number(limit))
-        .lean();
+    // OPTIMIZACIÓN: Seleccionar solo campos necesarios para mejorar rendimiento
+    const selectFields = {
+      _id: 1,
+      tableSlug: 1,
+      c_name: 1,
+      data: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      createdBy: 1,
+      updatedBy: 1
+    };
+
+    // PARALELIZACIÓN: Ejecutar count y find al mismo tiempo
+    const [totalCount, records] = await Promise.all([
+      Record.countDocuments(baseQuery),
+      Record.find(baseQuery)
+        .select(selectFields)
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit))
+        .lean()
+    ]);
 
     // ⚡ FAST CHAT LOOKUP: Bulk fetch chats for all records
+    let allPhoneVariants: string[] = []; // Declarar fuera del scope para acceso global
     if (records.length > 0) {
       // Collect all phone variants for all records
       const recordPhoneMap = new Map(); // key: phone variant, value: array of record indexes
@@ -2613,47 +2631,54 @@ export async function getRecordByPhone(req: Request, res: Response) {
         }
       });
 
-      const allPhoneVariants = Array.from(recordPhoneMap.keys());
+      allPhoneVariants = Array.from(recordPhoneMap.keys());
 
       if (allPhoneVariants.length > 0) {
-        // Build chat query for all variants
-      const chatQuery: any = { phone: { $in: allPhoneVariants } };
-      if (sessionId) {
-        let sessionIdObj = undefined;
-        try {
-          if (Types.ObjectId.isValid(sessionId as string)) {
-            sessionIdObj = new Types.ObjectId(sessionId as string);
-          }
-        } catch (_) {}
-        chatQuery["$or"] = sessionIdObj ? [
-          { "session.id": sessionId },
-          { "session.id": sessionIdObj }
-        ] : [
-          { "session.id": sessionId }
-        ];
-      }
-
-      let chatsInBatch;
-      if (lastMessageDate) {
-        // Use aggregation to get only chats whose last message's createdAt matches the filter
-        chatsInBatch = await Chats.aggregate([
-          { $match: chatQuery },
-          { $addFields: {
-              lastMessageDate: { $max: "$messages.createdAt" }
+        // Build chat query for all variants - OPTIMIZACIÓN: Límite más inteligente basado en página
+        const maxVariants = Math.min(allPhoneVariants.length, 200); // Aumentar límite para paginación
+        const limitedPhoneVariants = allPhoneVariants.slice(0, maxVariants);
+        const chatQuery: any = { phone: { $in: limitedPhoneVariants } };
+        
+        if (sessionId) {
+          let sessionIdObj = undefined;
+          try {
+            if (Types.ObjectId.isValid(sessionId as string)) {
+              sessionIdObj = new Types.ObjectId(sessionId as string);
             }
-          },
-          { $match: { lastMessageDate: { $lte: lastMessageDate } } },
-            { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1, updatedAt: 1, botActive: 1 } }
-        ]);
-      } else {
-          // Return only essential chat data for performance
+          } catch (_) {}
+          chatQuery["$or"] = sessionIdObj ? [
+            { "session.id": sessionId },
+            { "session.id": sessionIdObj }
+          ] : [
+            { "session.id": sessionId }
+          ];
+        }
+
+        let chatsInBatch;
+        if (lastMessageDate) {
+          // Use aggregation to get only chats whose last message's createdAt matches the filter
+          chatsInBatch = await Chats.aggregate([
+            { $match: chatQuery },
+            { $addFields: {
+                lastMessageDate: { $max: "$messages.createdAt" }
+              }
+            },
+            { $match: { lastMessageDate: { $lte: lastMessageDate } } },
+            { $project: { phone: 1, messages: 1, session: 1, lastMessageDate: 1, updatedAt: 1, botActive: 1 } },
+            { $limit: 50 } // OPTIMIZACIÓN: Limitar resultados de agregación
+          ]);
+        } else {
+          // OPTIMIZACIÓN: Límite dinámico basado en número de registros
+          const chatLimit = Math.min(records.length * 2, 100); // Límite dinámico: 2x registros o 100 máximo
           chatsInBatch = await Chats.find(chatQuery, { 
             phone: 1, 
             session: 1, 
-            messages: 1, 
+            messages: { $slice: -5 }, // Solo últimos 5 mensajes para mejor rendimiento
             updatedAt: 1, 
             botActive: 1 
-          } as any).lean();
+          } as any)
+          .limit(chatLimit)
+          .lean();
         }
 
         // Map chats to records
@@ -2704,10 +2729,13 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const endTime = Date.now();
     const executionTime = endTime - startTime;
 
-    // Add history if needed
+    // Add history if needed - OPTIMIZACIÓN: Solo si se solicita explícitamente
     let finalRecords: any[] = records as any[];
-    const historyCap = Math.min(10, 200);
-    finalRecords = await attachHistoryToData(conn, finalRecords, 'Record', historyCap);
+    const includeHistory = req.query.includeHistory === 'true';
+    if (includeHistory) {
+      const historyCap = Math.min(10, 200);
+      finalRecords = await attachHistoryToData(conn, finalRecords, 'Record', historyCap);
+    }
 
     res.status(200).json({
       success: true,
@@ -2735,7 +2763,7 @@ export async function getRecordByPhone(req: Request, res: Response) {
         optimized: true
       },
       message: `Found ${records.length} records in ${executionTime}ms using fast records-first approach.`,
-      // 📱 CAMPOS ADICIONALES PARA SCROLL INFINITO
+      // 📱 CAMPOS ADICIONALES PARA SCROLL INFINITO - OPTIMIZADO
       scrollInfo: {
         currentPage: Number(page),
         totalPages: Math.ceil(totalCount / Number(limit)),
@@ -2746,7 +2774,12 @@ export async function getRecordByPhone(req: Request, res: Response) {
         previousPage: Number(page) > 1 ? Number(page) - 1 : null,
         progressPercentage: Math.round((Number(page) / Math.ceil(totalCount / Number(limit))) * 100),
         estimatedRemainingPages: Math.max(0, Math.ceil(totalCount / Number(limit)) - Number(page)),
-        loadMoreUrl: `?page=${Number(page) + 1}&limit=${Number(limit)}&sortBy=${sortBy}&sortOrder=${sortOrder}${filters ? `&filters=${encodeURIComponent(filters as string)}` : ''}`
+        loadMoreUrl: `?page=${Number(page) + 1}&limit=${Number(limit)}&sortBy=${sortBy}&sortOrder=${sortOrder}${filters ? `&filters=${encodeURIComponent(filters as string)}` : ''}`,
+        // NUEVOS CAMPOS PARA OPTIMIZACIÓN
+        paginationOptimized: true,
+        maxVariantsProcessed: allPhoneVariants ? Math.min(allPhoneVariants.length, 200) : 0,
+        chatLimitApplied: records.length > 0 ? Math.min(records.length * 2, 100) : 0,
+        performanceMode: 'optimized'
       },
       // 👤 INFORMACIÓN DEL ASESOR
       advisorInfo: (() => {

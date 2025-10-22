@@ -2419,11 +2419,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
     const Table = getTableModel(conn);
     const Chats = getWhatsappChatModel(conn);
 
-    // OPTIMIZACIÓN: Para QuickLearning con prospectos, saltarse validación de tabla
-    let table = null;
-    if (c_name !== 'quicklearning' || tableSlug !== 'prospectos') {
-      table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
-    }
+    // Get table definition for filter processing
+    const table = await Table.findOne({ slug: tableSlug, c_name, isActive: true });
 
     // ⚡ BUILD DYNAMIC FILTERS (adapted from getDynamicRecords)
     const dynamicMatchFilters: any = {};
@@ -2543,10 +2540,10 @@ export async function getRecordByPhone(req: Request, res: Response) {
           lastMessageDate = new Date(parsedFilters.lastMessageDateLte);
         } 
         if (parsedFilters.advisor) {
-          // Filtro de asesor simplificado y efectivo
+          // Filtro de asesor - buscar en JSON string del campo asesor
           const advisorValue = String(parsedFilters.advisor);
           
-          // Usar solo la búsqueda por regex que sabemos que funciona
+          // Aplicar filtro directo al campo asesor
           dynamicMatchFilters['data.asesor'] = { $regex: advisorValue, $options: 'i' };
         }
       } catch (error) {

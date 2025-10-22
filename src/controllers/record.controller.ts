@@ -2651,13 +2651,20 @@ export async function getRecordByPhone(req: Request, res: Response) {
           ];
         }
 
+        // FILTRO CRÍTICO: Solo chats del asesor específico
+        if (filters && typeof filters === 'string') {
+          try {
+            const parsedFilters = JSON.parse(filters);
+            if (parsedFilters.advisor) {
+              chatQuery['session.advisorId'] = parsedFilters.advisor;
+            }
+          } catch (error) {
+            console.error('Error parsing filters for chat query:', error);
+          }
+        }
+
         let chatsInBatch;
         if (lastMessageDate) {
-          // FILTRO CRÍTICO: Solo chats del asesor específico
-          if (parsedFilters.advisor) {
-            chatQuery['session.advisorId'] = parsedFilters.advisor;
-          }
-          
           // Use aggregation to get only chats whose last message's createdAt matches the filter
           chatsInBatch = await Chats.aggregate([
             { $match: chatQuery },
@@ -2672,11 +2679,6 @@ export async function getRecordByPhone(req: Request, res: Response) {
         } else {
         // OPTIMIZACIÓN: Límite dinámico basado en número de registros
         const chatLimit = Math.min(records.length * 2, 100); // Límite dinámico: 2x registros o 100 máximo
-        
-        // FILTRO CRÍTICO: Solo chats del asesor específico
-        if (parsedFilters.advisor) {
-          chatQuery['session.advisorId'] = parsedFilters.advisor;
-        }
         
         chatsInBatch = await Chats.find(chatQuery, { 
           phone: 1, 

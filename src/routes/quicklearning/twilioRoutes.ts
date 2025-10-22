@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import {
   twilioWebhook,
   sendMessage,
+  sendMediaMessage,
+  uploadAndSendMedia,
   sendTemplateMessage,
   getServiceStatus,
   getMessageHistory,
@@ -16,6 +18,7 @@ import {
 import { getDbConnection, getConnectionByCompanySlug } from "../../config/connectionManager";
 import getRecordModel from "../../models/record.model";
 import getQuickLearningChatModel from "../../models/quicklearning/chat.model";
+import upload from "../../middlewares/upload.middleware";
 
 const router = Router();
 
@@ -120,6 +123,128 @@ router.post("/webhook", twilioWebhook);
  *         description: Error interno del servidor
  */
 router.post("/send", sendMessage);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/send-media:
+ *   post:
+ *     summary: Enviar imagen, video o documento a través de Twilio
+ *     tags: [Twilio Quick Learning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - mediaUrl
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 description: Número de teléfono del destinatario (con código de país)
+ *                 example: "+5214521311888"
+ *               mediaUrl:
+ *                 oneOf:
+ *                   - type: string
+ *                   - type: array
+ *                     items:
+ *                       type: string
+ *                 description: URL pública de la imagen/video/documento o array de URLs (máx 10)
+ *                 example: "https://example.com/image.jpg"
+ *               message:
+ *                 type: string
+ *                 description: Texto opcional que acompaña la media
+ *                 example: "¡Mira esta imagen!"
+ *               mediaType:
+ *                 type: string
+ *                 enum: [image, video, audio, document]
+ *                 default: image
+ *                 description: Tipo de media que se está enviando
+ *     responses:
+ *       200:
+ *         description: Media enviada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 messageId:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *                 mediaUrls:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: Datos inválidos o error en el envío
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/send-media", sendMediaMessage);
+
+/**
+ * @swagger
+ * /api/quicklearning/twilio/upload-and-send:
+ *   post:
+ *     summary: Subir y enviar imagen/media en un solo paso (Todo-en-uno)
+ *     tags: [Twilio Quick Learning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - file
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 description: Número de teléfono del destinatario (con código de país)
+ *                 example: "+5214521311888"
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo de imagen/video/documento a subir
+ *               message:
+ *                 type: string
+ *                 description: Texto opcional que acompaña la media
+ *                 example: "¡Mira esta imagen!"
+ *               mediaType:
+ *                 type: string
+ *                 enum: [image, video, audio, document]
+ *                 default: image
+ *                 description: Tipo de media que se está enviando
+ *     responses:
+ *       200:
+ *         description: Media subida y enviada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 messageId:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *                 mediaUrl:
+ *                   type: string
+ *                   description: URL pública de S3
+ *                 s3Key:
+ *                   type: string
+ *                   description: Key del archivo en S3
+ *       400:
+ *         description: Datos inválidos o error en el envío
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/upload-and-send", upload.single('file'), uploadAndSendMedia);
 
 /**
  * @swagger

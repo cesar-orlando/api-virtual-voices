@@ -363,6 +363,17 @@ export class ElevenLabsToolsController {
   }
 
   /**
+   * Obtener número de Twilio ESPECÍFICO para transferencias al conmutador
+   * Este número NO debe tener configurado el desvío a la IA
+   */
+  private getTwilioPhoneNumberForPBX(): string {
+    // Número dedicado para transferencias al conmutador
+    const pbxNumber = '+523341610750';
+    console.log(`📱 Usando número para conmutador: ${pbxNumber}`);
+    return pbxNumber;
+  }
+
+  /**
    * Intentar transferir llamada con timeout
    * 
    * NOTA: Como ElevenLabs maneja la llamada directamente, no podemos
@@ -491,6 +502,99 @@ export class ElevenLabsToolsController {
       };
     }
   }
+
+  /**
+   * Transferir a extensión PBX (conmutador) con DTMF
+   */
+  private async attemptTransferToExtension(
+    callSid: string,
+    pbxNumber: string,
+    dtmfSequence: string,
+    extensionDescription: string
+  ): Promise<{ success: boolean; reason?: string }> {
+    try {
+      console.log(`🔄 Iniciando transferencia a conmutador con DTMF...`);
+      console.log(`📞 Call SID recibido: ${callSid}`);
+      console.log(`📞 Conmutador: ${pbxNumber}`);
+      console.log(`🎹 DTMF: ${dtmfSequence}`);
+
+      // Obtener número de Twilio PARA CONMUTADOR (sin desvío a IA)
+      const twilioNumber = this.getTwilioPhoneNumberForPBX();
+      
+      // Llamar al conmutador
+      const pbxCall = await twilioClient.calls.create({
+        from: twilioNumber,
+        to: pbxNumber,
+        timeout: 30,
+        twiml: `<Response>
+          <Pause length="2"/>
+          <Play digits="${dtmfSequence}"/>
+          <Pause length="3"/>
+          <Say language="es-MX" voice="Polly.Miguel">
+            Transferencia a extensión ${extensionDescription}.
+          </Say>
+        </Response>`
+      });
+
+      console.log(`📞 Llamando al conmutador... Call SID: ${pbxCall.sid}`);
+
+      // Esperar y hacer polling del estado (máximo 35 segundos)
+      const maxWaitTime = 35;
+      const pollInterval = 2;
+      let elapsedTime = 0;
+      
+      console.log(`⏳ Esperando respuesta del conmutador (máximo ${maxWaitTime}s)...`);
+
+      while (elapsedTime < maxWaitTime) {
+        await this.waitForSeconds(pollInterval);
+        elapsedTime += pollInterval;
+
+        const callStatus = await twilioClient.calls(pbxCall.sid).fetch();
+        console.log(`📊 [${elapsedTime}s] Estado: ${callStatus.status}`);
+
+        if (callStatus.status === 'in-progress') {
+          console.log(`✅ Conmutador contestó después de ${elapsedTime}s`);
+          console.log(`🎹 Enviando DTMF: ${dtmfSequence}`);
+          return { 
+            success: true
+          };
+        } else if (callStatus.status === 'completed') {
+          console.log(`📞 Llamada completada después de ${elapsedTime}s`);
+          return { 
+            success: false, 
+            reason: 'Conmutador no contestó' 
+          };
+        } else if (callStatus.status === 'busy' || callStatus.status === 'failed') {
+          console.log(`❌ Llamada ${callStatus.status} después de ${elapsedTime}s`);
+          return { 
+            success: false, 
+            reason: 'Conmutador ocupado o fallo' 
+          };
+        } else if (callStatus.status === 'no-answer') {
+          console.log(`❌ No contestó después de ${elapsedTime}s`);
+          return { 
+            success: false, 
+            reason: 'Conmutador no contestó' 
+          };
+        }
+
+        // Estados intermedios (queued, ringing)
+        if (callStatus.status === 'queued') {
+          console.log(`   ⏳ Aún en cola...`);
+        } else if (callStatus.status === 'ringing') {
+          console.log(`   📞 Timbrando...`);
+        }
+      }
+
+      // Timeout
+      console.log(`❌ Timeout esperando conmutador después de ${maxWaitTime}s`);
+      return { success: false, reason: 'Timeout esperando conmutador' };
+      
+    } catch (error) {
+      console.error('Error en attemptTransferToExtension:', error);
+      return { success: false, reason: 'Error técnico' };
+    }
+  }
   
   /**
    * Manejar respuesta del asesor (presionó 1 o 2)
@@ -583,6 +687,421 @@ export class ElevenLabsToolsController {
       console.error('Error en conference status:', error);
       res.sendStatus(500);
     }
+  }
+
+  /**
+   * 🏢 SIMPLE GREEN - Tool exclusiva para transferencias
+   * 
+   * Asesores MÓVIL:
+   * - Gerson Briceño (5537043277) - Director Comercial
+   * - Karla Garza (3320151399) - Administración ⚠️ VERIFICAR número
+   * - Mónica Fernández (3315995603) - Directora Administrativa
+   * - Carlos Bohórquez (3310258296) - Ventas Industriales
+   * - Guillermo Nájera (3328339469) - Almacén y Logística
+   * - Oscar Chávez (3328342569) - Almacén y Logística
+   * 
+   * CONMUTADOR:
+   * - Guillermo Besserer - Ext 103 (DTMF)
+   */
+  public async transferToAdvisorSimpleGreen(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('\n🏢 ===== SIMPLE GREEN: transfer_to_advisor =====');
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+      
+      const { 
+        advisor_name,
+        call_sid,
+        conversation_id 
+      } = req.body;
+
+      if (!advisor_name) {
+        res.status(400).json({
+          success: false,
+          message: 'Necesito saber con quién quieres hablar',
+          continue_conversation: true
+        });
+        return;
+      }
+
+      console.log(`📞 Simple Green - Buscando: ${advisor_name}`);
+
+      // Obtener info del asesor
+      const advisorInfo = this.getSimpleGreenAdvisor(advisor_name);
+      
+      if (!advisorInfo) {
+        console.log(`❌ No encontrado: ${advisor_name}`);
+        res.json({
+          success: false,
+          message: 'No encontré ese asesor. ¿Podrías ser más específico sobre con quién necesitas hablar?',
+          continue_conversation: true
+        });
+        return;
+      }
+
+      // Si es extensión (103, 115, etc.) → Conmutador
+      if (advisorInfo.useExtension) {
+        console.log(`🎹 Transferir al conmutador`);
+        
+        // Obtener configuración de la extensión
+        const extConfig = this.getExtensionConfig(advisor_name);
+        
+        if (extConfig) {
+          console.log(`✅ Extensión ${extConfig.extension} - ${extConfig.description}`);
+          console.log(`🎹 DTMF: ${extConfig.dtmfSequence}`);
+          console.log(`📞 Conmutador: +523338170761`);
+          
+          // Llamar al conmutador y enviar DTMF
+          const transferResult = await this.attemptTransferToExtension(
+            call_sid || 'UNKNOWN',
+            '+523338170761', // Número del conmutador
+            extConfig.dtmfSequence,
+            extConfig.description
+          );
+          
+          if (transferResult.success) {
+            console.log(`✅ Conmutador contestó, DTMF enviado`);
+            res.json({
+              success: false, // false para que la IA continúe
+              message: `${advisorInfo.message} El conmutador está procesando tu llamada.`,
+              advisor_available: false,
+              continue_conversation: true,
+              status: 'extension_called'
+            });
+          } else {
+            console.log(`❌ Conmutador no disponible`);
+            res.json({
+              success: false,
+              message: 'El conmutador no está disponible en este momento. ¿Puedo ayudarte con algo más?',
+              advisor_available: false,
+              continue_conversation: true
+            });
+          }
+        } else {
+          res.json({
+            success: false,
+            message: 'Error al configurar extensión',
+            continue_conversation: true
+          });
+        }
+        return;
+      }
+
+      // Asesores a móvil (Juanita, Monica, Gerson)
+      console.log(`📱 Llamando a ${advisorInfo.description}: ${advisorInfo.phone}`);
+
+      const transferResult = await this.attemptTransfer(
+        call_sid || 'UNKNOWN',
+        advisorInfo.phone,
+        advisorInfo.description
+      );
+
+      if (transferResult.success) {
+        console.log(`✅ Asesor contestó`);
+        res.json({
+          success: false,
+          message: advisorInfo.message,
+          advisor_available: false,
+          continue_conversation: true,
+          status: 'calling_advisor'
+        });
+      } else {
+        console.log(`❌ Asesor no disponible`);
+        res.json({
+          success: false,
+          message: `${advisorInfo.description} no está disponible en este momento`,
+          advisor_available: false,
+          continue_conversation: true
+        });
+      }
+
+    } catch (error) {
+      console.error('❌ Error en Simple Green transfer:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno',
+        continue_conversation: true
+      });
+    }
+  }
+
+  /**
+   * Configuración de asesores de Simple Green
+   */
+  private getSimpleGreenAdvisor(advisorName: string): {
+    phone: string;
+    description: string;
+    message: string;
+    useExtension?: boolean;
+  } | null {
+    
+    const normalized = this.normalizeAdvisorName(advisorName);
+    console.log(`🔍 Normalizado: "${advisorName}" → "${normalized}"`);
+
+    // Configuración de Simple Green - Asesores REALES
+    const asesores: Record<string, any> = {
+      // ===== GERSON BRICEÑO - Director Comercial =====
+      'gerson': {
+        phone: '+525537043277',
+        description: 'Gerson Briceño (Director Comercial)',
+        message: 'Te conecto con Gerson Briceño, nuestro Director Comercial.'
+      },
+      'gersonbriceno': {
+        phone: '+525537043277',
+        description: 'Gerson Briceño (Director Comercial)',
+        message: 'Te conecto con Gerson Briceño.'
+      },
+      'directorcomercial': {
+        phone: '+525537043277',
+        description: 'Gerson Briceño (Director Comercial)',
+        message: 'Te conecto con nuestro Director Comercial.'
+      },
+      'mayorista': {
+        phone: '+525537043277',
+        description: 'Gerson Briceño (Director Comercial)',
+        message: 'Te conecto con el área de clientes mayoristas.'
+      },
+
+      // ===== KARLA GARZA - Administración =====
+      'karla': {
+        phone: '+523320151399', // ⚠️ VERIFICAR número
+        description: 'Karla Garza (Administración)',
+        message: 'Te conecto con Karla Garza de Administración.'
+      },
+      'karlagarza': {
+        phone: '+523320151399',
+        description: 'Karla Garza (Administración)',
+        message: 'Te conecto con Karla Garza.'
+      },
+      'administracion': {
+        phone: '+523320151399',
+        description: 'Karla Garza (Administración)',
+        message: 'Te conecto con Administración.'
+      },
+      'facturacion': {
+        phone: '+523320151399',
+        description: 'Karla Garza (Facturación)',
+        message: 'Te conecto con el área de facturación.'
+      },
+      'pagos': {
+        phone: '+523320151399',
+        description: 'Karla Garza (Pagos)',
+        message: 'Te conecto con el área de pagos.'
+      },
+
+      // ===== MÓNICA FERNÁNDEZ - Directora Administrativa =====
+      'monica': {
+        phone: '+523315995603',
+        description: 'Mónica Fernández (Directora Administrativa)',
+        message: 'Te conecto con Mónica Fernández, nuestra Directora Administrativa.'
+      },
+      'monicafernandez': {
+        phone: '+523315995603',
+        description: 'Mónica Fernández (Directora Administrativa)',
+        message: 'Te conecto con Mónica Fernández.'
+      },
+      'directoraadministrativa': {
+        phone: '+523315995603',
+        description: 'Mónica Fernández (Directora Administrativa)',
+        message: 'Te conecto con nuestra Directora Administrativa.'
+      },
+
+      // ===== CARLOS BOHÓRQUEZ - Ventas Industriales =====
+      'carlos': {
+        phone: '+523310258296',
+        description: 'Carlos Bohórquez (Ventas Industriales)',
+        message: 'Te conecto con Carlos Bohórquez de Ventas Industriales.'
+      },
+      'carlosbohorquez': {
+        phone: '+523310258296',
+        description: 'Carlos Bohórquez (Ventas Industriales)',
+        message: 'Te conecto con Carlos Bohórquez.'
+      },
+      'ventasindustriales': {
+        phone: '+523310258296',
+        description: 'Carlos Bohórquez (Ventas Industriales)',
+        message: 'Te conecto con Ventas Industriales.'
+      },
+      'productostecnicos': {
+        phone: '+523310258296',
+        description: 'Carlos Bohórquez (Productos Técnicos)',
+        message: 'Te conecto con nuestro especialista en productos técnicos.'
+      },
+
+      // ===== GUILLERMO NÁJERA - Almacén y Logística =====
+      'guillermo': {
+        phone: '+523328339469',
+        description: 'Guillermo Nájera (Almacén y Logística)',
+        message: 'Te conecto con Guillermo Nájera de Almacén y Logística.'
+      },
+      'guillermonajera': {
+        phone: '+523328339469',
+        description: 'Guillermo Nájera (Almacén y Logística)',
+        message: 'Te conecto con Guillermo Nájera.'
+      },
+      'almacen': {
+        phone: '+523328339469',
+        description: 'Guillermo Nájera (Almacén)',
+        message: 'Te conecto con Almacén.'
+      },
+      'logistica': {
+        phone: '+523328339469',
+        description: 'Guillermo Nájera (Logística)',
+        message: 'Te conecto con Logística.'
+      },
+      'envios': {
+        phone: '+523328339469',
+        description: 'Guillermo Nájera (Envíos)',
+        message: 'Te conecto con el área de envíos.'
+      },
+
+      // ===== OSCAR CHÁVEZ - Almacén y Logística =====
+      'oscar': {
+        phone: '+523328342569',
+        description: 'Oscar Chávez (Almacén y Logística)',
+        message: 'Te conecto con Oscar Chávez de Almacén y Logística.'
+      },
+      'oscarchavez': {
+        phone: '+523328342569',
+        description: 'Oscar Chávez (Almacén y Logística)',
+        message: 'Te conecto con Oscar Chávez.'
+      },
+      
+      // ===== GUILLERMO BESSERER (MÓVIL) =====
+      '103': {
+        phone: '+523314793720',
+        description: 'Guillermo Besserer',
+        message: 'Te conecto con Guillermo Besserer.'
+      },
+      'guillermobesserer': {
+        phone: '+523314793720',
+        description: 'Guillermo Besserer',
+        message: 'Te conecto con Guillermo Besserer.'
+      },
+      'besserer': {
+        phone: '+523314793720',
+        description: 'Guillermo Besserer',
+        message: 'Te conecto con Guillermo Besserer.'
+      },
+      
+      // ===== EXTENSIÓN 115 → PRUEBA (CONMUTADOR) =====
+      '115': {
+        phone: null,
+        description: 'Extensión 115',
+        message: 'Transfiriendo a extensión 115.',
+        useExtension: true
+      },
+      
+      // ===== EXTENSIÓN 101 → SALA DE JUNTAS (CONMUTADOR) =====
+      '101': {
+        phone: null,
+        description: 'Sala de Juntas (Ext 101)',
+        message: 'Transfiriendo a la sala de juntas.',
+        useExtension: true
+      },
+      'saladejuntas': {
+        phone: null,
+        description: 'Sala de Juntas (Ext 101)',
+        message: 'Transfiriendo a la sala de juntas.',
+        useExtension: true
+      }
+    };
+
+    return asesores[normalized] || null;
+  }
+
+  /**
+   * 🎹 TOOL: Transferir a extensión de conmutador (DTMF)
+   */
+  public async transferToExtension(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('\n🎹 ===== TOOL: transfer_to_extension =====');
+      console.log('Body:', JSON.stringify(req.body, null, 2));
+      
+      const { 
+        extension_number,
+        call_sid,
+        conversation_id 
+      } = req.body;
+
+      if (!extension_number) {
+        res.status(400).json({
+          success: false,
+          message: 'Necesito el número de extensión',
+          continue_conversation: true
+        });
+        return;
+      }
+
+      console.log(`📞 Extensión solicitada: ${extension_number}`);
+
+      // Obtener configuración de la extensión
+      const config = this.getExtensionConfig(extension_number);
+      
+      if (!config) {
+        console.log(`❌ Extensión ${extension_number} no configurada`);
+        res.json({
+          success: false,
+          message: 'Esa extensión no está disponible',
+          continue_conversation: true
+        });
+        return;
+      }
+
+      console.log(`✅ Extensión ${config.extension} - ${config.description}`);
+      console.log(`🎹 DTMF: ${config.dtmfSequence}`);
+
+      // Responder éxito (ElevenLabs manejará el DTMF)
+      res.json({
+        success: true,
+        message: `Transfiriendo a extensión ${config.extension}`,
+        extension: config.extension,
+        description: config.description,
+        dtmf_sequence: config.dtmfSequence,
+        continue_conversation: false
+      });
+
+    } catch (error) {
+      console.error('❌ Error en transfer_to_extension:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno',
+        continue_conversation: true
+      });
+    }
+  }
+
+  /**
+   * Configuración de extensiones del conmutador
+   */
+  private getExtensionConfig(extension: string): {
+    extension: string;
+    dtmfSequence: string;
+    description: string;
+  } | null {
+    
+    // Normalizar (quitar espacios, etc)
+    const ext = extension.trim().replace(/[^0-9]/g, '');
+    
+    // Configuración de extensiones
+    const extensions: Record<string, any> = {
+      '101': {
+        extension: '101',
+        dtmfSequence: '*101',
+        description: 'Sala de Juntas'
+      },
+      '103': {
+        extension: '103',
+        dtmfSequence: '*103',
+        description: 'Guillermo Besserer'
+      },
+      '115': {
+        extension: '115',
+        dtmfSequence: '*115',
+        description: 'Extensión 115'
+      }
+    };
+
+    return extensions[ext] || null;
   }
 
   /**

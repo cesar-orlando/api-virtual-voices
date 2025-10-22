@@ -2651,17 +2651,8 @@ export async function getRecordByPhone(req: Request, res: Response) {
           ];
         }
 
-        // FILTRO CRÍTICO: Solo chats del asesor específico
-        if (filters && typeof filters === 'string') {
-          try {
-            const parsedFilters = JSON.parse(filters);
-            if (parsedFilters.advisor) {
-              chatQuery['session.advisorId'] = parsedFilters.advisor;
-            }
-          } catch (error) {
-            console.error('Error parsing filters for chat query:', error);
-          }
-        }
+        // NOTA: Los chats no tienen información de asesor, solo se filtran por teléfono
+        // El filtro de asesor se aplica a los registros, no a los chats
 
         let chatsInBatch;
         if (lastMessageDate) {

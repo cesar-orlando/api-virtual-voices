@@ -407,6 +407,371 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
       return false;
     }
 
+    // Fuzzy search functions for intelligent property matching
+    function normalizeForFuzzySearch(text: string): string {
+      return text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remove accents
+        .replace(/[^\w\s]/g, '') // Remove special characters
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+    }
+
+    function calculateLevenshteinDistance(str1: string, str2: string): number {
+      const matrix = [];
+      const len1 = str1.length;
+      const len2 = str2.length;
+
+      for (let i = 0; i <= len2; i++) {
+        matrix[i] = [i];
+      }
+
+      for (let j = 0; j <= len1; j++) {
+        matrix[0][j] = j;
+      }
+
+      for (let i = 1; i <= len2; i++) {
+        for (let j = 1; j <= len1; j++) {
+          if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+            matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
+          }
+        }
+      }
+
+      return matrix[len2][len1];
+    }
+
+    function calculateSimilarity(str1: string, str2: string): number {
+      const normalized1 = normalizeForFuzzySearch(str1);
+      const normalized2 = normalizeForFuzzySearch(str2);
+      
+      if (normalized1 === normalized2) return 1.0;
+      
+      const distance = calculateLevenshteinDistance(normalized1, normalized2);
+      const maxLength = Math.max(normalized1.length, normalized2.length);
+      
+      if (maxLength === 0) return 0;
+      
+      return 1 - (distance / maxLength);
+    }
+
+    function checkAntiFalsePositive(searchTerm: string, propertyName: string): boolean {
+      // Avoid obvious mismatches
+      const searchLower = searchTerm.toLowerCase();
+      const propertyLower = propertyName.toLowerCase();
+      
+      // Case 1: "renta" should not match "venta"
+      if (searchLower === 'renta' && propertyLower.includes('venta')) {
+        return true;
+      }
+      
+      // Case 2: "venta" should not match "renta"
+      if (searchLower === 'venta' && propertyLower.includes('renta')) {
+        return true;
+      }
+      
+      // Case 3: Avoid matching common words when searching for specific ones
+      if (searchLower.length >= 6 && propertyLower.length <= 4) {
+        return true;
+      }
+      
+      // Case 4: Avoid matching when the search term is much longer than the property
+      if (searchTerm.length > propertyName.length * 1.5) {
+        return true;
+      }
+      
+      // Case 5: Strong anti-false-positive for exact opposite words
+      const oppositeWords = [
+        ['renta', 'venta'],
+        ['venta', 'renta'],
+        ['compra', 'venta'],
+        ['venta', 'compra']
+      ];
+      
+      for (const [word1, word2] of oppositeWords) {
+        if (searchLower === word1 && propertyLower.includes(word2)) {
+          return true;
+        }
+      }
+      
+      // Case 6: Extra strict for "renta" vs "venta"
+      if (searchLower === 'renta' && (propertyLower.includes('venta') || propertyLower.includes('en venta') || propertyLower.includes('en_venta'))) {
+        return true;
+      }
+      
+      if (searchLower === 'venta' && (propertyLower.includes('renta') || propertyLower.includes('en renta') || propertyLower.includes('en_renta'))) {
+        return true;
+      }
+      
+      // Case 7: Ultra strict for exact word matches
+      if (searchLower === 'renta' && propertyLower.includes('venta')) {
+        return true;
+      }
+      
+      if (searchLower === 'venta' && propertyLower.includes('renta')) {
+        return true;
+      }
+      
+      return false;
+    }
+
+    function findSmartFuzzyMatches(searchTerm: string, propertyNames: string[]): string[] {
+      const normalizedSearch = normalizeForFuzzySearch(searchTerm);
+      const matches: string[] = [];
+      
+      console.log(`🧠 Smart fuzzy search for: "${searchTerm}" against ${propertyNames.length} properties`);
+      
+      for (const propertyName of propertyNames) {
+        const normalizedProperty = normalizeForFuzzySearch(propertyName);
+        
+        // Only check for very similar matches (high similarity)
+        const distance = calculateLevenshteinDistance(normalizedSearch, normalizedProperty);
+        const maxLength = Math.max(normalizedSearch.length, normalizedProperty.length);
+        const similarity = maxLength > 0 ? 1 - (distance / maxLength) : 0;
+        
+        // VERY strict threshold - only very similar matches
+        if (similarity > 0.8 || distance <= 2) {
+          matches.push(propertyName);
+          console.log(`🧠 Smart match: "${searchTerm}" ≈ "${propertyName}" (similarity: ${similarity.toFixed(3)}, distance: ${distance})`);
+        }
+      }
+      
+      // Sort by similarity (best matches first)
+      matches.sort((a, b) => {
+        const simA = 1 - (calculateLevenshteinDistance(normalizedSearch, normalizeForFuzzySearch(a)) / Math.max(normalizedSearch.length, normalizeForFuzzySearch(a).length));
+        const simB = 1 - (calculateLevenshteinDistance(normalizedSearch, normalizeForFuzzySearch(b)) / Math.max(normalizedSearch.length, normalizeForFuzzySearch(b).length));
+        return simB - simA;
+      });
+      
+      console.log(`🎯 Smart fuzzy found ${matches.length} matches: ${matches.join(', ')}`);
+      return matches;
+    }
+
+    function findEnhancedFuzzyMatches(searchTerm: string, propertyNames: string[]): string[] {
+      const normalizedSearch = normalizeForFuzzySearch(searchTerm);
+      const matches: string[] = [];
+      
+      console.log(`🔍 Enhanced fuzzy search for: "${searchTerm}" against ${propertyNames.length} properties`);
+      
+      for (const propertyName of propertyNames) {
+        const normalizedProperty = normalizeForFuzzySearch(propertyName);
+        
+        // 1. Check for partial word matches
+        const searchWords = normalizedSearch.split(' ').filter(word => word.length > 2);
+        const propertyWords = normalizedProperty.split(' ').filter(word => word.length > 2);
+        
+        let hasMatch = false;
+        
+        // Check if any search word is similar to any property word
+        for (const searchWord of searchWords) {
+          for (const propertyWord of propertyWords) {
+            const distance = calculateLevenshteinDistance(searchWord, propertyWord);
+            const maxLength = Math.max(searchWord.length, propertyWord.length);
+            const similarity = maxLength > 0 ? 1 - (distance / maxLength) : 0;
+            
+            // ULTRA precise threshold for enhanced search
+            if (similarity > 0.7 || distance <= 1) {
+              matches.push(propertyName);
+              hasMatch = true;
+              console.log(`✨ Enhanced match: "${searchWord}" ≈ "${propertyWord}" (similarity: ${similarity.toFixed(3)}, distance: ${distance})`);
+              break;
+            }
+          }
+          if (hasMatch) break;
+        }
+        
+        // 2. Check for substring matches (ULTRA strict)
+        if (!hasMatch) {
+          for (const searchWord of searchWords) {
+            if (searchWord.length >= 5) { // Only for longer words
+              // Check if search word is contained in property or vice versa
+              if (normalizedProperty.includes(searchWord) || searchWord.includes(normalizedProperty)) {
+                matches.push(propertyName);
+                console.log(`✨ Substring match: "${searchWord}" in "${propertyName}"`);
+                break;
+              }
+            }
+          }
+        }
+        
+        // 3. Check for character-level similarity (more precise)
+        if (!hasMatch) {
+          for (const searchWord of searchWords) {
+            if (searchWord.length >= 4) { // Only for longer words
+              // Check if search word shares significant characters with property
+              const commonChars = searchWord.split('').filter(char => 
+                propertyWords.some(propWord => propWord.includes(char))
+              ).length;
+              
+              // ULTRA strict character matching
+              if (commonChars >= Math.min(6, searchWord.length * 0.85)) {
+                matches.push(propertyName);
+                console.log(`✨ Character match: "${searchWord}" shares ${commonChars} chars with "${propertyName}"`);
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      console.log(`🎯 Enhanced fuzzy found ${matches.length} matches: ${matches.join(', ')}`);
+      return [...new Set(matches)]; // Remove duplicates
+    }
+
+    function findBestPropertyMatch(searchTerm: string, propertyNames: string[], threshold: number = 0.3): string | null {
+      const normalizedSearch = normalizeForFuzzySearch(searchTerm);
+      let bestMatch = null;
+      let bestScore = 0;
+
+      console.log(`🔍 Fuzzy matching "${searchTerm}" against ${propertyNames.length} properties`);
+
+      for (const propertyName of propertyNames) {
+        const normalizedProperty = normalizeForFuzzySearch(propertyName);
+        let currentScore = 0;
+        let matchType = '';
+        
+        // 1. Exact match (highest priority)
+        if (normalizedSearch === normalizedProperty) {
+          console.log(`✅ Exact match: "${propertyName}"`);
+          return propertyName;
+        }
+        
+        // 2. Check if search term is contained in property name (high priority)
+        if (normalizedProperty.includes(normalizedSearch)) {
+          const score = normalizedSearch.length / normalizedProperty.length;
+          if (score > currentScore) {
+            currentScore = score;
+            matchType = 'contains';
+          }
+        }
+        
+        // 3. Check if property name is contained in search term (medium priority)
+        if (normalizedSearch.includes(normalizedProperty)) {
+          const score = normalizedProperty.length / normalizedSearch.length;
+          if (score > currentScore) {
+            currentScore = score;
+            matchType = 'contained';
+          }
+        }
+        
+        // 4. Word-level matches (for cases like "residencial tamarindos" -> "tamarindos")
+        const searchWords = normalizedSearch.split(' ').filter(word => word.length > 2);
+        const propertyWords = normalizedProperty.split(' ').filter(word => word.length > 2);
+        
+        // Prioritize specific words over common words
+        const commonWords = ['fraccionamiento', 'condominio', 'coto', 'torre', 'plaza', 'calle', 'paseo', 'casa', 'terreno', 'departamento', 'vista', 'cielo', 'santa', 'anita'];
+        const specificWords = searchWords.filter(word => !commonWords.includes(word.toLowerCase()));
+        const commonSearchWords = searchWords.filter(word => commonWords.includes(word.toLowerCase()));
+        
+        let wordMatches = 0;
+        let specificWordMatches = 0;
+        
+        // First, try to match specific words (higher priority)
+        for (const searchWord of specificWords) {
+          for (const propertyWord of propertyWords) {
+            if (propertyWord.includes(searchWord) || searchWord.includes(propertyWord)) {
+              specificWordMatches++;
+              break;
+            }
+          }
+        }
+        
+        // Then, try to match common words (lower priority)
+        for (const searchWord of commonSearchWords) {
+          for (const propertyWord of propertyWords) {
+            if (propertyWord.includes(searchWord) || searchWord.includes(propertyWord)) {
+              wordMatches++;
+              break;
+            }
+          }
+        }
+        
+        if (specificWordMatches > 0) {
+          // High score for specific word matches
+          const wordScore = (specificWordMatches * 2) / Math.max(searchWords.length, propertyWords.length);
+          if (wordScore > currentScore) {
+            currentScore = wordScore;
+            matchType = 'specific-word';
+          }
+        } else if (wordMatches > 0) {
+          // Lower score for common word matches
+          const wordScore = wordMatches / Math.max(searchWords.length, propertyWords.length);
+          if (wordScore > currentScore) {
+            currentScore = wordScore;
+            matchType = 'common-word';
+          }
+        }
+        
+        // Special case: prioritize exact word matches over partial matches
+        const exactWordMatches = searchWords.filter(searchWord => 
+          propertyWords.some(propertyWord => 
+            propertyWord.toLowerCase() === searchWord.toLowerCase()
+          )
+        ).length;
+        
+        if (exactWordMatches > 0) {
+          const exactScore = (exactWordMatches * 3) / Math.max(searchWords.length, propertyWords.length);
+          if (exactScore > currentScore) {
+            currentScore = exactScore;
+            matchType = 'exact-word';
+          }
+        }
+        
+        // 5. Levenshtein distance (for typos and phonetic errors)
+        const distance = calculateLevenshteinDistance(normalizedSearch, normalizedProperty);
+        const maxLength = Math.max(normalizedSearch.length, normalizedProperty.length);
+        const similarity = maxLength > 0 ? 1 - (distance / maxLength) : 0;
+        
+        // Only use Levenshtein if the similarity is high enough and the difference is reasonable
+        if (similarity > currentScore && distance <= 4 && normalizedSearch.length >= 4) {
+          currentScore = similarity;
+          matchType = 'levenshtein';
+        }
+        
+        // 6. Special case: very small differences (1-2 characters)
+        if (distance <= 2 && normalizedSearch.length >= 4) {
+          const smallDiffScore = 0.8;
+          if (smallDiffScore > currentScore) {
+            currentScore = smallDiffScore;
+            matchType = 'small-diff';
+          }
+        }
+        
+        // 7. Special case: larger differences for longer words (like "tamarindosss" -> "tamarindos")
+        if (distance <= 4 && normalizedSearch.length >= 8) {
+          const largeDiffScore = 0.6;
+          if (largeDiffScore > currentScore) {
+            currentScore = largeDiffScore;
+            matchType = 'large-diff';
+          }
+        }
+        
+        // 8. Anti-false-positive logic: avoid obvious mismatches
+        const antiFalsePositive = checkAntiFalsePositive(normalizedSearch, normalizedProperty);
+        if (antiFalsePositive) {
+          console.log(`🚫 Anti-false-positive: "${propertyName}" rejected for "${normalizedSearch}"`);
+          continue; // Skip this match
+        }
+        
+        // Only consider matches above threshold
+        if (currentScore >= threshold && currentScore > bestScore) {
+          bestScore = currentScore;
+          bestMatch = propertyName;
+          console.log(`🎯 New best match: "${propertyName}" (${matchType}, score: ${currentScore.toFixed(3)})`);
+        }
+      }
+
+      console.log(`🏆 Final match: "${bestMatch}" (score: ${bestScore.toFixed(3)})`);
+      return bestMatch;
+    }
+
     // Procesar filtros dinámicos (JSON string)
     if (filters && typeof filters === 'string') {
       try {
@@ -460,11 +825,85 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
               }));
               orTextFilters.push({ $or: boolSearch });
             } else if (typeof value === 'string') {
-              // If it's a string, we assume it's a text search
+              // UNIVERSAL FUZZY SEARCH for ALL text fields
+              const searchTerm = String(value).trim();
+              
+              // Get all unique values from ALL text fields for fuzzy matching
+              const propertyNames: string[] = [];
+              try {
+                // Build a select object with all text fields
+                const selectFields = textFields.reduce((acc, field) => {
+                  acc[`data.${field}`] = 1;
+                  return acc;
+                }, {} as any);
+                
+                const allRecords = await Record.find({ tableSlug, c_name })
+                  .select(selectFields)
+                  .lean();
+                
+                const uniqueProperties = new Set<string>();
+                allRecords.forEach(record => {
+                  // Iterate through all text fields
+                  textFields.forEach(field => {
+                    const fieldValue = record.data?.[field];
+                    if (fieldValue && typeof fieldValue === 'string') {
+                      const value = fieldValue.trim();
+                      
+                      // Add the full value
+                      uniqueProperties.add(value);
+                      
+                      // Extract individual words (for compound searches)
+                      const words = value.split(' ');
+                      words.forEach(word => {
+                        const cleanedWord = word.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ]/g, '').trim();
+                        if (cleanedWord.length >= 3) {
+                          uniqueProperties.add(cleanedWord);
+                        }
+                      });
+                      
+                      // Extract 2-word combinations
+                      for (let i = 0; i < words.length - 1; i++) {
+                        const twoWords = `${words[i]} ${words[i + 1]}`.trim();
+                        if (twoWords.length >= 4) {
+                          uniqueProperties.add(twoWords);
+                        }
+                      }
+                    }
+                  });
+                });
+                propertyNames.push(...Array.from(uniqueProperties));
+              } catch (error) {
+                console.log('Error getting property names for fuzzy search:', error);
+              }
+
+              // INTELLIGENT FUZZY SEARCH: Only use fuzzy when regular search fails
+              console.log(`🔍 Intelligent fuzzy search: "${searchTerm}"`);
+              
+              // First try regular text search
               const textSearch = textFields.map(field => ({
-                [`data.${field}`]: { $regex: buildAccentInsensitivePattern(String(value)), $options: 'i' }
+                [`data.${field}`]: { $regex: buildAccentInsensitivePattern(searchTerm), $options: 'i' }
               }));
               orTextFilters.push(...textSearch);
+              console.log(`✅ Using regular text search for: ${searchTerm}`);
+              
+              // If no exact matches found, try smart fuzzy search
+              if (propertyNames.length > 0) {
+                console.log(`🔍 Checking if fuzzy search is needed...`);
+                
+                // Try to find very similar matches (high similarity only)
+                const smartMatches = findSmartFuzzyMatches(searchTerm, propertyNames);
+                console.log(`✨ Smart fuzzy matches found: ${smartMatches.length}`);
+                
+                if (smartMatches.length > 0) {
+                  // Use only the best match to avoid returning all records
+                  const bestMatch = smartMatches[0];
+                  const fuzzySearch = textFields.map(field => ({
+                    [`data.${field}`]: { $regex: buildAccentInsensitivePattern(bestMatch), $options: 'i' }
+                  }));
+                  orTextFilters.push(...fuzzySearch);
+                  console.log(`✅ Using smart fuzzy match: ${bestMatch}`);
+                }
+              }
             }
             // Ignore other types for textQuery
           } else if (dateFields.includes(fieldName)) {
@@ -564,11 +1003,12 @@ export const getDynamicRecords = async (req: Request, res: Response) => {
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Obtener registros
+    // Obtener registros con límite de memoria optimizado
+    const maxLimit = Math.min(Number(limit), 100); // Limitar a máximo 100 resultados
     const records = await Record.find(queryFilter)
       .sort(sort)
       .skip(skip)
-      .limit(Number(limit))
+      .limit(maxLimit)
       .lean();
 
     // Contar total de registros

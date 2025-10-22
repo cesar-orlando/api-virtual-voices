@@ -53,6 +53,29 @@ router.post('/transfer-to-advisor', (req, res) => controller.transferToAdvisor(r
 
 /**
  * @swagger
+ * /elevenlabs-tools/transfer-to-advisor-simple-green:
+ *   post:
+ *     summary: Tool EXCLUSIVA para Simple Green
+ *     tags: [ElevenLabs Tools - Simple Green]
+ *     description: Transferencias para Simple Green (4 asesores)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               advisor_name:
+ *                 type: string
+ *                 description: Nombre del asesor o extensión (juanita, monica, gerson, guillermo, 100, 105, 115, 103)
+ *     responses:
+ *       200:
+ *         description: Resultado de la transferencia
+ */
+router.post('/transfer-to-advisor-simple-green', (req, res) => controller.transferToAdvisorSimpleGreen(req, res));
+
+/**
+ * @swagger
  * /elevenlabs-tools/take-voicemail:
  *   post:
  *     summary: Tool para tomar recado/mensaje
@@ -124,6 +147,29 @@ router.post('/conference-status', (req, res) => controller.conferenceStatus(req,
  *         description: TwiML con siguiente acción
  */
 router.post('/advisor-response', (req, res) => controller.advisorResponse(req, res));
+
+/**
+ * @swagger
+ * /elevenlabs-tools/transfer-to-extension:
+ *   post:
+ *     summary: Tool para transferir a extensión de conmutador
+ *     tags: [ElevenLabs Tools]
+ *     description: Webhook para transferir llamadas a extensiones internas usando DTMF
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               extension_number:
+ *                 type: string
+ *                 description: Número de extensión (ej "103")
+ *     responses:
+ *       200:
+ *         description: Resultado de la transferencia
+ */
+router.post('/transfer-to-extension', (req, res) => controller.transferToExtension(req, res));
 
 export default router;
 

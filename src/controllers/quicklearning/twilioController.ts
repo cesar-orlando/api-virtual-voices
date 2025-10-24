@@ -1142,21 +1142,19 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     });
 
     if (result.success) {
-      // Actualizar el registro del cliente en la tabla dinámica
+      // Actualizar el registro del cliente en la tabla dinámica - SOLO PROSPECTOS
       const conn = await getConnectionByCompanySlug("quicklearning");
       const RecordModel = getRecordModel(conn);
-      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
-      let updated = false;
-      for (const tableSlug of tableSlugs) {
-        const updateResult = await RecordModel.updateOne(
-          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
-          { $set: { "data.ultimo_mensaje": message, "data.lastMessageDate": new Date() } }
-        );
-        if (updateResult.modifiedCount > 0) {
-          updated = true;
-          break;
-        }
-      }
+      
+      // Optimizado: búsqueda directa en prospectos (soporta concurrencia)
+      await RecordModel.updateOne(
+        { 
+          tableSlug: "prospectos",
+          $or: [{ "data.number": phone }, { "data.phone": phone }], 
+          c_name: "quicklearning" 
+        },
+        { $set: { "data.ultimo_mensaje": message, "data.lastMessageDate": new Date() } }
+      );
 
       // Guardar el mensaje en la colección de chats
       const QuickLearningChat = getQuickLearningChatModel(conn);
@@ -1249,22 +1247,20 @@ export const sendMediaMessage = async (req: Request, res: Response): Promise<voi
     });
 
     if (result.success) {
-      // Actualizar el registro del cliente en la tabla dinámica
+      // Actualizar el registro del cliente en la tabla dinámica - SOLO PROSPECTOS
       const conn = await getConnectionByCompanySlug("quicklearning");
       const RecordModel = getRecordModel(conn);
-      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
       const mediaMessage = message || `[${mediaType.toUpperCase()}]`;
-      let updated = false;
-      for (const tableSlug of tableSlugs) {
-        const updateResult = await RecordModel.updateOne(
-          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
-          { $set: { "data.ultimo_mensaje": mediaMessage, "data.lastMessageDate": new Date() } }
-        );
-        if (updateResult.modifiedCount > 0) {
-          updated = true;
-          break;
-        }
-      }
+      
+      // Optimizado: búsqueda directa en prospectos (soporta concurrencia)
+      await RecordModel.updateOne(
+        { 
+          tableSlug: "prospectos",
+          $or: [{ "data.number": phone }, { "data.phone": phone }], 
+          c_name: "quicklearning" 
+        },
+        { $set: { "data.ultimo_mensaje": mediaMessage, "data.lastMessageDate": new Date() } }
+      );
 
       // Guardar el mensaje en la colección de chats
       const QuickLearningChat = getQuickLearningChatModel(conn);
@@ -1369,22 +1365,20 @@ export const uploadAndSendMedia = async (req: Request, res: Response): Promise<v
     });
 
     if (result.success) {
-      // Actualizar el registro del cliente en la tabla dinámica
+      // Actualizar el registro del cliente en la tabla dinámica - SOLO PROSPECTOS
       const conn = await getConnectionByCompanySlug("quicklearning");
       const RecordModel = getRecordModel(conn);
-      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
       const mediaMessage = message || `[${mediaType.toUpperCase()}]`;
-      let updated = false;
-      for (const tableSlug of tableSlugs) {
-        const updateResult = await RecordModel.updateOne(
-          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
-          { $set: { "data.ultimo_mensaje": mediaMessage, "data.lastMessageDate": new Date() } }
-        );
-        if (updateResult.modifiedCount > 0) {
-          updated = true;
-          break;
-        }
-      }
+      
+      // Optimizado: búsqueda directa en prospectos (soporta concurrencia)
+      await RecordModel.updateOne(
+        { 
+          tableSlug: "prospectos",
+          $or: [{ "data.number": phone }, { "data.phone": phone }], 
+          c_name: "quicklearning" 
+        },
+        { $set: { "data.ultimo_mensaje": mediaMessage, "data.lastMessageDate": new Date() } }
+      );
 
       // Guardar el mensaje en la colección de chats
       const QuickLearningChat = getQuickLearningChatModel(conn);
@@ -1477,22 +1471,20 @@ export const sendTemplateMessage = async (req: Request, res: Response): Promise<
     });
 
     if (result.success) {
-      // Actualizar el registro del cliente en la tabla dinámica
+      // Actualizar el registro del cliente en la tabla dinámica - SOLO PROSPECTOS
       const conn = await getConnectionByCompanySlug("quicklearning");
       const RecordModel = getRecordModel(conn);
-      const tableSlugs = ["alumnos", "prospectos", "clientes", "sin_contestar"];
-      let updated = false;
       const templateBody = `[TEMPLATE] ${templateId} ${variables ? variables.join(', ') : ''}`;
-      for (const tableSlug of tableSlugs) {
-        const updateResult = await RecordModel.updateOne(
-          { tableSlug, $or: [{ "data.number": phone }, { "data.phone": phone }], c_name: "quicklearning" },
-          { $set: { "data.ultimo_mensaje": templateBody, "data.lastMessageDate": new Date() } }
-        );
-        if (updateResult.modifiedCount > 0) {
-          updated = true;
-          break;
-        }
-      }
+      
+      // Optimizado: búsqueda directa en prospectos (soporta concurrencia)
+      await RecordModel.updateOne(
+        { 
+          tableSlug: "prospectos",
+          $or: [{ "data.number": phone }, { "data.phone": phone }], 
+          c_name: "quicklearning" 
+        },
+        { $set: { "data.ultimo_mensaje": templateBody, "data.lastMessageDate": new Date() } }
+      );
 
       // Guardar el mensaje en la colección de chats
       const QuickLearningChat = getQuickLearningChatModel(conn);

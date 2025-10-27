@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 
-const CONTPAQ_SERVICE_URL = process.env.CONTPAQ_SERVICE_URL || 'https://68e9ada09625.ngrok-free.app';
+const CONTPAQ_SERVICE_URL = process.env.CONTPAQ_SERVICE_URL || 'https://958b72d323c7.ngrok-free.app';
 
 export class ContpaqController {
   
@@ -426,6 +426,35 @@ export class ContpaqController {
       res.status(500).json({
         success: false,
         message: 'Error obteniendo comparativas de ventas desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
+
+  /**
+   * Obtener dashboard completo de ventas
+   */
+  async getSalesDashboard(req: Request, res: Response): Promise<void> {
+    try {
+      const { fechaInicio, fechaFin, año, mes } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/sales-dashboard?`;
+      const params = new URLSearchParams();
+      
+      if (fechaInicio) params.append('fechaInicio', fechaInicio as string);
+      if (fechaFin) params.append('fechaFin', fechaFin as string);
+      if (año) params.append('año', año as string);
+      if (mes) params.append('mes', mes as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo dashboard de ventas desde Contpaq',
         error: error.message,
         serviceUrl: CONTPAQ_SERVICE_URL
       });

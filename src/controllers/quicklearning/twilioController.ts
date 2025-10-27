@@ -969,6 +969,12 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
 
       const defaultSession = await Session.findOne();
 
+      // Validar que existe una sesión por defecto
+      if (!defaultSession) {
+        console.error("❌ No se encontró sesión por defecto para quicklearning");
+        throw new Error("No default session found");
+      }
+
       const sessionBranchId = defaultSession.branch?.branchId ? String(defaultSession.branch.branchId) : null;
       const branchFilter = sessionBranchId
         ? { role: 'Asesor', status: 'active', 'branch.branchId': sessionBranchId }
@@ -977,22 +983,35 @@ async function findOrCreateCustomer(phone: string, profileName: string, body: st
       // Ordenar por nombre para mantener consistencia en el orden
       const allUsers = await UserConfig.find(branchFilter).sort({ name: 1 }).lean();
 
-      // Obtener el contador actual de asignaciones para esta sucursal/sesión
-      const currentCounter = defaultSession.metadata?.assignmentCounter || 0;
-      const nextUserIndex = currentCounter % allUsers.length;
-      const selectedUser = allUsers[nextUserIndex];
+      let selectedUser: any;
 
-      // Actualizar el contador en la sesión para la próxima asignación
-      await Session.findByIdAndUpdate(
-        defaultSession._id,
-        { 
-          $set: { 
-            'metadata.assignmentCounter': currentCounter + 1,
-            'metadata.lastAssignmentAt': new Date(),
-            'metadata.lastAssignedTo': selectedUser.name
-          } 
-        }
-      );
+      // Si no hay asesores disponibles, usar asesor por defecto
+      if (!allUsers || allUsers.length === 0) {
+        console.warn("⚠️ No hay asesores activos disponibles - Asignando asesor por defecto");
+        selectedUser = {
+          name: "Asistente",
+          _id: "68871c9e8f2515c9310c0611",
+          email: "asistente@quicklearning.com"
+        };
+      } else {
+        // Obtener el contador actual de asignaciones para esta sucursal/sesión
+        const currentCounter = defaultSession.metadata?.assignmentCounter || 0;
+        const nextUserIndex = currentCounter % allUsers.length;
+        selectedUser = allUsers[nextUserIndex];
+
+        // Actualizar el contador en la sesión para la próxima asignación
+        await Session.findByIdAndUpdate(
+          defaultSession._id,
+          { 
+            $set: { 
+              'metadata.assignmentCounter': currentCounter + 1,
+              'metadata.lastAssignmentAt': new Date(),
+              'metadata.lastAssignedTo': selectedUser.name
+            } 
+          }
+        );
+      }
+
       const advisor = JSON.stringify({name: selectedUser.name, _id: selectedUser._id , email: selectedUser.email });
 
       console.log(`🎯 ${predefinedDetection ? 'Mensaje predefinido detectado' : 'Usando valores por defecto'} para ${phone}: ${detectedCampaign} - Medio: ${medio} - Asesor: ${selectedUser.name}`);

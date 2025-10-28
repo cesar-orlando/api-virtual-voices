@@ -14,6 +14,9 @@ console.log(`🔄 Cluster Mode: ${numWorkers} workers (${os.cpus().length} CPUs 
 if (cluster.isPrimary) {
   console.log(`🎯 Worker principal iniciado (PID: ${process.pid})`);
   
+  // ✅ Marcar que estamos en cluster mode
+  process.env.CLUSTER_MODE = 'true';
+  
   // Crear workers
   for (let i = 0; i < numWorkers; i++) {
     const worker = cluster.fork();

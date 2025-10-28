@@ -26,7 +26,7 @@ class ConnectionManager {
   private connectionStats: Map<string, { count: number; lastUsed: number }> = new Map();
   private reconnectAttempts: Map<string, number> = new Map(); // ✅ Track reconnection attempts
   private readonly MAX_CONNECTIONS_PER_COMPANY = 200; // ✅ Aumentado: 200 por empresa (vs 50)
-  private readonly MAX_TOTAL_CONNECTIONS = 500; // ✅ Balanceado: 500 total para cluster mode (safe limit)
+  private readonly MAX_TOTAL_CONNECTIONS = 400; // ✅ Optimizado: 400 total para 3 workers (balance RAM/rendimiento)
   private readonly CONNECTION_CLEANUP_INTERVAL = 300000; // 5 minutos
   private readonly MAX_RECONNECT_ATTEMPTS = 5; // ✅ Limit reconnection attempts
 
@@ -538,9 +538,9 @@ export function getConnectionStats(): Record<string, any> {
     inactiveConnections: Object.keys(connections).length - activeConnections.length,
     connectionsByCompany: managerStats,
     maxConnectionsPerCompany: 200,
-    maxTotalConnections: 500,
+        maxTotalConnections: 400,
     mongoAtlasLimit: 1000,
-    safetyMargin: 500,
+    safetyMargin: 400,
     poolConfiguration: {
       maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 30),
       minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 5),

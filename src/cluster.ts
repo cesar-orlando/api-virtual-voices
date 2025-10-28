@@ -10,9 +10,9 @@ if (!process.env.NODE_ENV) {
 }
 
 // ✅ Determinar cuántos workers crear
-const numWorkers = process.env.CLUSTER_WORKERS 
-  ? parseInt(process.env.CLUSTER_WORKERS) 
-  : (process.env.NODE_ENV === 'production' ? os.cpus().length : 1); // Solo usar todos CPUs en producción (4 en tu caso)
+const numWorkers = process.env.CLUSTER_WORKERS
+  ? parseInt(process.env.CLUSTER_WORKERS)
+  : (process.env.NODE_ENV === 'production' ? 3 : 1); // ✅ Optimizado: 3 workers en producción para balance RAM/rendimiento
 
 console.log(`🔄 Cluster Mode: ${numWorkers} workers (${os.cpus().length} CPUs disponibles)`);
 
@@ -67,11 +67,12 @@ if (cluster.isPrimary) {
     }
   });
   
-  console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  console.log(`🚀 CLUSTER MODE ACTIVADO`);
-  console.log(`📊 Workers: ${numWorkers}`);
-  console.log(`🔄 Load balancing: Round-robin entre workers`);
-  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`🚀 CLUSTER MODE ACTIVADO`);
+      console.log(`📊 Workers: ${numWorkers} (optimizado para 8GB RAM)`);
+      console.log(`🔄 Load balancing: Round-robin entre workers`);
+      console.log(`💾 RAM estimada: ~${numWorkers * 2}GB (dentro del límite de 8GB)`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
   
 } else {
   // Este código corre en CADA worker

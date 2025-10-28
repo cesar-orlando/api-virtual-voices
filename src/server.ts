@@ -78,8 +78,6 @@ if (!fs.existsSync(authDir)) {
   console.log(`✅ Directorio de autenticación creado en: ${authDir}`);
 }
 
-console.log('MONGO_URI_QUICKLEARNING:', process.env.MONGO_URI_QUICKLEARNING);
-
 /**
  * Initialize message schedulers for all companies
  */
@@ -105,9 +103,14 @@ async function initializeMessageSchedulers(): Promise<void> {
 
 async function main() {
   try {
-    // Importar cluster para verificar si es worker principal
+    // Importar cluster para verificar si es el primer worker
     const cluster = require('cluster');
-    const isPrimary = cluster.isPrimary || process.env.NODE_ENV === 'development';
+    
+    // ✅ FIX: Ejecutar servicios pesados si:
+    // 1. No hay cluster mode (cluster.isPrimary === true) - mod into normal
+    // 2. O estamos en cluster mode PERO es el worker #1
+    // Esto asegura que siempre haya servicios corriendo, con o sin cluster
+    const shouldInitServices = cluster.isPrimary || cluster.worker?.id === 1;
     
     // Conectar a la base de datos usando la configuración del entorno
     await connectDB();
@@ -116,15 +119,15 @@ async function main() {
     server.listen(config.port, () => {
       console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
       console.log(`🌍 Entorno: ${config.name.toUpperCase()}`);
-      if (!isPrimary) {
-        console.log(`👷 Worker ${cluster.worker?.id} listo para recibir peticiones`);
+      if (cluster.worker) {
+        console.log(`👷 Worker ${cluster.worker.id} listo para recibir peticiones`);
       }
     });
 
-    // ✅ SOLO el worker principal ejecuta servicios pesados para evitar duplicación
-    if (isPrimary) {
+    // ✅ SOLO el worker #1 ejecuta servicios pesados para evitar duplicación
+    if (shouldInitServices) {
       console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('🎯 INICIANDO SERVICIOS EN WORKER PRINCIPAL');
+      console.log(`🎯 INICIANDO SERVICIOS PESADOS EN WORKER ${cluster.worker?.id}`);
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
       
       // Iniciar scheduler de limpieza de attachments

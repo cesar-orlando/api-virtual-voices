@@ -106,10 +106,11 @@ async function main() {
     // Importar cluster para verificar si es el primer worker
     const cluster = require('cluster');
     
-    // ✅ FIX: En cluster mode, solo el worker #1 ejecuta servicios pesados
-    // cluster.isPrimary es true SOLO en el proceso cluster principal (no en workers)
-    // cluster.worker.id === 1 es el primer worker que ejecuta server.ts
-    const shouldInitServices = !cluster.isPrimary && (cluster.worker?.id === 1 || !process.env.CLUSTER_MODE);
+    // ✅ FIX: Ejecutar servicios pesados si:
+    // 1. No hay cluster mode (cluster.isPrimary === true) - mod into normal
+    // 2. O estamos en cluster mode PERO es el worker #1
+    // Esto asegura que siempre haya servicios corriendo, con o sin cluster
+    const shouldInitServices = cluster.isPrimary || cluster.worker?.id === 1;
     
     // Conectar a la base de datos usando la configuración del entorno
     await connectDB();

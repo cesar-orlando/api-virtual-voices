@@ -105,76 +105,92 @@ async function initializeMessageSchedulers(): Promise<void> {
 
 async function main() {
   try {
+    // Importar cluster para verificar si es worker principal
+    const cluster = require('cluster');
+    const isPrimary = cluster.isPrimary || process.env.NODE_ENV === 'development';
+    
     // Conectar a la base de datos usando la configuración del entorno
     await connectDB();
     
-    // Iniciar scheduler de limpieza de attachments
-    startAttachmentCleanupScheduler();
-    
-    // 🏢 Iniciar actualizaciones automáticas de resúmenes empresariales cada 6 horas
-    CompanySummaryService.scheduleAutomaticUpdates();
-    console.log('📊 Company summary automatic updates enabled (every 6 hours)');
-    
-    // 📧 Inicializar servicio de auto-monitoreo de emails
-    console.log('📧 Inicializando servicio de auto-monitoreo de emails...');
-    try {
-      //const emailAutoStartService = EmailAutoStartService.getInstance();
-      //await emailAutoStartService.initialize();
-      console.log('✅ Servicio de auto-monitoreo de emails inicializado (activación por login)');
-    } catch (emailError) {
-      console.error('⚠️ Error inicializando auto-monitoreo de emails (continuando sin él):', emailError);
-    }
-    
-    // Iniciar servidor
+    // Iniciar servidor (todos los workers necesitan el servidor HTTP)
     server.listen(config.port, () => {
       console.log(`🚀 Servidor corriendo en http://localhost:${config.port}`);
       console.log(`🌍 Entorno: ${config.name.toUpperCase()}`);
+      if (!isPrimary) {
+        console.log(`👷 Worker ${cluster.worker?.id} listo para recibir peticiones`);
+      }
     });
 
-    // ✅ Start bot auto-reactivation scheduler
-    if (process.env.BOT_REACTIVATION_ENABLED !== 'false') {
+    // ✅ SOLO el worker principal ejecuta servicios pesados para evitar duplicación
+    if (isPrimary) {
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🎯 INICIANDO SERVICIOS EN WORKER PRINCIPAL');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      
+      // Iniciar scheduler de limpieza de attachments
+      startAttachmentCleanupScheduler();
+      
+      // 🏢 Iniciar actualizaciones automáticas de resúmenes empresariales cada 6 horas
+      CompanySummaryService.scheduleAutomaticUpdates();
+      console.log('📊 Company summary automatic updates enabled (every 6 hours)');
+      
+      // 📧 Inicializar servicio de auto-monitoreo de emails
+      console.log('📧 Inicializando servicio de auto-monitoreo de emails...');
       try {
-        startBotReactivationScheduler();
-        console.log('✅ Bot auto-reactivation scheduler started');
-      } catch (error) {
-        console.error('❌ Error starting bot reactivation scheduler:', error);
+        //const emailAutoStartService = EmailAutoStartService.getInstance();
+        //await emailAutoStartService.initialize();
+        console.log('✅ Servicio de auto-monitoreo de emails inicializado (activación por login)');
+      } catch (emailError) {
+        console.error('⚠️ Error inicializando auto-monitoreo de emails (continuando sin él):', emailError);
       }
-    }
 
-    const fbConfigs = await getAllFacebookConfigsFromAllDatabases();
+      // ✅ Start bot auto-reactivation scheduler
+      if (process.env.BOT_REACTIVATION_ENABLED !== 'false') {
+        try {
+          startBotReactivationScheduler();
+          console.log('✅ Bot auto-reactivation scheduler started');
+        } catch (error) {
+          console.error('❌ Error starting bot reactivation scheduler:', error);
+        }
+      }
 
-    for (const config of fbConfigs) {
-      loadRecentFacebookMessages(config, 10);
+      const fbConfigs = await getAllFacebookConfigsFromAllDatabases();
+
+      for (const config of fbConfigs) {
+        loadRecentFacebookMessages(config, 10);
+      }
+      
+      // Iniciar sesiones de WhatsApp
+      const sessions = await getAllSessionsFromAllDatabases();
+      console.log(`📱 Iniciando ${sessions.length} sesiones de WhatsApp...`);
+      
+      const whatsappPromises = [];
+      for (const session of sessions) {
+        const promise = startWhatsappBot(session.name, session.company, session.user_id)
+          .catch(err => {
+            console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`, err);
+            return { success: false, company: session.company, session: session.name };
+          });
+        whatsappPromises.push(promise);
+      }
+      
+      // Wait for all WhatsApp sessions to finish initialization (success or failure)
+      await Promise.allSettled(whatsappPromises);
+      
+      // 📅 Now initialize message schedulers after WhatsApp clients are ready
+      //await initializeMessageSchedulers();
+      
+      // Monitoreo periódico de conexiones (cada 5 minutos)
+      setInterval(() => {
+        cleanupInactiveConnections();
+      }, 5 * 60 * 1000);
+      
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🎉 SERVER FULLY INITIALIZED AND READY');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    } else {
+      console.log('✅ Worker listo - Solo maneja peticiones HTTP');
     }
-    
-    // Iniciar sesiones de WhatsApp
-    const sessions = await getAllSessionsFromAllDatabases();
-    console.log(`📱 Iniciando ${sessions.length} sesiones de WhatsApp...`);
-    
-    const whatsappPromises = [];
-    for (const session of sessions) {
-      const promise = startWhatsappBot(session.name, session.company, session.user_id)
-        .catch(err => {
-          console.error(`Error iniciando sesión WhatsApp para ${session.company} - ${session.name}:`, err);
-          return { success: false, company: session.company, session: session.name };
-        });
-      whatsappPromises.push(promise);
-    }
-    
-    // Wait for all WhatsApp sessions to finish initialization (success or failure)
-    await Promise.allSettled(whatsappPromises);
-    
-    // 📅 Now initialize message schedulers after WhatsApp clients are ready
-    //await initializeMessageSchedulers();
-    
-    // Monitoreo periódico de conexiones (cada 5 minutos)
-    setInterval(() => {
-      cleanupInactiveConnections();
-    }, 5 * 60 * 1000);
-    
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🎉 SERVER FULLY INITIALIZED AND READY');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     
   } catch (error) {
     console.error('❌ Error starting server:', error);

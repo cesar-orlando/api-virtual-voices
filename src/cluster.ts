@@ -4,6 +4,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// ✅ Forzar NODE_ENV a production si no está definido (para Render)
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
+
 // ✅ Determinar cuántos workers crear
 const numWorkers = process.env.CLUSTER_WORKERS 
   ? parseInt(process.env.CLUSTER_WORKERS) 

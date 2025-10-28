@@ -26,7 +26,7 @@ class ConnectionManager {
   private connectionStats: Map<string, { count: number; lastUsed: number }> = new Map();
   private reconnectAttempts: Map<string, number> = new Map(); // ✅ Track reconnection attempts
   private readonly MAX_CONNECTIONS_PER_COMPANY = 200; // ✅ Aumentado: 200 por empresa (vs 50)
-  private readonly MAX_TOTAL_CONNECTIONS = 450; // ✅ Aumentado: 450 total (vs 400) - Dejamos 50 de margen
+  private readonly MAX_TOTAL_CONNECTIONS = 500; // ✅ Balanceado: 500 total para cluster mode (safe limit)
   private readonly CONNECTION_CLEANUP_INTERVAL = 300000; // 5 minutos
   private readonly MAX_RECONNECT_ATTEMPTS = 5; // ✅ Limit reconnection attempts
 
@@ -139,10 +139,10 @@ if (process.env.DISABLE_CONNECTION_CLEANUP !== 'true') {
   }, connectionManager['CONNECTION_CLEANUP_INTERVAL']);
 }
 
-// Opciones de conexión con enfoque conservador para reducir conexiones ociosas
+// Opciones de conexión optimizadas para cluster mode
 export const buildMongoConnectionOptions = () => ({
-  maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 25),
-  minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 0),
+  maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 30), // ✅ Balanceado: 30 para cluster mode (sustainable)
+  minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 5), // ✅ Pool mínimo de 5 conexiones siempre listas
   serverSelectionTimeoutMS: 10000,
   socketTimeoutMS: 60000,
   bufferCommands: false,
@@ -155,7 +155,7 @@ export const buildMongoConnectionOptions = () => ({
   heartbeatFrequencyMS: 15000,
   maxIdleTimeMS: 180000,
   waitQueueTimeoutMS: 60000, // ✅ Increased to 60s (from 30s) for bulk operations with retry logic
-  maxConnecting: 5,
+  maxConnecting: 10, // ✅ Aumentado de 5 a 10 para conexiones más rápidas
 });
 
 export async function getDbConnection(dbName: string): Promise<Connection> {
@@ -538,12 +538,12 @@ export function getConnectionStats(): Record<string, any> {
     inactiveConnections: Object.keys(connections).length - activeConnections.length,
     connectionsByCompany: managerStats,
     maxConnectionsPerCompany: 200,
-    maxTotalConnections: 450,
-    mongoAtlasLimit: 500,
-    safetyMargin: 50,
+    maxTotalConnections: 500,
+    mongoAtlasLimit: 1000,
+    safetyMargin: 500,
     poolConfiguration: {
-      maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 25),
-      minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 0),
+      maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 30),
+      minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 5),
     },
     memoryUsage: process.memoryUsage()
   };

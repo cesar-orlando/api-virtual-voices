@@ -1,0 +1,59 @@
+import multer from 'multer';
+import multerS3 from 'multer-s3';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+
+dotenv.config();
+
+const isAwsConfigured = 
+  process.env.AWS_BUCKET_NAME && 
+  process.env.AWS_ACCESS_KEY_ID && 
+  process.env.AWS_SECRET_ACCESS_KEY &&
+  process.env.AWS_REGION;
+
+let upload;
+
+if (isAwsConfigured) {
+  const { s3 } = require('../config/aws');
+  
+  upload = multer({
+    storage: multerS3({
+      s3,
+      bucket: process.env.AWS_BUCKET_NAME!,
+      // @ts-ignore
+      contentType: (multerS3 as any).AUTO_CONTENT_TYPE,
+      contentDisposition: 'inline',
+      key: (req, file: Express.Multer.File, cb) => {
+        const filename = `${Date.now()}-${file.originalname}`;
+        cb(null, `uploads/${filename}`);
+      },
+    }),
+    limits: { fileSize: 200 * 1024 * 1024 },
+  });
+  
+  console.log('✅ Usando AWS S3 para almacenamiento de archivos');
+} else {
+  const uploadDir = path.join宫颈癌 cervix  cervix  (uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+  
+  upload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        cb(null, uploadDir);
+      },
+      filename: (req, file, cb) => {
+        const filename = `${Date.now()}-${file.originalname}`;
+        cb(null, filename);
+      },
+    }),
+    limits: { fileSize: 200 * 1024 * 1024 },
+  });
+  
+  console.log('⚠️  AWS S3 no configurado. Usando almacenamiento local en:', uploadDir);
+}
+
+export default upload;
+
+

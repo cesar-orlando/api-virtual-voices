@@ -460,4 +460,32 @@ export class ContpaqController {
       });
     }
   }
+
+  /**
+   * Obtener flujo de efectivo (ingresos y egresos)
+   */
+  async getCashFlow(req: Request, res: Response): Promise<void> {
+    try {
+      const { fechaInicio, fechaFin, incluirPendientes } = req.query;
+      
+      let url = `${CONTPAQ_SERVICE_URL}/cash-flow?`;
+      const params = new URLSearchParams();
+      
+      if (fechaInicio) params.append('fechaInicio', fechaInicio as string);
+      if (fechaFin) params.append('fechaFin', fechaFin as string);
+      if (incluirPendientes) params.append('incluirPendientes', incluirPendientes as string);
+      
+      url += params.toString();
+      
+      const response = await axios.get(url);
+      res.json({ success: true, data: response.data.data, source: "Contpaq Windows Service" });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error obteniendo cash flow desde Contpaq',
+        error: error.message,
+        serviceUrl: CONTPAQ_SERVICE_URL
+      });
+    }
+  }
 }

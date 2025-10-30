@@ -303,6 +303,361 @@ const response = await fetch('/api/contpaq/cobranza');
 
 ---
 
+## **💻 GUÍA DE IMPLEMENTACIÓN FRONTEND - CASH-FLOW**
+
+### **🎯 Configuración de Filtros Recomendada:**
+
+```jsx
+import React, { useState, useEffect } from 'react';
+
+const CashFlowPage = () => {
+  const [filtros, setFiltros] = useState({
+    fechaInicio: '2025-10-01',
+    fechaFin: '2025-10-31',
+    incluirPendientes: false
+  });
+  
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchCashFlow = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams(filtros);
+      const response = await fetch(`/api/contpaq/cash-flow?${params}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        setData(result.data);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCashFlow();
+  }, [filtros]);
+
+  return (
+    <div className="cash-flow-container">
+      <div className="filtros-section">
+        <input 
+          type="date" 
+          value={filtros.fechaInicio}
+          onChange={(e) => setFiltros({...filtros, fechaInicio: e.target.value})}
+        />
+        <input 
+          type="date" 
+          value={filtros.fechaFin}
+          onChange={(e) => setFiltros({...filtros, fechaFin: e.target.value})}
+        />
+        <label>
+          <input 
+            type="checkbox" 
+            checked={filtros.incluirPendientes}
+            onChange={(e) => setFiltros({...filtros, incluirPendientes: e.target.checked})}
+          />
+          Incluir Pendientes
+        </label>
+      </div>
+
+      {loading ? (
+        <div className="loading">Cargando...</div>
+      ) : data && (
+        <div className="cash-flow-results">
+          {/* Resumen Principal */}
+          <div className="resumen-principal">
+            <div className={`card ${data.flujoNeto.esPositivo ? 'positivo' : 'negativo'}`}>
+              <h3>Flujo Neto</h3>
+              <div className="monto-principal">
+                ${data.flujoNeto.totalConvertido.toLocaleString()}
+              </div>
+              <div className="desglose">
+                <span>USD: ${data.flujoNeto.totalUSD.toLocaleString()}</span>
+                <span>MXN: ${data.flujoNeto.totalMXN.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ingresos vs Egresos */}
+          <div className="ingresos-egresos">
+            <div className="card ingresos">
+              <h3>💰 Ingresos</h3>
+              <div className="monto">${data.ingresos.totalConvertido.toLocaleString()}</div>
+              <div className="detalle">
+                <span>USD: ${data.ingresos.totalUSD.toLocaleString()}</span>
+                <span>MXN: ${data.ingresos.totalMXN.toLocaleString()}</span>
+                <span>Documentos: {data.ingresos.cantidad}</span>
+              </div>
+            </div>
+
+            <div className="card egresos">
+              <h3>💸 Egresos</h3>
+              <div className="monto">${data.egresos.totalConvertido.toLocaleString()}</div>
+              <div className="detalle">
+                <span>USD: ${data.egresos.totalUSD.toLocaleString()}</span>
+                <span>MXN: ${data.egresos.totalMXN.toLocaleString()}</span>
+                <span>Documentos: {data.egresos.cantidad}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Documentos */}
+          <div className="tabla-documentos">
+            <h3>📋 Documentos Recientes</h3>
+            <div className="tabs">
+              <button className="tab active">Ingresos</button>
+              <button className="tab">Egresos</button>
+            </div>
+            
+            <div className="tabla-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Folio</th>
+                    <th>Cliente/Proveedor</th>
+                    <th>Fecha</th>
+                    <th>Monto</th>
+                    <th>Moneda</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.ingresos.documentos.map((doc, index) => (
+                    <tr key={index}>
+                      <td>{doc.CFOLIO}</td>
+                      <td>{doc.CRAZONSOCIAL}</td>
+                      <td>{new Date(doc.CFECHA).toLocaleDateString()}</td>
+                      <td>${doc.CTOTAL.toLocaleString()}</td>
+                      <td>{doc.CNOMBREMONEDA}</td>
+                      <td className={doc.CPENDIENTE === 0 ? 'pagado' : 'pendiente'}>
+                        {doc.CPENDIENTE === 0 ? 'Pagado' : 'Pendiente'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default CashFlowPage;
+```
+
+### **🎨 CSS para Cash-Flow:**
+
+```css
+.cash-flow-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.filtros-section {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.filtros-section input[type="date"] {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.filtros-section label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.resumen-principal {
+  margin-bottom: 30px;
+}
+
+.resumen-principal .card {
+  text-align: center;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.resumen-principal .card.positivo {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.resumen-principal .card.negativo {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+.monto-principal {
+  font-size: 3rem;
+  font-weight: bold;
+  margin: 15px 0;
+}
+
+.desglose {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.ingresos-egresos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.ingresos-egresos .card {
+  padding: 25px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ingresos-egresos .card.ingresos {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.ingresos-egresos .card.egresos {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+.ingresos-egresos h3 {
+  margin: 0 0 15px 0;
+  font-size: 1.2rem;
+}
+
+.ingresos-egresos .monto {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.ingresos-egresos .detalle {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.tabla-documentos {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.tabla-documentos h3 {
+  padding: 20px;
+  margin: 0;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.tabs {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.tabs .tab {
+  padding: 12px 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.tabs .tab.active {
+  background: white;
+  border-bottom: 2px solid #3b82f6;
+  color: #3b82f6;
+}
+
+.tabla-container {
+  overflow-x: auto;
+}
+
+.tabla-container table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabla-container th,
+.tabla-container td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.tabla-container th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+}
+
+.tabla-container tr:hover {
+  background: #f8f9fa;
+}
+
+.tabla-container .pagado {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.tabla-container .pendiente {
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.1rem;
+  color: #6b7280;
+}
+
+@media (max-width: 768px) {
+  .ingresos-egresos {
+    grid-template-columns: 1fr;
+  }
+  
+  .filtros-section {
+    flex-direction: column;
+  }
+  
+  .monto-principal {
+    font-size: 2rem;
+  }
+  
+  .desglose {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+```
+
+---
+
 ## **💻 GUÍA DE IMPLEMENTACIÓN FRONTEND - COBRANZA**
 
 ### **🎯 Configuración de Filtros Recomendada:**
@@ -2273,7 +2628,254 @@ const data = await response.json();
 
 ---
 
-## **📊 NUEVO: DASHBOARD DE VENTAS COMPLETO**
+## **💰 FLUJO DE EFECTIVO (CASH-FLOW)**
+
+### **8. 💸 Flujo de Efectivo (Cash Flow)**
+```http
+GET /api/contpaq/cash-flow
+```
+
+**Descripción:** Reporte completo de ingresos y egresos para análisis de flujo de efectivo. Muestra facturas emitidas (ingresos) vs compras/gastos/pagos (egresos) en un período determinado. Perfecto para dashboards financieros y análisis de liquidez.
+
+**📋 Parámetros:**
+| Parámetro | Tipo | Requerido | Default | Descripción |
+|-----------|------|-----------|---------|-------------|
+| `fechaInicio` | string | ✅ Sí | - | Fecha de inicio del período (YYYY-MM-DD) |
+| `fechaFin` | string | ✅ Sí | - | Fecha de fin del período (YYYY-MM-DD) |
+| `incluirPendientes` | boolean | ❌ No | `false` | Si incluir documentos pendientes de pago |
+
+**📝 Ejemplos de uso:**
+
+**Ejemplo 1: Flujo de efectivo del mes (solo pagados)**
+```http
+GET /api/contpaq/cash-flow?fechaInicio=2025-10-01&fechaFin=2025-10-31&incluirPendientes=false
+```
+
+**Ejemplo 2: Flujo de efectivo incluyendo pendientes**
+```http
+GET /api/contpaq/cash-flow?fechaInicio=2025-10-01&fechaFin=2025-10-31&incluirPendientes=true
+```
+
+**Ejemplo 3: Uso en JavaScript**
+```javascript
+const fechaInicio = '2025-10-01';
+const fechaFin = '2025-10-31';
+
+const response = await fetch(
+  `/api/contpaq/cash-flow?fechaInicio=${fechaInicio}&fechaFin=${fechaFin}&incluirPendientes=false`
+);
+const result = await response.json();
+
+if (result.success) {
+  console.log('Ingresos:', result.data.ingresos.totalConvertido);
+  console.log('Egresos:', result.data.egresos.totalConvertido);
+  console.log('Flujo Neto:', result.data.flujoNeto.totalConvertido);
+}
+```
+
+**Respuesta JSON:**
+```json
+{
+  "success": true,
+  "data": {
+    "periodo": {
+      "fechaInicio": "2025-10-01",
+      "fechaFin": "2025-10-31",
+      "incluirPendientes": false
+    },
+    "ingresos": {
+      "totalUSD": 10659.16,
+      "totalMXN": 369945.82,
+      "totalConvertido": 583129.02,
+      "cantidad": 38,
+      "documentos": [
+        {
+          "CIDDOCUMENTO": 95504,
+          "CFOLIO": 11134,
+          "CRAZONSOCIAL": "VENTAS MOSTRADOR",
+          "CTOTAL": 176.78,
+          "CPENDIENTE": 0,
+          "CFECHA": "2025-10-28T00:00:00.000Z",
+          "CNOMBREMONEDA": "Peso Mexicano",
+          "totalConvertido": 176.78
+        }
+      ]
+    },
+    "egresos": {
+      "totalUSD": 103052.57,
+      "totalMXN": 3060923.56,
+      "totalConvertido": 5121974.96,
+      "cantidad": 212,
+      "documentos": [
+        {
+          "CIDDOCUMENTO": 95511,
+          "CFOLIO": 175,
+          "CRAZONSOCIAL": "PROMOTORA DEL DESARROLLO DE AMERICA LATINA",
+          "CTOTAL": 55.05,
+          "CPENDIENTE": 0,
+          "CFECHA": "2025-10-28T00:00:00.000Z",
+          "CIDCONCEPTODOCUMENTO": 3050,
+          "CSERIEDOCUMENTO": "NC",
+          "CNOMBREMONEDA": "Dólar Americano",
+          "totalConvertido": 1101
+        }
+      ]
+    },
+    "flujoNeto": {
+      "totalUSD": -92393.41,
+      "totalMXN": -2690977.74,
+      "totalConvertido": -4538845.94,
+      "esPositivo": false
+    }
+  },
+  "source": "Contpaq Windows Service"
+}
+```
+
+**📋 Estructura de Datos Detallada:**
+
+### **📊 Campo `ingresos`:**
+Contiene información sobre **facturas emitidas y cobradas** (dinero que entra):
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `totalUSD` | number | Suma total de ingresos en USD |
+| `totalMXN` | number | Suma total de ingresos en MXN |
+| `totalConvertido` | number | Total convertido: `(USD × 20) + MXN` |
+| `cantidad` | number | Número de documentos de ingreso |
+| `documentos[]` | array | Lista de documentos (máximo 10 para preview) |
+
+**🔍 Documentos incluidos:**
+- Facturas con `CIDCONCEPTODOCUMENTO IN (3045, 3046)` y `CSERIEDOCUMENTO = 'F'`
+- Solo facturas **cobradas** si `incluirPendientes=false` (`CPENDIENTE = 0`)
+- Cada documento incluye: `CIDDOCUMENTO`, `CFOLIO`, `CRAZONSOCIAL`, `CTOTAL`, `CPENDIENTE`, `CFECHA`, `CNOMBREMONEDA`, `totalConvertido`
+
+### **📊 Campo `egresos`:**
+Contiene información sobre **compras, gastos y pagos** (dinero que sale):
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `totalUSD` | number | Suma total de egresos en USD |
+| `totalMXN` | number | Suma total de egresos en MXN |
+| `totalConvertido` | number | Total convertido: `(USD × 20) + MXN` |
+| `cantidad` | number | Número de documentos de egreso |
+| `documentos[]` | array | Lista de documentos (máximo 10 para preview) |
+
+**🔍 Documentos incluidos:**
+- Todos los documentos con `CNATURALEZA = 1` (egresos)
+- Tipos de documentos:
+  - **GP**: Gastos de Proveedores
+  - **PAGP**: Pagos a Proveedores (pesos)
+  - **PAGD**: Pagos a Proveedores (dólares)
+  - **NC**: Notas de Crédito
+  - **DC**: Documentos de Compra
+  - **CB**: Comprobantes Bancarios
+  - **GB**: Gastos Bancarios
+  - **FC**: Facturas de Compra
+- Solo documentos **pagados** si `incluirPendientes=false` (`CPENDIENTE = 0`)
+- Cada documento incluye: `CIDDOCUMENTO`, `CFOLIO`, `CRAZONSOCIAL`, `CTOTAL`, `CPENDIENTE`, `CFECHA`, `CIDCONCEPTODOCUMENTO`, `CSERIEDOCUMENTO`, `CNOMBREMONEDA`, `totalConvertido`
+
+### **📊 Campo `flujoNeto`:**
+Resultado del flujo de efectivo (ingresos - egresos):
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `totalUSD` | number | Flujo neto en USD: `ingresos.totalUSD - egresos.totalUSD` |
+| `totalMXN` | number | Flujo neto en MXN: `ingresos.totalMXN - egresos.totalMXN` |
+| `totalConvertido` | number | Flujo neto convertido: `ingresos.totalConvertido - egresos.totalConvertido` |
+| `esPositivo` | boolean | `true` si hay más ingresos que egresos, `false` si hay déficit |
+
+**💡 Interpretación:**
+- **Valor positivo** (`esPositivo: true`) = ✅ La empresa generó más dinero del que gastó
+- **Valor negativo** (`esPositivo: false`) = ⚠️ La empresa gastó más de lo que generó (déficit)
+
+### **📊 Campo `periodo`:**
+Información del período consultado:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `fechaInicio` | string | Fecha de inicio del período |
+| `fechaFin` | string | Fecha de fin del período |
+| `incluirPendientes` | boolean | Si se incluyeron documentos pendientes en el cálculo |
+
+---
+
+### **💡 Casos de Uso:**
+
+**1. Dashboard Financiero Mensual:**
+```javascript
+// Ver flujo de efectivo del mes actual (solo pagados)
+const response = await fetch('/api/contpaq/cash-flow?fechaInicio=2025-10-01&fechaFin=2025-10-31');
+const { data } = await response.json();
+
+// Mostrar en dashboard
+console.log(`Ingresos: $${data.ingresos.totalConvertido.toLocaleString()}`);
+console.log(`Egresos: $${data.egresos.totalConvertido.toLocaleString()}`);
+console.log(`Flujo Neto: $${data.flujoNeto.totalConvertido.toLocaleString()}`);
+```
+
+**2. Proyección Incluyendo Pendientes:**
+```javascript
+// Incluir facturas pendientes para proyección
+const response = await fetch('/api/contpaq/cash-flow?fechaInicio=2025-10-01&fechaFin=2025-10-31&incluirPendientes=true');
+const { data } = await response.json();
+
+// Calcular proyección
+const proyeccion = data.ingresos.totalConvertido - data.egresos.totalConvertido;
+console.log(`Proyección: $${proyeccion.toLocaleString()}`);
+```
+
+**3. Análisis Trimestral:**
+```javascript
+// Primer trimestre
+const q1 = await fetch('/api/contpaq/cash-flow?fechaInicio=2025-01-01&fechaFin=2025-03-31').then(r => r.json());
+// Segundo trimestre
+const q2 = await fetch('/api/contpaq/cash-flow?fechaInicio=2025-04-01&fechaFin=2025-06-30').then(r => r.json());
+
+// Comparar trimestres
+const mejora = q2.data.flujoNeto.totalConvertido - q1.data.flujoNeto.totalConvertido;
+console.log(`Mejora Q2 vs Q1: $${mejora.toLocaleString()}`);
+```
+
+---
+
+### **⚠️ Errores Comunes:**
+
+**Error 1: Faltan parámetros requeridos**
+```json
+{
+  "success": false,
+  "message": "fechaInicio y fechaFin son requeridos"
+}
+```
+**Solución:** Asegúrate de enviar ambos parámetros en formato `YYYY-MM-DD`
+
+**Error 2: Formato de fecha incorrecto**
+```json
+{
+  "success": false,
+  "message": "Error obteniendo cash flow",
+  "error": "Invalid date format"
+}
+```
+**Solución:** Usa formato `YYYY-MM-DD` (ej: `2025-10-31`, no `31/10/2025`)
+
+**Error 3: No hay datos en el período**
+```json
+{
+  "success": true,
+  "data": {
+    "ingresos": { "totalUSD": 0, "totalMXN": 0, "cantidad": 0 },
+    "egresos": { "totalUSD": 0, "totalMXN": 0, "cantidad": 0 },
+    "flujoNeto": { "totalConvertido": 0, "esPositivo": false }
+  }
+}
+```
+**Solución:** Verifica que las fechas sean correctas y que haya datos en Contpaq para ese período
+
+---
+
+## **📊 DASHBOARD DE VENTAS COMPLETO**
 
 ### **9. 🎯 Dashboard de Ventas (Sales Dashboard)**
 ```http
@@ -3017,6 +3619,6 @@ fechaInicio = '2025-07-01'  // ← Julio
 
 Para cualquier duda o problema con la API, contactar al equipo de desarrollo.
 
-**Versión:** 7.0.0  
+**Versión:** 8.0.0  
 **Última actualización:** Octubre 2025  
 **Estado:** ✅ Producción

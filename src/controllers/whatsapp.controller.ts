@@ -331,6 +331,87 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
   }
 };
 
+// Simple endpoint: body carries c_name, sessionId, phone, message
+export const sendWhatsappSimple = async (req: Request, res: Response) => {
+  try {
+    const { c_name, sessionId, phone: rawPhone, message } = req.body || {};
+
+    if (!c_name || !sessionId || !rawPhone || !message) {
+      res.status(400).json({
+        message: 'Missing required fields',
+        required: ['c_name', 'sessionId', 'phone', 'message']
+      });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    const WhatsappSession = getSessionModel(conn);
+    const session = await WhatsappSession.findById(sessionId);
+    if (!session) {
+      res.status(404).json({ message: 'Session not found' });
+      return;
+    }
+
+    // Normalize phone
+    const phone = String(rawPhone).includes('@c.us') ? String(rawPhone) : `${String(rawPhone)}@c.us`;
+
+    // Ensure client
+    const clientKey = `${c_name}:${session.name}`;
+    let whatsappClient = clients[clientKey];
+    if (!whatsappClient) {
+      try {
+        whatsappClient = await startWhatsappBot(session.name, c_name, (session as any)?.user?.id || (session as any)?.user_id);
+      } catch (e) {
+        res.status(503).json({ message: 'WhatsApp client not initialized', error: e instanceof Error ? e.message : e });
+        return;
+      }
+    }
+
+    // Retry policy: 3 attempts with 500/1000 ms backoff
+    const maxAttempts = 3;
+    const delays = [0, 500, 1000];
+    let lastErr: any;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, delays[attempt]));
+        const sent = await whatsappClient.sendMessage(phone, message);
+        // Store minimal log as outbound-ai-tool for consistency
+        const WhatsappChat = getWhatsappChatModel(conn);
+        await WhatsappChat.findOneAndUpdate(
+          {
+            'session.name': session.name,
+            $or: [
+              { phone: Number(String(phone).replace('@c.us', '')) },
+              { phone }
+            ]
+          },
+          {
+            $push: {
+              messages: {
+                msgId: sent.id?.id,
+                direction: 'outbound-ai-tool',
+                body: sent.body,
+                respondedBy: 'AI',
+                status: 'enviado',
+                createdAt: new Date()
+              }
+            }
+          },
+          { upsert: true }
+        );
+        res.status(200).json({ message: 'Message sent' });
+        return;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+
+    res.status(500).json({ message: 'Failed to send after retries', error: lastErr instanceof Error ? lastErr.message : lastErr });
+  } catch (error) {
+    res.status(500).json({ message: 'Error sending simple WhatsApp message', error: error instanceof Error ? error.message : error });
+  }
+};
+
 // Obtiene el historial de mensajes de un usuario específico (por número limpio o con @c.us)
 export const getChatMessages = async (req: Request, res: Response) : Promise<void> => {
   try {

@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import { getConnectionByCompanySlug } from "../../config/connectionManager";
+import getRecordModel from "../../models/record.model";
 import * as XLSX from 'xlsx';
 import twilio from 'twilio';
 
@@ -85,8 +87,8 @@ export const downloadProspectosExcel = async (req: Request, res: Response): Prom
     } = req.query;
     
     // Fechas del rango (usar las mismas del script)
-    const start = startDate ? new Date(startDate as string) : new Date('2025-09-22T00:00:00.000Z');
-    const end = endDate ? new Date(endDate as string) : new Date('2025-10-28T23:59:59.999Z');
+    const start = startDate ? new Date(startDate as string) : new Date('2025-10-19T00:00:00.000Z');
+    const end = endDate ? new Date(endDate as string) : new Date('2025-10-31T23:59:59.999Z');
     
     // Asegurar que las fechas incluyan todo el día
     start.setUTCHours(0, 0, 0, 0);
@@ -494,6 +496,168 @@ export const getProspectosStats = async (req: Request, res: Response): Promise<v
     res.status(500).json({
       success: false,
       message: 'Error obteniendo estadísticas desde Twilio',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * Descargar Excel combinado: Twilio (hoja 1) + Prospectos DB (hoja 2)
+ * GET /api/quicklearning/excel/prospectos-combinado
+ * Query:
+ * - startDate, endDate: ISO strings
+ * - companySlug: por defecto 'quicklearning'
+ */
+export const downloadProspectosCombinadoExcel = async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('📊 Generando Excel combinado Twilio + DB...');
+    const {
+      startDate,
+      endDate,
+      companySlug = 'quicklearning',
+      medio,
+      campana
+    } = req.query;
+
+    const start = startDate ? new Date(startDate as string) : new Date('2025-10-19T00:00:00.000Z');
+    const end = endDate ? new Date(endDate as string) : new Date('2025-10-31T23:59:59.999Z');
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(23, 59, 59, 999);
+
+    // 1) Hoja Twilio: reutilizar lógica de recopilación (primer mensaje por número) con clasificación
+    const twilioMap = new Map<string, any>();
+    let hasMore = true;
+    let nextPageToken: string | null = null;
+    const predefinedMessages = [
+      { message: "Hola. Quiero info sobre el inicio de curso.", medio: "META", campana: "Inicio de Curso" },
+      { message: "Hola, quiero info sobre los cursos de inglés (u).", medio: "META", campana: "USA" },
+      { message: "Hola, quiero info sobre los cursos de inglés (c).", medio: "META", campana: "Can" },
+      { message: "Hola, quiero más información sobre los cursos de inglés de Quick Learning. Los busque en Google.", medio: "GOOGLE", campana: "Google" },
+      { message: "Hola, me encantaría recibir información de sus cursos.", medio: "GOOGLE", campana: "Google" },
+      { message: "Hola, quiero más info sobre los cursos presenciales.", medio: "META", campana: "Presencial" },
+      { message: "Hola, quiero más info sobre los cursos virtuales.", medio: "META", campana: "Virtual" },
+      { message: "Hola, quiero info sobre la promo virtual.", medio: "META", campana: "Virtual Promos" },
+      { message: "Hola, quiero más info sobre los cursos online.", medio: "META", campana: "Online" },
+      { message: "Hola, quiero info sobre la promo online.", medio: "META", campana: "online" },
+      { message: "Hola, quiero info sobre los cursos de inglés.", medio: "META", campana: "General" },
+      { message: "Hola. Quiero info sobre los cursos de inglés", medio: "META", campana: "General" },
+      { message: "Hola. Quiero más info sobre los cursos de inglés en línea.", medio: "META", campana: "General" },
+      { message: "Hola, quiero info sobre los cursos de inglés (r).", medio: "META", campana: "RMKT" },
+      { message: "Medio: Meta Campana: RMKT", medio: "META", campana: "RMKT" },
+      { message: "Hola, quiero más info sobre el curso SMART.", medio: "META", campana: "SMART" },
+      { message: "Más info de los cursos, los vi en tik tok.", medio: "TIKTOK", campana: "TIKTOK" },
+      { message: "Hola. Quiero información sobre la flash sale del 30% en virtual.", medio: "META", campana: "FlashV 30%" }
+    ];
+    while (hasMore) {
+      const messages = await client.messages.list({
+        to: `whatsapp:${phoneNumber}`,
+        dateSentAfter: start,
+        dateSentBefore: end,
+        pageSize: 1000,
+        ...(nextPageToken && { pageToken: nextPageToken })
+      });
+      messages.sort((a, b) => new Date(a.dateSent).getTime() - new Date(b.dateSent).getTime());
+      if (messages.length === 0) break;
+      for (const message of messages) {
+        let phone = message.from;
+        if (phone.startsWith('whatsapp:')) phone = phone.replace('whatsapp:', '');
+        if (!twilioMap.has(phone)) {
+          const body = message.body || '[Mensaje sin texto - multimedia]';
+          const match = findBestMessageMatch(body, predefinedMessages);
+          twilioMap.set(phone, {
+            number: phone,
+            mensaje: body,
+            fecha: message.dateSent,
+            medio: match.medio,
+            campana: match.campana,
+            similarity: match.similarity
+          });
+        }
+      }
+      hasMore = messages.length === 1000;
+      if (hasMore) nextPageToken = messages[messages.length - 1].sid;
+    }
+
+    let twilioRows = Array.from(twilioMap.values());
+    if (medio) twilioRows = twilioRows.filter((r: any) => r.medio === medio);
+    if (campana) twilioRows = twilioRows.filter((r: any) => r.campana === campana);
+    const twilioSheetData = twilioRows.map((item: any) => ({
+      'Número': item.number,
+      'Medio': item.medio,
+      'Campaña': item.campana,
+      'Mensaje': item.mensaje,
+      'Fecha': new Date(item.fecha).toLocaleDateString('es-MX'),
+      'Hora': new Date(item.fecha).toLocaleTimeString('es-MX'),
+      'Similitud': `${Math.round((item.similarity || 0) * 100)}%`
+    }));
+
+    // 2) Hoja Prospectos DB: DynamicRecord(tableSlug='prospectos', c_name=companySlug)
+    const conn = await getConnectionByCompanySlug(companySlug as string);
+    const Record = getRecordModel(conn);
+    const dbQuery: any = {
+      tableSlug: 'prospectos',
+      c_name: companySlug,
+      $or: [
+        { createdAt: { $gte: start, $lte: end } },
+        { 'data.lastmessagedate': { $gte: start, $lte: end } }
+      ]
+    };
+    if (medio) dbQuery['data.medio'] = medio;
+    if (campana) dbQuery['data.campana'] = campana;
+    const dbProspects = await Record.find(dbQuery).select({ data: 1, createdAt: 1 }).lean();
+
+    const dbSheetData = dbProspects.map((doc: any) => {
+      const msg = doc?.data?.lastmessage || '';
+      const match = findBestMessageMatch(msg, predefinedMessages);
+      return {
+        'Número': doc?.data?.number ?? '',
+        'Medio': doc?.data?.medio ?? '',
+        'Campaña': doc?.data?.campana ?? '',
+        'Mensaje': msg,
+        'Fecha': new Date(doc?.data?.lastmessagedate || doc.createdAt).toLocaleDateString('es-MX'),
+        'Hora': new Date(doc?.data?.lastmessagedate || doc.createdAt).toLocaleTimeString('es-MX'),
+        'Similitud': `${Math.round((match?.similarity || 0) * 100)}%`
+      };
+    });
+
+    // 3) Construir Excel con 2 hojas
+    const workbook = XLSX.utils.book_new();
+    const wsTwilio = XLSX.utils.json_to_sheet(twilioSheetData);
+    const wsDB = XLSX.utils.json_to_sheet(dbSheetData);
+
+    wsTwilio['!cols'] = [
+      { wch: 20 },
+      { wch: 50 },
+      { wch: 15 },
+      { wch: 10 },
+      { wch: 10 }
+    ];
+    wsDB['!cols'] = [
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 50 },
+      { wch: 15 },
+      { wch: 10 },
+      { wch: 10 }
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, wsTwilio, 'Prospectos Twilio');
+    XLSX.utils.book_append_sheet(workbook, wsDB, 'Prospectos DB');
+
+    const filename = `prospectos-combinado-${new Date().toISOString().split('T')[0]}.xlsx`;
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+    console.log(`✅ Excel combinado generado: ${filename} | Twilio: ${twilioSheetData.length} | DB: ${dbSheetData.length}`);
+  } catch (error) {
+    console.error('❌ Error generando Excel combinado:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generando archivo Excel combinado',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }

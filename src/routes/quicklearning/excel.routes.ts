@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { downloadProspectosExcel, getProspectosStats } from '../../controllers/quicklearning/excelController';
+import { downloadProspectosExcel, getProspectosStats, downloadProspectosCombinadoExcel } from '../../controllers/quicklearning/excelController';
 
 const router = Router();
 
@@ -23,5 +23,17 @@ router.get('/prospectos', downloadProspectosExcel);
  * @access Public
  */
 router.get('/stats', getProspectosStats);
+
+/**
+ * @route GET /api/quicklearning/excel/prospectos-combinado
+ * @desc Descargar Excel con dos hojas: Twilio y Prospectos DB
+ * @query startDate - ISO (YYYY-MM-DDTHH:mm:ss.sssZ)
+ * @query endDate - ISO (YYYY-MM-DDTHH:mm:ss.sssZ)
+ * @query medio - Filtrar por medio (opcional)
+ * @query campana - Filtrar por campaña (opcional)
+ * @query companySlug - empresa (default quicklearning)
+ * @access Public
+ */
+router.get('/prospectos-combinado', downloadProspectosCombinadoExcel);
 
 export default router;

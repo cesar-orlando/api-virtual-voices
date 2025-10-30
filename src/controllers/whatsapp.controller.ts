@@ -331,6 +331,100 @@ export const sendWhatsappMessage = async (req: Request, res: Response) => {
   }
 };
 
+// Simple endpoint: body carries c_name, sessionId, phone, message
+export const sendWhatsappSimple = async (req: Request, res: Response) => {
+  try {
+    const { c_name, sessionId, phone: rawPhone, message } = req.body || {};
+
+    if (!c_name || !sessionId || !rawPhone || !message) {
+      res.status(400).json({
+        message: 'Missing required fields',
+        required: ['c_name', 'sessionId', 'phone', 'message']
+      });
+      return;
+    }
+
+    const conn = await getConnectionByCompanySlug(c_name);
+    const WhatsappSession = getSessionModel(conn);
+    const session = await WhatsappSession.findById(sessionId);
+    if (!session) {
+      res.status(404).json({ message: 'Session not found' });
+      return;
+    }
+
+    // Normalize phone
+    const phone = String(rawPhone).includes('@c.us') ? String(rawPhone) : `${String(rawPhone)}@c.us`;
+
+    // Ensure client
+    const clientKey = `${c_name}:${session.name}`;
+    let whatsappClient = clients[clientKey];
+    if (!whatsappClient) {
+      try {
+        whatsappClient = await startWhatsappBot(session.name, c_name, (session as any)?.user?.id || (session as any)?.user_id);
+      } catch (e) {
+        res.status(503).json({ message: 'WhatsApp client not initialized', error: e instanceof Error ? e.message : e });
+        return;
+      }
+    }
+
+    // Retry policy only for WhatsApp send
+    const maxAttempts = 3;
+    const delays = [0, 500, 1000];
+    let lastErr: any;
+    let sent: Message | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, delays[attempt]));
+        sent = await whatsappClient.sendMessage(phone, message);
+        break; // success
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+
+    if (!sent) {
+      res.status(500).json({ message: 'Failed to send after retries', error: lastErr instanceof Error ? lastErr.message : lastErr });
+      return;
+    }
+
+    const messageId = sent.id?.id;
+
+    // Logging outside retry to avoid duplicate sends if DB write fails
+    try {
+      const WhatsappChat = getWhatsappChatModel(conn);
+      await WhatsappChat.findOneAndUpdate(
+        {
+          'session.name': session.name,
+          $or: [
+            { phone: Number(String(phone).replace('@c.us', '')) },
+            { phone }
+          ]
+        },
+        {
+          $addToSet: {
+            messages: {
+              msgId: messageId,
+              direction: 'outbound-ai-tool',
+              body: sent.body,
+              respondedBy: 'AI',
+              status: 'enviado',
+              createdAt: new Date()
+            }
+          }
+        },
+        { upsert: true }
+      );
+    } catch (logErr) {
+      console.warn('⚠️ WhatsApp message sent but logging failed:', logErr);
+      // continue; do not fail response
+    }
+
+    res.status(200).json({ message: 'Message sent', messageId });
+  } catch (error) {
+    res.status(500).json({ message: 'Error sending simple WhatsApp message', error: error instanceof Error ? error.message : error });
+  }
+};
+
 // Obtiene el historial de mensajes de un usuario específico (por número limpio o con @c.us)
 export const getChatMessages = async (req: Request, res: Response) : Promise<void> => {
   try {

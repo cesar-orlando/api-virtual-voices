@@ -1734,35 +1734,58 @@ export const getChatHistory = async (req: Request, res: Response): Promise<void>
     const conn = await getConnectionByCompanySlug(companySlug as string);
     const QuickLearningChat = getQuickLearningChatModel(conn);
 
-    // Buscar el chat
-    let chat = await QuickLearningChat.findOne({ phone }).lean();
-    if (!chat && phone.startsWith('+')) {
-      chat = await QuickLearningChat.findOne({ phone: phone.replace(/^\+/, '') }).lean();
-    } else if (!chat && !phone.startsWith('+')) {
-      chat = await QuickLearningChat.findOne({ phone: `+${phone}` }).lean();
-    }
+    // Normalizar variantes del teléfono y buscar TODOS los posibles duplicados
+    const raw = String(phone);
+    const withoutPlus = raw.replace(/^\+/, '');
+    const withPlus = raw.startsWith('+') ? raw : `+${raw}`;
+    const variants = Array.from(new Set([raw, withoutPlus, withPlus]));
 
-    if (!chat) {
+    const chats = await QuickLearningChat.find({ phone: { $in: variants } }).lean();
+
+    if (!chats || chats.length === 0) {
       res.status(404).json({ error: "Chat no encontrado" });
       return;
     }
 
-    // Ordenar mensajes por fecha y limitar
-    const messages = chat.messages
-      ?.sort((a, b) => new Date(a.dateCreated || (a as any).timestamp).getTime() - new Date(b.dateCreated || (b as any).timestamp).getTime())
-      .slice(-parseInt(limit as string)) || [];
+    // Combinar mensajes de todos los documentos (evita pérdida por duplicados de phone)
+    const allMessages = (chats.flatMap(c => c.messages || [])).sort((a, b) => {
+      const ad = new Date((a as any).dateCreated || (a as any).timestamp || (a as any).date).getTime();
+      const bd = new Date((b as any).dateCreated || (b as any).timestamp || (b as any).date).getTime();
+      return ad - bd;
+    });
+
+    // Eliminar duplicados por msgId/twilioSid/fecha+body
+    const seen = new Set<string>();
+    const deduped: any[] = [];
+    for (const m of allMessages) {
+      const key = String((m as any).msgId || (m as any).twilioSid || `${(m as any).body}|${(m as any).dateCreated || (m as any).timestamp || (m as any).date}`);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(m);
+    }
+
+    const limited = deduped.slice(-parseInt(limit as string));
+
+    // Elegir el chat "principal" por último mensaje más reciente
+    const primary = chats.reduce((prev, curr) => {
+      const prevAny: any = prev as any;
+      const currAny: any = curr as any;
+      const prevDate = new Date((prev.lastMessage && (prev.lastMessage as any).date) || prevAny.updatedAt || prevAny.createdAt || 0).getTime();
+      const currDate = new Date((curr.lastMessage && (curr.lastMessage as any).date) || currAny.updatedAt || currAny.createdAt || 0).getTime();
+      return currDate > prevDate ? curr : prev;
+    }, chats[0]);
 
     res.status(200).json({
       success: true,
       chat: {
-        phone: chat.phone,
-        profileName: chat.profileName,
-        conversationStart: chat.conversationStart,
-        status: chat.status,
-        aiEnabled: chat.aiEnabled
+        phone: primary.phone,
+        profileName: primary.profileName,
+        conversationStart: primary.conversationStart,
+        status: primary.status,
+        aiEnabled: primary.aiEnabled
       },
-      messages: messages,
-      totalMessages: chat.messages?.length || 0
+      messages: limited,
+      totalMessages: deduped.length
     });
   } catch (error) {
     console.error("❌ Error obteniendo historial de chat:", error);

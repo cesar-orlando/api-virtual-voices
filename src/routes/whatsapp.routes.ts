@@ -6,6 +6,7 @@ import {
   getWhatsappUserByPhone,
   MessageToAll,
   sendWhatsappMessage,
+  sendWhatsappSimple,
   getChatMessages,
   enviarFichaTecnica,
   assignChatToAdvisor,
@@ -28,6 +29,8 @@ router.get("/messages/:c_name", getAllWhatsappMessages);
 router.get("/usuarios/:c_name/:user_id", getWhatsappUsers);
 router.get("/usuarios/:c_name/:phone", getWhatsappUserByPhone);
 router.post("/session/:c_name/:sessionId", uploadMem.single('attachment'), sendWhatsappMessage);
+// Simple endpoint: body carries c_name, sessionId, phone, message; includes retries
+router.post("/send", sendWhatsappSimple);
 router.post("/messageAll/:c_name/:sessionId", MessageToAll);
 router.post('/enviar-ficha-tecnica', enviarFichaTecnica);
 router.put("/assign-chat/:c_name", assignChatToAdvisor);

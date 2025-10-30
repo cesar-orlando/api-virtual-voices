@@ -367,46 +367,59 @@ export const sendWhatsappSimple = async (req: Request, res: Response) => {
       }
     }
 
-    // Retry policy: 3 attempts with 500/1000 ms backoff
+    // Retry policy only for WhatsApp send
     const maxAttempts = 3;
     const delays = [0, 500, 1000];
     let lastErr: any;
+    let sent: Message | null = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         if (attempt > 0) await new Promise(r => setTimeout(r, delays[attempt]));
-        const sent = await whatsappClient.sendMessage(phone, message);
-        // Store minimal log as outbound-ai-tool for consistency
-        const WhatsappChat = getWhatsappChatModel(conn);
-        await WhatsappChat.findOneAndUpdate(
-          {
-            'session.name': session.name,
-            $or: [
-              { phone: Number(String(phone).replace('@c.us', '')) },
-              { phone }
-            ]
-          },
-          {
-            $push: {
-              messages: {
-                msgId: sent.id?.id,
-                direction: 'outbound-ai-tool',
-                body: sent.body,
-                respondedBy: 'AI',
-                status: 'enviado',
-                createdAt: new Date()
-              }
-            }
-          },
-          { upsert: true }
-        );
-        res.status(200).json({ message: 'Message sent' });
-        return;
+        sent = await whatsappClient.sendMessage(phone, message);
+        break; // success
       } catch (err) {
         lastErr = err;
       }
     }
 
-    res.status(500).json({ message: 'Failed to send after retries', error: lastErr instanceof Error ? lastErr.message : lastErr });
+    if (!sent) {
+      res.status(500).json({ message: 'Failed to send after retries', error: lastErr instanceof Error ? lastErr.message : lastErr });
+      return;
+    }
+
+    const messageId = sent.id?.id;
+
+    // Logging outside retry to avoid duplicate sends if DB write fails
+    try {
+      const WhatsappChat = getWhatsappChatModel(conn);
+      await WhatsappChat.findOneAndUpdate(
+        {
+          'session.name': session.name,
+          $or: [
+            { phone: Number(String(phone).replace('@c.us', '')) },
+            { phone }
+          ]
+        },
+        {
+          $addToSet: {
+            messages: {
+              msgId: messageId,
+              direction: 'outbound-ai-tool',
+              body: sent.body,
+              respondedBy: 'AI',
+              status: 'enviado',
+              createdAt: new Date()
+            }
+          }
+        },
+        { upsert: true }
+      );
+    } catch (logErr) {
+      console.warn('⚠️ WhatsApp message sent but logging failed:', logErr);
+      // continue; do not fail response
+    }
+
+    res.status(200).json({ message: 'Message sent', messageId });
   } catch (error) {
     res.status(500).json({ message: 'Error sending simple WhatsApp message', error: error instanceof Error ? error.message : error });
   }

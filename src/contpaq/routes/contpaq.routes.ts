@@ -31,6 +31,9 @@ router.get('/sales-comparison', (req, res) => contpaqController.getSalesComparis
 // Dashboard de ventas completo
 router.get('/sales-dashboard', (req, res) => contpaqController.getSalesDashboard(req, res));
 
+// Flujo de efectivo (Cash Flow)
+router.get('/cash-flow', (req, res) => contpaqController.getCashFlow(req, res));
+
 // Ruta de información
 router.get('/', (req, res) => {
   res.json({
@@ -53,7 +56,8 @@ router.get('/', (req, res) => {
       topClients: 'GET /api/contpaq/top-clients?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&limit=10&incluirConversiones=true',
       topProducts: 'GET /api/contpaq/top-products?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&limit=10&incluirConversiones=true',
       salesComparison: 'GET /api/contpaq/sales-comparison?año=2025&incluirConversiones=true',
-      salesDashboard: 'GET /api/contpaq/sales-dashboard?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD'
+      salesDashboard: 'GET /api/contpaq/sales-dashboard?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD',
+      cashFlow: 'GET /api/contpaq/cash-flow?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD&incluirPendientes=false'
     }
   });
 });
